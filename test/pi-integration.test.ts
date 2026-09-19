@@ -148,29 +148,38 @@ describe("Pi registration", () => {
     assert.equal(execCalls[0]!.options.timeout, 12_000);
   });
 
-  test("bounds model-visible output for a twelve-step registered-tool run", async () => {
+  test("bounds model-visible output for a candidate-rich registered-tool run", async () => {
     const controls = Array.from({ length: 16 }, (_, index) => ({
-      id: `${String(index).padStart(2, "0")}-${"u".repeat(136)}`,
+      id: `control-${index}`,
       role: "link",
-      name: `Documentation control ${index} ${"x".repeat(120)}`,
+      name: `Documentation control ${index}`,
     }));
     let execCalls = 0;
     const registered = registerWithExternalFakes({
       classifier: async (request) => {
         const targetIds = request.candidates.clickTargets.map(
-          (target) => target.uid,
+          (target) => target.id,
         );
         return {
           model: "fake-jev-1.13.0",
           answers: {
-            operation: choice("WAIT", request.candidates.operations),
-            click_target: choice(targetIds[0]!, targetIds),
+            operation: choice("CLICK", request.candidates.operations),
+            click_target: choice(targetIds[0]!, [...targetIds, "NO_MATCH"]),
           },
         };
       },
       exec: async () => {
         execCalls += 1;
-        return processResult(snapshot(controls));
+        return processResult(
+          snapshot([
+            ...controls,
+            {
+              id: `state-${execCalls}`,
+              role: "StaticText",
+              name: `Observed state ${execCalls}`,
+            },
+          ]),
+        );
       },
       wait: async (milliseconds, signal) => {
         if (milliseconds === 250) return;
@@ -202,19 +211,15 @@ describe("Pi registration", () => {
       };
     };
 
-    assert.equal(details.stopReason, "step_budget");
-    assert.equal(details.trace.length, 12);
+    assert.equal(details.stopReason, "evidence_budget");
+    assert.equal(details.trace.length, 4);
     assert.equal(
       Object.keys(details.trace[0]!.targetProbabilities ?? {}).length,
-      16,
+      17,
     );
-    assert.ok(
-      JSON.stringify(details, null, 2).length >
-        details.limits.maxToolContentChars,
-    );
-    assert.equal(execCalls, 13);
-    assert.equal(content.stopReason, "step_budget");
-    assert.equal(content.trace.length, 12);
+    assert.equal(execCalls, 5);
+    assert.equal(content.stopReason, "evidence_budget");
+    assert.equal(content.trace.length, 4);
     assert.equal("operationProbabilities" in content.trace[0]!, false);
     assert.equal("targetProbabilities" in content.trace[0]!, false);
     assert.equal(content.modelVisible.truncated, true);

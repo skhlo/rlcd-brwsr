@@ -1,4 +1,4 @@
-# Two-page host check
+# Research fast-loop host checks
 
 Date: 2026-09-19
 
@@ -71,3 +71,41 @@ did not exercise this path.
   closed, the original page was reselected, and both Paseo fixture/TUI terminals and their processes
   were stopped. No RLCD-brwsr-owned CLI child remained. Tailscale CLI remained unavailable and no Jev
   request was made.
+
+## Search, selection, scrolling and partial-evidence check
+
+Date: 2026-09-20
+
+The same loopback server and explicitly loaded fake responder exercised issue #4 through Pi 0.85.1's
+actual TUI. The host had Node 26.6.0, pnpm 11.27.0 and Chrome DevTools CLI 1.7.0. `TYPESAFE_API_KEY`
+was absent, so the run made zero Jev requests. Tailscale CLI was absent; the fixture remained bound to
+`127.0.0.1:43113` and had no Tailscale Serve URL.
+
+The visible seven-step `rlcd_brwsr_run` call on `journey.html` returned `completion_claim` with
+`stopReason: done_claim` and the independent-verification flag. Its trace reported `TYPE_TEXT`,
+`SELECT`, `PAGE_DOWN`, `PAGE_UP`, `WAIT`, the `Show gathered evidence` tab click and `DONE`. The
+retained evidence included the revealed statement that exact search text, one native option, both
+scroll directions, a bounded wait and a tab had been exercised. Unrelated `Log in` and `Donate`
+controls remained excluded while the low-consequence tab and documentation link were offered.
+
+Separate real-CLI observations, not the fake classifier's completion claim, established the visible
+state:
+
+- the search control contained `Jev fast — café docs`;
+- the native select contained the AX-observed speculative fan-out option (Chrome exposed the CJK
+  label with accessibility spacing);
+- the evidence tab had `aria-selected="true"`, its panel was visible, and its expected text was
+  present;
+- a direct `press_key PageDown --includeSnapshot` moved `window.scrollY` from 0 to 679.5 on this host,
+  and `press_key PageUp --includeSnapshot` returned it to 0; and
+- a direct real-CLI `fill` of the search UID returned a snapshot with the exact Unicode value and the
+  fixture's matching live-status text.
+
+A second visible Pi call followed `Continue to uncertainty evidence` and returned a `done_claim`
+with both `index.html` and `evidence.html` retained. Repeating that journey with `maxSteps: 1`
+returned `step_budget`, not a completion claim, while preserving both observed source URLs as partial
+evidence.
+
+All TUI and browser commands above were sent and captured through Paseo CLI terminals, never Paseo
+MCP. The task-created fixture page, fixture server and verification terminals were removed after the
+final checks. The pre-existing Chrome executor daemon and its `about:blank` page were retained.

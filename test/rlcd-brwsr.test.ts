@@ -67,6 +67,7 @@ describe("rlcd_brwsr runner", () => {
             name: "Continue to uncertainty evidence",
             url: destinationUrl,
           },
+          { id: "1_6", role: "textbox", name: "Unused search" },
           { id: "1_4", role: "link", name: "Log in" },
           { id: "1_5", role: "button", name: "Donate" },
         ]),
@@ -99,9 +100,16 @@ describe("rlcd_brwsr runner", () => {
         };
         if (request.candidates.clickTargets.length > 0) {
           const targetIds = request.candidates.clickTargets.map(
-            (target) => target.uid,
+            (target) => target.id,
           );
-          answers.click_target = choice(targetIds[0]!, targetIds);
+          answers.click_target = choice(targetIds[0]!, [
+            ...targetIds,
+            "NO_MATCH",
+          ]);
+          answers.type_text_pair = {
+            type: "choice",
+            choice: "malformed-unused-speculative-branch",
+          };
         }
         return {
           model: "fake-jev-1.13.0",
@@ -122,7 +130,7 @@ describe("rlcd_brwsr runner", () => {
     };
 
     const result = await createRlcdBrwsrRunner(dependencies)({
-      goal: "Collect both fixture pages",
+      goal: 'Collect both fixture pages; an unused field value is "unused"',
       maxSteps: 2,
       maxSeconds: 10,
     });
@@ -132,8 +140,13 @@ describe("rlcd_brwsr runner", () => {
       ["click", "1_3", "--includeSnapshot", "--output-format=json"],
     ]);
     assert.equal(classifierRequests.length, 2);
+    assert.match(
+      classifierRequests[0]!.questions.click_target?.instruction ?? "",
+      /^Assuming the selected operation is CLICK,/,
+    );
     assert.deepEqual(classifierRequests[0]!.candidates.clickTargets, [
       {
+        id: "CLICK_0",
         uid: "1_3",
         role: "link",
         label: "Continue to uncertainty evidence",
@@ -162,6 +175,420 @@ describe("rlcd_brwsr runner", () => {
       result.trace.map(({ operation }) => operation),
       ["CLICK", "DONE"],
     );
+  });
+
+  test("types one exact quoted Unicode value into the selected complete field/value pair", async () => {
+    const exactValue = 'Jev "quoted" — café \\ path';
+    const start = processResult(
+      snapshot("1_0", "http://127.0.0.1/search", "Search fixture", [
+        { id: "1_1", role: "textbox", name: "Search" },
+        { id: "1_2", role: "textbox", name: "Search" },
+      ]),
+    );
+    const filled = processResult(
+      snapshot("1_0", "http://127.0.0.1/search", "Search fixture", [
+        {
+          id: "1_3",
+          role: "StaticText",
+          name: `Submitted exactly: ${exactValue}`,
+        },
+      ]),
+    );
+    const browserResults = [start, filled];
+    const cliArgv: string[][] = [];
+    let classifierCall = 0;
+
+    const result = await createRlcdBrwsrRunner({
+      classifier: async (request) => {
+        classifierCall += 1;
+        if (classifierCall === 2) {
+          return {
+            answers: {
+              operation: choice("DONE", request.candidates.operations),
+            },
+          };
+        }
+
+        assert.equal(
+          request.questions.type_text_pair?.instruction,
+          "Assuming the selected operation is TYPE_TEXT, which offered complete field/value pair best advances the goal? Values are exact and must not be modified.",
+        );
+        assert.deepEqual(
+          request.candidates.typeTextPairs.map(
+            ({ fieldUid, fieldLabel, value }) => ({
+              fieldUid,
+              fieldLabel,
+              value,
+            }),
+          ),
+          [
+            { fieldUid: "1_1", fieldLabel: "Search", value: exactValue },
+            { fieldUid: "1_1", fieldLabel: "Search", value: "alternate" },
+            { fieldUid: "1_2", fieldLabel: "Search", value: exactValue },
+            { fieldUid: "1_2", fieldLabel: "Search", value: "alternate" },
+          ],
+        );
+        const selected = request.candidates.typeTextPairs.find(
+          (candidate) =>
+            candidate.fieldUid === "1_2" && candidate.value === exactValue,
+        );
+        assert.ok(selected);
+        assert.deepEqual(
+          Object.keys(request.questions.type_text_pair.options),
+          [
+            ...request.candidates.typeTextPairs.map(
+              (candidate) => candidate.id,
+            ),
+            "NO_MATCH",
+          ],
+        );
+        return {
+          answers: {
+            operation: choice("TYPE_TEXT", request.candidates.operations),
+            type_text_pair: choice(selected.id, [
+              ...request.candidates.typeTextPairs.map(
+                (candidate) => candidate.id,
+              ),
+              "NO_MATCH",
+            ]),
+          },
+        };
+      },
+      cli: async (args) => {
+        cliArgv.push([...args]);
+        const browserResult = browserResults.shift();
+        assert.ok(browserResult, "unexpected CLI call");
+        return browserResult;
+      },
+      clock: { now: () => 1_000 },
+      wait: async () => {
+        await new Promise(() => {});
+      },
+    })({
+      goal: String.raw`Search for "Jev \"quoted\" — café \\ path" or "alternate"`,
+      maxSteps: 2,
+      maxSeconds: 10,
+    });
+
+    assert.equal(result.stopReason, "done_claim");
+    assert.deepEqual(cliArgv, [
+      ["take_snapshot", "--output-format=json"],
+      ["fill", "1_2", exactValue, "--includeSnapshot", "--output-format=json"],
+    ]);
+  });
+
+  test("selects one complete native field/observed-option pair with duplicate labels", async () => {
+    const option = 'Speculative "fan-out" — 日本語';
+    const nativeSelect = (id: string) => ({
+      id,
+      role: "combobox",
+      name: "Topic",
+      children: [
+        {
+          id: `${id}_1`,
+          role: "option",
+          name: "Question design",
+          value: "Question design",
+        },
+        {
+          id: `${id}_2`,
+          role: "option",
+          name: option,
+          value: option,
+        },
+      ],
+    });
+    const browserResults = [
+      processResult(
+        snapshot("1_0", "http://127.0.0.1/select", "Select fixture", [
+          nativeSelect("1_1"),
+          nativeSelect("1_2"),
+        ]),
+      ),
+      processResult(
+        snapshot("1_0", "http://127.0.0.1/select", "Select fixture", [
+          {
+            id: "1_3",
+            role: "StaticText",
+            name: `Second Topic selected: ${option}`,
+          },
+        ]),
+      ),
+    ];
+    const cliArgv: string[][] = [];
+    let classifierCall = 0;
+
+    const result = await createRlcdBrwsrRunner({
+      classifier: async (request) => {
+        classifierCall += 1;
+        if (classifierCall === 2) {
+          return {
+            answers: {
+              operation: choice("DONE", request.candidates.operations),
+            },
+          };
+        }
+
+        assert.match(
+          request.questions.select_pair?.instruction ?? "",
+          /^Assuming the selected operation is SELECT,/,
+        );
+        assert.deepEqual(
+          request.candidates.selectPairs.map(
+            ({ fieldUid, fieldLabel, option: observedOption }) => ({
+              fieldUid,
+              fieldLabel,
+              option: observedOption,
+            }),
+          ),
+          [
+            {
+              fieldUid: "1_1",
+              fieldLabel: "Topic",
+              option: "Question design",
+            },
+            { fieldUid: "1_1", fieldLabel: "Topic", option },
+            {
+              fieldUid: "1_2",
+              fieldLabel: "Topic",
+              option: "Question design",
+            },
+            { fieldUid: "1_2", fieldLabel: "Topic", option },
+          ],
+        );
+        const selected = request.candidates.selectPairs.find(
+          (candidate) =>
+            candidate.fieldUid === "1_2" && candidate.option === option,
+        );
+        assert.ok(selected);
+        return {
+          answers: {
+            operation: choice("SELECT", request.candidates.operations),
+            select_pair: choice(selected.id, [
+              ...request.candidates.selectPairs.map(
+                (candidate) => candidate.id,
+              ),
+              "NO_MATCH",
+            ]),
+          },
+        };
+      },
+      cli: async (args) => {
+        cliArgv.push([...args]);
+        const browserResult = browserResults.shift();
+        assert.ok(browserResult, "unexpected CLI call");
+        return browserResult;
+      },
+      clock: { now: () => 1_000 },
+      wait: async () => {
+        await new Promise(() => {});
+      },
+    })({
+      goal: "Choose the Japanese fan-out topic",
+      maxSteps: 2,
+      maxSeconds: 10,
+    });
+
+    assert.equal(result.stopReason, "done_claim");
+    assert.deepEqual(cliArgv, [
+      ["take_snapshot", "--output-format=json"],
+      ["fill", "1_2", option, "--includeSnapshot", "--output-format=json"],
+    ]);
+  });
+
+  test("scrolls down and up with fixed keys while WAIT refreshes without an empty target head", async () => {
+    const browserResults = [
+      processResult(
+        snapshot("1_0", "http://127.0.0.1/scroll", "Scroll fixture", [
+          { id: "1_1", role: "StaticText", name: "At the top" },
+        ]),
+      ),
+      processResult(
+        snapshot("1_0", "http://127.0.0.1/scroll", "Scroll fixture", [
+          { id: "1_1", role: "StaticText", name: "Lower evidence visible" },
+        ]),
+      ),
+      processResult(
+        snapshot("1_0", "http://127.0.0.1/scroll", "Scroll fixture", [
+          { id: "1_1", role: "StaticText", name: "Lower evidence visible" },
+        ]),
+      ),
+      processResult(
+        snapshot("1_0", "http://127.0.0.1/scroll", "Scroll fixture", [
+          {
+            id: "1_1",
+            role: "StaticText",
+            name: "Top and lower evidence collected",
+          },
+        ]),
+      ),
+    ];
+    const operations = ["PAGE_DOWN", "WAIT", "PAGE_UP", "DONE"];
+    const cliArgv: string[][] = [];
+
+    const result = await createRlcdBrwsrRunner({
+      classifier: async (request) => {
+        assert.deepEqual(Object.keys(request.questions), ["operation"]);
+        const operation = operations.shift();
+        assert.ok(operation);
+        return {
+          answers: {
+            operation: choice(operation, request.candidates.operations),
+          },
+        };
+      },
+      cli: async (args) => {
+        cliArgv.push([...args]);
+        const browserResult = browserResults.shift();
+        assert.ok(browserResult, "unexpected CLI call");
+        return browserResult;
+      },
+      clock: { now: () => 1_000 },
+      wait: async (milliseconds) => {
+        if (milliseconds === 250) return;
+        await new Promise(() => {});
+      },
+    })({ goal: "Collect top and lower evidence", maxSteps: 4, maxSeconds: 10 });
+
+    assert.equal(result.stopReason, "done_claim");
+    assert.deepEqual(cliArgv, [
+      ["take_snapshot", "--output-format=json"],
+      ["press_key", "PageDown", "--includeSnapshot", "--output-format=json"],
+      ["take_snapshot", "--output-format=json"],
+      ["press_key", "PageUp", "--includeSnapshot", "--output-format=json"],
+    ]);
+    assert.deepEqual(
+      result.trace.map(({ operation }) => operation),
+      ["PAGE_DOWN", "WAIT", "PAGE_UP", "DONE"],
+    );
+    assert.equal(result.metrics.waits, 1);
+  });
+
+  test("does not offer disabled fields or empty operation-specific heads", async () => {
+    const result = await createRlcdBrwsrRunner({
+      classifier: async (request) => {
+        assert.equal(
+          request.candidates.operations.includes("TYPE_TEXT"),
+          false,
+        );
+        assert.equal(request.candidates.operations.includes("SELECT"), false);
+        assert.deepEqual(Object.keys(request.questions), ["operation"]);
+        return {
+          answers: {
+            operation: choice("BLOCKED", request.candidates.operations),
+          },
+        };
+      },
+      cli: async () =>
+        processResult(
+          snapshot("1_0", "http://127.0.0.1/disabled", "Disabled fixture", [
+            {
+              id: "1_1",
+              role: "textbox",
+              name: "Disabled search",
+              disabled: true,
+            },
+            {
+              id: "1_2",
+              role: "combobox",
+              name: "Disabled topic",
+              disabled: true,
+              children: [
+                {
+                  id: "1_3",
+                  role: "option",
+                  name: "Observed but unavailable",
+                  value: "Observed but unavailable",
+                },
+              ],
+            },
+          ]),
+        ),
+      clock: { now: () => 1_000 },
+      wait: async () => {
+        await new Promise(() => {});
+      },
+    })({
+      goal: 'Do not mutate disabled controls with "supplied text"',
+      maxSteps: 1,
+      maxSeconds: 10,
+    });
+
+    assert.equal(result.stopReason, "blocked");
+    assert.equal(result.metrics.browserCommands, 1);
+  });
+
+  test("returns needs_text after BLOCKED when observed fields have no supplied quoted value", async () => {
+    const cliArgv: string[][] = [];
+
+    const result = await createRlcdBrwsrRunner({
+      classifier: async (request) => {
+        assert.equal(
+          request.candidates.operations.includes("TYPE_TEXT"),
+          false,
+        );
+        assert.equal(request.questions.type_text_pair, undefined);
+        return {
+          answers: {
+            operation: choice("BLOCKED", request.candidates.operations),
+          },
+        };
+      },
+      cli: async (args) => {
+        cliArgv.push([...args]);
+        return processResult(
+          snapshot("1_0", "http://127.0.0.1/search", "Search fixture", [
+            { id: "1_1", role: "searchbox", name: "Documentation search" },
+          ]),
+        );
+      },
+      clock: { now: () => 1_000 },
+      wait: async () => {
+        await new Promise(() => {});
+      },
+    })({ goal: "Search the documentation", maxSteps: 1, maxSeconds: 10 });
+
+    assert.equal(result.stopReason, "needs_text");
+    assert.equal(result.trace[0]!.outcome, "needs_text");
+    assert.deepEqual(cliArgv, [["take_snapshot", "--output-format=json"]]);
+  });
+
+  test("returns needs_text without mutation when TYPE_TEXT selects explicit NO_MATCH", async () => {
+    const cliArgv: string[][] = [];
+
+    const result = await createRlcdBrwsrRunner({
+      classifier: async (request) => {
+        const offered = Object.keys(
+          request.questions.type_text_pair?.options ?? {},
+        );
+        return {
+          answers: {
+            operation: choice("TYPE_TEXT", request.candidates.operations),
+            type_text_pair: choice("NO_MATCH", offered),
+          },
+        };
+      },
+      cli: async (args) => {
+        cliArgv.push([...args]);
+        return processResult(
+          snapshot("1_0", "http://127.0.0.1/search", "Search fixture", [
+            { id: "1_1", role: "textbox", name: "Search" },
+          ]),
+        );
+      },
+      clock: { now: () => 1_000 },
+      wait: async () => {
+        await new Promise(() => {});
+      },
+    })({
+      goal: 'Search with a value that fits, otherwise return "wrong value"',
+      maxSteps: 1,
+      maxSeconds: 10,
+    });
+
+    assert.equal(result.stopReason, "needs_text");
+    assert.equal(result.trace[0]!.outcome, "no_matching_target");
+    assert.deepEqual(cliArgv, [["take_snapshot", "--output-format=json"]]);
   });
 
   test("hands off when recognized consequential controls are the only click actions", async () => {
@@ -244,6 +671,105 @@ describe("rlcd_brwsr runner", () => {
     assert.equal(result.stopReason, "invalid_classifier_response");
     assert.deepEqual(cliArgv, [["take_snapshot", "--output-format=json"]]);
     assert.equal(result.evidence.sources.length, 1);
+  });
+
+  test("rejects an unoffered text pair before mutating its field", async () => {
+    const cliArgv: string[][] = [];
+
+    const result = await createRlcdBrwsrRunner({
+      classifier: async (request) => {
+        const offered = [
+          ...request.candidates.typeTextPairs.map((candidate) => candidate.id),
+          "NO_MATCH",
+        ];
+        return {
+          answers: {
+            operation: choice("TYPE_TEXT", request.candidates.operations),
+            type_text_pair: {
+              ...choice(offered[0]!, offered),
+              choice: "model-invented-field-value-pair",
+            },
+          },
+        };
+      },
+      cli: async (args) => {
+        cliArgv.push([...args]);
+        return processResult(
+          snapshot("1_0", "http://127.0.0.1/search", "Search fixture", [
+            { id: "1_1", role: "textbox", name: "Search" },
+          ]),
+        );
+      },
+      clock: { now: () => 1_000 },
+      wait: async () => {
+        await new Promise(() => {});
+      },
+    })({ goal: 'Search for "offered exactly"', maxSteps: 1, maxSeconds: 10 });
+
+    assert.equal(result.stopReason, "invalid_classifier_response");
+    assert.deepEqual(cliArgv, [["take_snapshot", "--output-format=json"]]);
+  });
+
+  test("returns control instead of truncating more than 254 executable target options", async () => {
+    let classifierCalled = false;
+    const links = Array.from({ length: 255 }, (_, index) => ({
+      id: `1_${index + 1}`,
+      role: "link",
+      name: `Documentation link ${index + 1}`,
+    }));
+
+    const result = await createRlcdBrwsrRunner({
+      classifier: async () => {
+        classifierCalled = true;
+        return {};
+      },
+      cli: async () =>
+        processResult(
+          snapshot(
+            "1_0",
+            "http://127.0.0.1/many-targets",
+            "Many targets fixture",
+            links,
+          ),
+        ),
+      clock: { now: () => 1_000 },
+      wait: async () => {
+        await new Promise(() => {});
+      },
+    })({ goal: "Find one documentation link", maxSteps: 1, maxSeconds: 10 });
+
+    assert.equal(result.stopReason, "candidate_overflow");
+    assert.equal(classifierCalled, false);
+    assert.equal(result.evidence.sources.length, 1);
+  });
+
+  test("returns candidate_overflow when complete field/value pairs exceed the choice limit", async () => {
+    let classifierCalled = false;
+    const quotedValues = Array.from(
+      { length: 128 },
+      (_, index) => `"v${index}"`,
+    ).join(" ");
+
+    const result = await createRlcdBrwsrRunner({
+      classifier: async () => {
+        classifierCalled = true;
+        return {};
+      },
+      cli: async () =>
+        processResult(
+          snapshot("1_0", "http://127.0.0.1/pairs", "Pair fixture", [
+            { id: "1_1", role: "textbox", name: "First field" },
+            { id: "1_2", role: "textbox", name: "Second field" },
+          ]),
+        ),
+      clock: { now: () => 1_000 },
+      wait: async () => {
+        await new Promise(() => {});
+      },
+    })({ goal: `Use one of ${quotedValues}`, maxSteps: 1, maxSeconds: 10 });
+
+    assert.equal(result.stopReason, "candidate_overflow");
+    assert.equal(classifierCalled, false);
   });
 
   test("cancels a classifier call cooperatively and returns retained evidence", async () => {
@@ -441,12 +967,12 @@ describe("rlcd_brwsr runner", () => {
     const result = await createRlcdBrwsrRunner({
       classifier: async (request) => {
         const targetIds = request.candidates.clickTargets.map(
-          (target) => target.uid,
+          (target) => target.id,
         );
         return {
           answers: {
             operation: choice("CLICK", request.candidates.operations),
-            click_target: choice(targetIds[0]!, targetIds),
+            click_target: choice(targetIds[0]!, [...targetIds, "NO_MATCH"]),
           },
         };
       },
@@ -470,6 +996,48 @@ describe("rlcd_brwsr runner", () => {
     assert.equal(cliArgv.length, 2);
     assert.equal(result.evidence.sources.length, 1);
     assert.equal(result.trace[0]!.outcome, "uncertain_execution");
+  });
+
+  test("stops on an executor stale-target rejection without retrying the mutation", async () => {
+    const cliArgv: string[][] = [];
+    const start = processResult(
+      snapshot("1_0", "http://127.0.0.1/stale", "Stale fixture", [
+        { id: "1_1", role: "link", name: "Detached documentation link" },
+      ]),
+    );
+
+    const result = await createRlcdBrwsrRunner({
+      classifier: async (request) => {
+        const targetIds = request.candidates.clickTargets.map(
+          (target) => target.id,
+        );
+        return {
+          answers: {
+            operation: choice("CLICK", request.candidates.operations),
+            click_target: choice(targetIds[0]!, [...targetIds, "NO_MATCH"]),
+          },
+        };
+      },
+      cli: async (args) => {
+        cliArgv.push([...args]);
+        if (cliArgv.length === 1) return start;
+        return processResult([
+          {
+            type: "text",
+            text: 'Error: Element uid "1_1" not found on page 1.',
+          },
+        ]);
+      },
+      clock: { now: () => 1_000 },
+      wait: async () => {
+        await new Promise(() => {});
+      },
+    })({ goal: "Follow the detached link", maxSteps: 3, maxSeconds: 10 });
+
+    assert.equal(result.stopReason, "stale_target");
+    assert.equal(cliArgv.length, 2);
+    assert.equal(result.trace[0]!.outcome, "stale_target");
+    assert.equal(result.evidence.sources.length, 1);
   });
 
   test("treats the CLI JSON error array as failure rather than a success snapshot", async () => {
@@ -540,6 +1108,57 @@ describe("rlcd_brwsr runner", () => {
     );
   });
 
+  test("cancels during WAIT without dispatching another browser command and keeps evidence", async () => {
+    const controller = new AbortController();
+    let markWaitStarted!: () => void;
+    const waitStarted = new Promise<void>((resolve) => {
+      markWaitStarted = resolve;
+    });
+    const cliArgv: string[][] = [];
+
+    const pending = createRlcdBrwsrRunner({
+      classifier: async (request) => ({
+        answers: { operation: choice("WAIT", request.candidates.operations) },
+      }),
+      cli: async (args) => {
+        cliArgv.push([...args]);
+        return processResult(
+          snapshot("1_0", "http://127.0.0.1/wait", "Wait fixture", [
+            {
+              id: "1_1",
+              role: "StaticText",
+              name: "Evidence retained before wait cancellation",
+            },
+          ]),
+        );
+      },
+      clock: { now: () => 1_000 },
+      wait: async (milliseconds, signal) => {
+        if (milliseconds === 250) markWaitStarted();
+        await new Promise<void>((_resolve, reject) => {
+          signal.addEventListener("abort", () => reject(signal.reason), {
+            once: true,
+          });
+        });
+      },
+    })(
+      { goal: "Cancel during the bounded wait", maxSteps: 2, maxSeconds: 10 },
+      controller.signal,
+    );
+
+    await waitStarted;
+    controller.abort(new Error("cancel wait"));
+    const result = await pending;
+
+    assert.equal(result.stopReason, "cancelled");
+    assert.deepEqual(cliArgv, [["take_snapshot", "--output-format=json"]]);
+    assert.match(
+      result.evidence.sources[0]!.excerpt,
+      /Evidence retained before wait cancellation/,
+    );
+    assert.equal(result.metrics.waits, 1);
+  });
+
   test("truncates oversized accessibility excerpts before classifier and result use", async () => {
     let classifierTextLength = 0;
     const result = await createRlcdBrwsrRunner({
@@ -599,39 +1218,50 @@ describe("rlcd_brwsr runner", () => {
     assert.equal(result.finalPage.url, "http://127.0.0.1/page-5");
   });
 
-  test("stops after three clicks leave the observed state unchanged", async () => {
+  test("stops after three non-WAIT operations show no observed progress", async () => {
     const unchanged = processResult(
       snapshot("1_0", "http://127.0.0.1/unchanged", "Unchanged fixture", [
         { id: "1_1", role: "link", name: "No-op link" },
       ]),
     );
     let cliCalls = 0;
+    const operations = ["PAGE_DOWN", "WAIT", "PAGE_UP", "CLICK"];
 
     const result = await createRlcdBrwsrRunner({
       classifier: async (request) => {
-        const targetIds = request.candidates.clickTargets.map(
-          (target) => target.uid,
-        );
-        return {
-          answers: {
-            operation: choice("CLICK", request.candidates.operations),
-            click_target: choice(targetIds[0]!, targetIds),
-          },
+        const operation = operations.shift();
+        assert.ok(operation);
+        const answers: Record<string, unknown> = {
+          operation: choice(operation, request.candidates.operations),
         };
+        if (operation === "CLICK") {
+          const targetIds = request.candidates.clickTargets.map(
+            (target) => target.id,
+          );
+          answers.click_target = choice(targetIds[0]!, [
+            ...targetIds,
+            "NO_MATCH",
+          ]);
+        }
+        return { answers };
       },
       cli: async () => {
         cliCalls += 1;
         return unchanged;
       },
       clock: { now: () => 1_000 },
-      wait: async () => {
+      wait: async (milliseconds) => {
+        if (milliseconds === 250) return;
         await new Promise(() => {});
       },
     })({ goal: "Stop a no-op loop", maxSteps: 6, maxSeconds: 10 });
 
     assert.equal(result.stopReason, "unchanged_state");
-    assert.equal(cliCalls, 4);
-    assert.equal(result.trace.length, 3);
+    assert.equal(cliCalls, 5);
+    assert.deepEqual(
+      result.trace.map(({ operation }) => operation),
+      ["PAGE_DOWN", "WAIT", "PAGE_UP", "CLICK"],
+    );
     assert.equal(result.evidence.sources.length, 1);
   });
 
@@ -648,13 +1278,13 @@ describe("rlcd_brwsr runner", () => {
       classifier: async (request) => {
         now = 2_001;
         const targetIds = request.candidates.clickTargets.map(
-          (target) => target.uid,
+          (target) => target.id,
         );
         return {
           model: "fake-jev-1.13.0",
           answers: {
             operation: choice("CLICK", request.candidates.operations),
-            click_target: choice(targetIds[0]!, targetIds),
+            click_target: choice(targetIds[0]!, [...targetIds, "NO_MATCH"]),
           },
         };
       },
