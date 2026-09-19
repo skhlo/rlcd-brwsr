@@ -68,19 +68,46 @@ async function copyInput(source, destination) {
   return sha256(await readFile(destination));
 }
 
+export async function readFileAtCommit(root, commit, repositoryPath) {
+  const child = spawn("git", ["-C", root, "show", `${commit}:${repositoryPath}`], {
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  const stdout = [];
+  const stderr = [];
+  child.stdout.on("data", (chunk) => stdout.push(chunk));
+  child.stderr.on("data", (chunk) => stderr.push(chunk));
+  const [code, signal] = await once(child, "close");
+  if (code !== 0) {
+    const diagnostic = Buffer.concat(stderr).toString("utf8").trim();
+    throw new Error(
+      `Could not read ${repositoryPath} from ${commit}: ${diagnostic || signal || `git exited ${code}`}`,
+    );
+  }
+  return Buffer.concat(stdout);
+}
+
 async function prepareWorkspace(workspace) {
-  const inputs = [
+  const currentInputs = [
     [path.join(experimentDirectory, "task.md"), "task.md"],
-    [path.join(repositoryRoot, "CONTEXT.md"), "CONTEXT.md"],
-    [path.join(repositoryRoot, "docs", "RLCD-BRWSR.md"), "RLCD-BRWSR.md"],
-    [
-      path.join(repositoryRoot, "docs", "adr", "0001-classifier-over-existing-browser-executor.md"),
-      "0001-classifier-over-existing-browser-executor.md",
-    ],
     [path.join(experimentDirectory, "fetch-doc.mjs"), "fetch-doc.mjs"],
   ];
+  const frozenContextInputs = [
+    ["CONTEXT.md", "CONTEXT.md"],
+    ["docs/RLCD-BRWSR.md", "RLCD-BRWSR.md"],
+    [
+      "docs/adr/0001-classifier-over-existing-browser-executor.md",
+      "0001-classifier-over-existing-browser-executor.md",
+    ],
+  ];
   const hashes = {};
-  for (const [source, name] of inputs) hashes[name] = await copyInput(source, path.join(workspace, name));
+  for (const [source, name] of currentInputs) {
+    hashes[name] = await copyInput(source, path.join(workspace, name));
+  }
+  for (const [repositoryPath, name] of frozenContextInputs) {
+    const contents = await readFileAtCommit(repositoryRoot, startingCommit, repositoryPath);
+    await writeFile(path.join(workspace, name), contents);
+    hashes[name] = sha256(contents);
+  }
   await chmod(path.join(workspace, "fetch-doc.mjs"), 0o755);
   hashes["prompts/research.md"] = sha256(
     await readFile(path.join(experimentDirectory, "prompts", "research.md")),
@@ -139,12 +166,6 @@ async function runPiPhase({
     [
       "--mode", "json",
       "--no-session",
-      "--no-context-files",
-      "--no-extensions",
-      "--no-skills",
-      "--no-prompt-templates",
-      "--no-approve",
-      "--tools", "read,bash,grep,find,ls",
       "--provider", provider,
       "--model", model,
       "--thinking", thinking,
@@ -291,7 +312,11 @@ export async function runTrial(options) {
     const unavailableMeasurements = [
       ...new Set([
         ...phases.flatMap((phase) => phase.unavailableMeasurements),
+        "total direct HTTP requests",
+        "total browser commands across unrestricted tool paths",
         "recovery work beyond observable failed tool calls",
+        "retained baseline-owned descendant processes",
+        "retained browser pages",
         ...(verdict === null ? ["independent evaluation verdict"] : []),
       ]),
     ];
@@ -303,7 +328,8 @@ export async function runTrial(options) {
     );
 
     const metrics = {
-      schemaVersion: 1,
+      schemaVersion: 2,
+      trialKind: "normal-pi-baseline",
       condition,
       startingCommit,
       startedAt: trialStartedAt,
@@ -332,7 +358,7 @@ export async function runTrial(options) {
         piCacheRetention: process.env.PI_CACHE_RETENTION ?? "unset",
         providerReportedCacheReadTokens: sumTokens(phases)?.cacheRead ?? null,
         providerReportedCacheWriteTokens: sumTokens(phases)?.cacheWrite ?? null,
-        documentationCache: "fresh fetch-doc process per invocation; upstream DNS/CDN caches not controlled",
+        documentationCache: "the optional fetch-doc helper has no application cache; other normal retrieval paths and upstream DNS/CDN caches are not controlled",
       },
       phaseWallTimeMs: {
         research: research.wallTimeMs,
@@ -346,42 +372,49 @@ export async function runTrial(options) {
         return counts;
       }, {}),
       directHttpRequests: {
-        observed: retrievals.entries.length,
-        byPhase: retrievalCounts,
-        method: "one retained entry per HTTP response or failed fetch attempt from fetch-doc.mjs",
+        total: null,
+        instrumentedFetchDocAttempts: retrievals.entries.length,
+        instrumentedByPhase: retrievalCounts,
+        method: "fetch-doc.mjs retains one entry per HTTP response or failed attempt; normal direct HTTP and extension paths remain permitted and are not fully observable",
       },
       browserCommands: {
-        observed: phases.reduce((sum, phase) => sum + phase.browserCommands.observed, 0),
-        method: research.browserCommands.method,
+        total: null,
+        observedToolCalls: phases.reduce((sum, phase) => sum + phase.browserCommands.observed, 0),
+        method: `${research.browserCommands.method}; shell loops and extension-internal activity may not map one-to-one to browser commands`,
       },
       jev: {
         requests: 0,
         tokens: 0,
-        basis: "Jev credentials were removed from trial children; the fixed protocol forbids inference and exposes only the docs fetch helper",
+        basis: "Jev credentials were removed from trial children and the fixed protocol forbids inference; normal documentation and browser tools remain available",
       },
       verification: {
         method: "fresh independent Pi context applying the fixed checklist and re-fetching cited sources",
         wallTimeMs: evaluation.wallTimeMs,
         mainModelTurns: evaluation.mainModelTurns,
         mainModelTokens: evaluation.tokens,
-        directHttpRequests: retrievalCounts.evaluation,
+        directHttpRequests: null,
+        instrumentedFetchDocAttempts: retrievalCounts.evaluation,
       },
       recoveryWork: {
         value: null,
         reason: "not separately distinguishable from ordinary work; failed tool calls are reported independently",
       },
       retained: {
-        baselineOwnedProcesses: 0,
-        processMethod: "the runner awaited both Pi child exits; the protocol starts no daemon",
-        browserPages: 0,
-        pageMethod: "browser tools were not enabled and no chrome-devtools command was observed",
+        baselineOwnedProcesses: null,
+        processMethod: "unavailable: awaiting the direct Pi children does not establish whether they left descendants",
+        browserPages: null,
+        pageMethod: "unavailable: normal browser access is permitted and the runner does not inspect or close pre-existing browser state",
       },
       environment: {
         piVersion: await piVersion(piBin),
         nodeVersion: process.version,
         platform: `${process.platform}-${process.arch}`,
-        resourceDiscovery: "context files, extensions, skills and prompt templates disabled; fixed context copied into an isolated workspace",
-        enabledTools: ["read", "bash", "grep", "find", "ls"],
+        resourceDiscovery: "normal Pi discovery enabled for extensions, skills (including TypeSafe) and prompt templates; only repository trial files are isolated",
+        toolSelection: "normal Pi defaults; the runner does not apply a tool allowlist or disable browser-capable extensions",
+      },
+      frozenContext: {
+        commit: startingCommit,
+        method: "shared context files materialized directly from the named Git object with git show",
       },
       inputSha256,
       unavailableMeasurements,

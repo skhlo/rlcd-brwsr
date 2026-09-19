@@ -6,19 +6,21 @@ Read `task.md`, `CONTEXT.md`, `RLCD-BRWSR.md`, and
 `0001-classifier-over-existing-browser-executor.md`. Then complete the exact task
 in `task.md`.
 
-Use a normal documentation-research approach. Start with the live TypeSafe index
-by running:
+Use Pi's normal documentation-research approach. The TypeSafe skill is available;
+follow its live-documentation guidance, starting from the current TypeSafe index
+and reading only the targeted official sources needed for the brief. Choose direct
+Markdown/HTTP retrieval or Chrome as you ordinarily would. `fetch-doc.mjs` is an
+optional direct-fetch helper that records exact response attempts; it is not the
+only permitted network path. Keep source reads efficient and avoid loading
+irrelevant site application code.
 
-    node fetch-doc.mjs https://docs.typesafe.ai/llms.txt
+Do not use Firecrawl because it was not explicitly requested. Do not call the
+TypeSafe API or Jev, install anything, or use any previous answer or fetched page
+content.
 
-Discover and fetch only the targeted official Markdown pages needed for the
-brief. Fetch documentation only with `node fetch-doc.mjs <url>` so retrievals
-are measured. Do not use curl, wget, a browser, Firecrawl, another network tool,
-or cached page text. Do not call the TypeSafe API or Jev. Do not install anything
-or write files.
-
-Return the final research brief as Markdown in your final answer. Cover all five
-requested topics, apply the project context concretely to RLCD-brwsr, cite exact
-official documentation URLs inline near material claims, and state genuine gaps
-or unresolved documentation discrepancies. Do not report benchmark metrics or
-claim that a classifier completion judgment proves the research task complete.
+Return the final research brief as Markdown in your final answer rather than
+writing it to a file. Cover all five requested topics, apply the project context
+concretely to RLCD-brwsr, cite exact official documentation URLs inline near
+material claims, and state genuine gaps or unresolved documentation
+discrepancies. Do not report benchmark metrics or claim that a classifier
+completion judgment proves the research task complete.

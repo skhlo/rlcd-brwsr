@@ -4,99 +4,114 @@ This directory owns the issue #2 baseline for the fixed task in [`task.md`](task
 It measures a genuine Pi research pass and a separate Pi evaluation pass. It does
 not measure Jev or force documentation research through a browser.
 
-## Frozen inputs
+## Frozen inputs and isolation
 
 The task, shared repository context and
 [`evaluation-checklist.md`](evaluation-checklist.md) are fixed before the measured
-trials. `run-trial.mjs` copies only those inputs into an isolated temporary
-workspace and records SHA-256 hashes in each trial's `metrics.json`. The
-researcher does not receive the checklist, an earlier answer or another trial's
-sources. The evaluator receives the resulting brief and checklist but not the
-research transcript.
+trials. For every run, `run-trial.mjs` materializes the three shared context files
+directly from Git commit `6d7aa3f294e8da64aaa2b2ae5958c846e18472e3`.
+It does not copy those files from the working tree. The runner records SHA-256
+hashes of all inputs in `metrics.json`; a missing Git object or path fails the
+trial.
 
-Both phases use Pi's normal main model and built-in read/shell tools. They start
-as separate `--no-session` contexts. Project/global context discovery,
-extensions, skills and prompt templates are disabled so the recorded files are
-the complete shared task context; this does not replace Pi's default system
-prompt or host model authentication. The allowed shell path can call the small
-`fetch-doc.mjs` helper, which permits only `docs.typesafe.ai` and records one
-entry per HTTP response or failed attempt. Browser tools are not prohibited as a
-research conclusion; they are simply unnecessary and not enabled for this
-primary direct-documentation baseline.
+Research and evaluation each start in a separate `--no-session` Pi context inside
+an isolated temporary workspace. The researcher receives the fixed task and
+context, but not the checklist, an earlier answer, another trial's sources or its
+evaluation. The evaluator receives the resulting brief and fixed checklist, but
+not the research transcript.
 
-Raw Pi event streams and session files are not retained because they can contain
+## Normal research path
+
+The runner leaves Pi's normal extension, skill, prompt-template and tool discovery
+enabled. In particular, the TypeSafe skill is available. The prompts allow Pi to
+choose direct Markdown/HTTP retrieval or Chrome and do not require browser clicks.
+Firecrawl remains excluded because it was not explicitly requested. The runner
+removes `TYPESAFE_API_KEY`, and both prompts forbid TypeSafe API and Jev calls.
+
+`fetch-doc.mjs` remains available as optional instrumentation. It permits only
+`docs.typesafe.ai` in real trials and retains one record for each HTTP response or
+failed attempt, including response-body failures. Pi may instead use another
+normal retrieval path. Consequently, the runner reports exact helper attempts but
+marks the total direct-HTTP count unknown. It likewise reports observable Chrome
+tool calls while marking the total browser-command count unknown rather than
+turning an unrestricted path into a false zero.
+
+Raw Pi event streams and sessions are not retained because they can contain
 reasoning text and private host paths. `summarize-events.mjs` extracts the final
 answer, model identity, provider-reported token fields, turns and observable tool
-counts before the temporary workspace is removed. The committed artifacts keep
-the research brief, independent evaluation, retrieval URL/timestamp/status/hash
-records and summarized measurements.
+counts before the temporary workspace is removed. The committed artifacts retain
+the brief, independent evaluation, any helper retrieval records and summarized
+measurements.
 
 ## Cold and warm observations
 
 These are operational labels, not claims that every upstream cache was purged:
 
-- **Cold** - the first measured execution after the protocol is frozen, in fresh
-  research and evaluation contexts, before any measured run of this prompt.
+- **Cold** - the first measured normal-path execution after the corrected protocol
+  is frozen, in fresh research and evaluation contexts.
 - **Warm** - the immediately subsequent matched execution on the same host and
-  model settings, again in fresh isolated contexts. It may benefit from ordinary
-  provider or network infrastructure caches, but it receives no prior answer or
-  fetched page content.
+  model settings, again in fresh contexts. It may benefit from ordinary provider
+  or network infrastructure caches but receives no prior answer or fetched page
+  content.
 
-Each documentation retrieval is a fresh Node process; it has no application
-response cache. DNS, TLS, CDN and provider caches are not controlled. Pi's
-provider-reported cache-read/cache-write tokens and the host's
-`PI_CACHE_RETENTION` setting are recorded. A “cold” observation can therefore
-still report cache-read tokens and must not be relabeled.
+The optional helper has no application response cache. DNS, TLS, CDN, browser and
+provider caches are not controlled. Pi's provider-reported cache-read/cache-write
+tokens and the host's `PI_CACHE_RETENTION` setting are recorded. A cold observation
+can therefore report cache-read tokens and must not be relabeled.
 
-Issue #2 intentionally retains one cold and one warm observation to keep model
-use proportionate. Each condition has `n=1`, so its observed value is also its
-median. Future matched comparisons should use equal run counts. For larger
+Issue #2 retains one corrected cold and one corrected warm observation to keep
+model use proportionate. Each condition has `n=1`, so its observed value is also
+its median. Future matched comparisons should use equal run counts. For larger
 samples, sort each condition's successful observations by a metric and use the
 middle value for odd `n` or the arithmetic mean of the two middle values for even
 `n`; do not discard failed outcomes from the verified-outcome count.
 
+The earlier `2026-09-19-cold-1` and `2026-09-19-warm-1` directories are retained
+as constrained pilots. They disabled normal Pi resources and forced all network
+access through `fetch-doc.mjs`, so they are not accepted baseline observations and
+must not be pooled with the corrected runs. See [`RESULTS.md`](RESULTS.md).
+
 ## Run procedure
 
 From the repository root, confirm the intended branch/commit and a clean trial
-output path, then run:
+output path, then run cold immediately before warm:
 
 ```sh
 node --test experiments/typesafe-research-baseline/trial-tools.test.mjs
 
 node experiments/typesafe-research-baseline/run-trial.mjs \
   --condition cold \
-  --output experiments/typesafe-research-baseline/runs/<date>-cold-1
+  --output experiments/typesafe-research-baseline/runs/<date>-normal-cold-1
 
 node experiments/typesafe-research-baseline/run-trial.mjs \
   --condition warm \
-  --output experiments/typesafe-research-baseline/runs/<date>-warm-1
+  --output experiments/typesafe-research-baseline/runs/<date>-normal-warm-1
 ```
 
 The runner reads `PI_PROVIDER`, `PI_MODEL` and `PI_REASONING_LEVEL` from the
-calling Pi shell environment and passes them explicitly to both child contexts.
+calling Pi shell environment and passes them explicitly to each child context.
 Flags with the same names are available for a deliberate matched rerun. It also
-records Pi and Node versions without changing host configuration. The runner
-removes `TYPESAFE_API_KEY` from child environments and the protocol forbids Jev
-inference; no TypeSafe credential or inference is needed.
+records Pi and Node versions without changing host configuration. No TypeSafe
+credential, paid inference, dependency installation or global configuration
+change is needed.
 
-Run cold before warm and do not open a retained brief in the warm research
-context. Compare `inputSha256` and the retrieval URL/content hashes before using
-these observations against a later fast-loop trial. Rerun the affected baseline
-when task inputs or material source content drift.
+Do not open a retained brief in the warm research context. Compare `inputSha256`
+and material source content before using these observations against a later
+fast-loop trial. Rerun the affected baseline when task inputs or material sources
+drift.
 
 ## Measurement boundaries
 
 `wallTimeMs` starts before isolated-workspace preparation and ends after the
 independent evaluator returns. It includes Pi startup, source gathering,
-synthesis, brief handoff, citation re-fetching and evaluation. Phase times split
+synthesis, brief handoff, citation checking and evaluation. Phase times split
 research from verification. Main-model turns are completed assistant messages;
-tokens are the sum of provider-reported input, output, cache-read, cache-write
-and total fields. Direct HTTP requests are retained helper attempts, including
-redirect responses. Browser commands are observable `chrome-devtools` tool or
-executable matches in captured tool calls.
+tokens are sums of provider-reported fields.
 
-The event stream cannot distinguish recovery reasoning from ordinary work.
-`recoveryWork` is therefore unavailable rather than guessed; failed tool calls
-are counted separately. The runner awaits both Pi children and starts no daemon.
-No browser tool is enabled, so this baseline retains no browser page. These
-limits are repeated in each trial's metrics and in [`RESULTS.md`](RESULTS.md).
+The event stream cannot distinguish recovery reasoning from ordinary work, so
+`recoveryWork` is unavailable and failed tool calls are reported separately.
+Awaiting the two direct Pi children does not prove that descendants are gone, so
+retained baseline-owned descendants are also unavailable. Normal browser access
+means retained page state is unavailable unless separately inspected. The runner
+does not inspect or close pre-existing browser state. These limits are repeated in
+each corrected trial's metrics and in [`RESULTS.md`](RESULTS.md).

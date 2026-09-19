@@ -7,8 +7,27 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { readFileAtCommit } from "./run-trial.mjs";
 
 const directory = path.dirname(fileURLToPath(import.meta.url));
+
+async function runCommand(executable, args, options = {}) {
+  const child = spawn(executable, args, {
+    cwd: options.cwd ?? directory,
+    env: { ...process.env, ...options.env },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  const stdout = [];
+  const stderr = [];
+  child.stdout.on("data", (chunk) => stdout.push(chunk));
+  child.stderr.on("data", (chunk) => stderr.push(chunk));
+  const [code] = await once(child, "close");
+  return {
+    code,
+    stdout: Buffer.concat(stdout).toString("utf8"),
+    stderr: Buffer.concat(stderr).toString("utf8"),
+  };
+}
 
 async function runNode(script, args, options = {}) {
   const child = spawn(process.execPath, [path.join(directory, script), ...args], {
@@ -153,6 +172,58 @@ test("summarize-events marks provider token usage unavailable instead of inventi
   }
 });
 
+test("trial prompts preserve normal Pi research paths while excluding Firecrawl and Jev", async () => {
+  for (const name of ["research.md", "evaluate.md"]) {
+    const prompt = await readFile(path.join(directory, "prompts", name), "utf8");
+    assert.match(prompt, /normal Pi|normal documentation-research/i);
+    assert.match(prompt, /TypeSafe skill/i);
+    assert.match(prompt, /Chrome/i);
+    assert.match(prompt, /Firecrawl/i);
+    assert.match(prompt, /Do not call[\s\S]{0,40}Jev|Do not use[\s\S]{0,40}Jev|must not call Jev/i);
+    assert.doesNotMatch(prompt, /Fetch documentation only with|Do not use curl, wget, a browser/i);
+  }
+});
+
+test("frozen context comes from the pinned Git object instead of a changed working tree", async () => {
+  const temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "rlcd-frozen-input-test-"));
+  try {
+    assert.equal((await runCommand("git", ["init", "--quiet"], { cwd: temporaryDirectory })).code, 0);
+    assert.equal(
+      (await runCommand("git", ["config", "user.email", "test@example.invalid"], {
+        cwd: temporaryDirectory,
+      })).code,
+      0,
+    );
+    assert.equal(
+      (await runCommand("git", ["config", "user.name", "Baseline Test"], {
+        cwd: temporaryDirectory,
+      })).code,
+      0,
+    );
+    const contextPath = path.join(temporaryDirectory, "CONTEXT.md");
+    await writeFile(contextPath, "frozen context\n");
+    assert.equal((await runCommand("git", ["add", "CONTEXT.md"], { cwd: temporaryDirectory })).code, 0);
+    assert.equal(
+      (await runCommand("git", ["commit", "--quiet", "-m", "test: freeze context"], {
+        cwd: temporaryDirectory,
+      })).code,
+      0,
+    );
+    const revision = await runCommand("git", ["rev-parse", "HEAD"], { cwd: temporaryDirectory });
+    assert.equal(revision.code, 0, revision.stderr);
+
+    await writeFile(contextPath, "changed working-tree context\n");
+
+    assert.equal(
+      (await readFileAtCommit(temporaryDirectory, revision.stdout.trim(), "CONTEXT.md")).toString(),
+      "frozen context\n",
+    );
+    assert.equal(await readFile(contextPath, "utf8"), "changed working-tree context\n");
+  } finally {
+    await rm(temporaryDirectory, { recursive: true });
+  }
+});
+
 test("run-trial retains sanitized public artifacts and measured phase totals", async () => {
   const temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "rlcd-runner-test-"));
   try {
@@ -164,6 +235,19 @@ test("run-trial retains sanitized public artifacts and measured phase totals", a
 if (process.argv.includes("--version")) {
   console.log("0.85.1");
   process.exit(0);
+}
+const forbiddenFlags = [
+  "--no-context-files",
+  "--no-extensions",
+  "--no-skills",
+  "--no-prompt-templates",
+  "--no-tools",
+  "--tools",
+];
+const disabledNormalResource = forbiddenFlags.find((flag) => process.argv.includes(flag));
+if (disabledNormalResource) {
+  console.error(\`Normal Pi resource discovery disabled by \${disabledNormalResource}\`);
+  process.exit(2);
 }
 const phase = process.env.BASELINE_PHASE;
 const finalAnswer = phase === "research"
@@ -213,11 +297,18 @@ console.log(JSON.stringify(event));
       cacheWrite: 0,
       total: 36,
     });
-    assert.equal(metrics.directHttpRequests.observed, 0);
-    assert.equal(metrics.browserCommands.observed, 0);
+    assert.equal(metrics.directHttpRequests.total, null);
+    assert.equal(metrics.directHttpRequests.instrumentedFetchDocAttempts, 0);
+    assert.equal(metrics.browserCommands.total, null);
+    assert.equal(metrics.browserCommands.observedToolCalls, 0);
     assert.deepEqual(metrics.failedToolCalls, {});
-    assert.equal(metrics.retained.baselineOwnedProcesses, 0);
-    assert.equal(metrics.retained.browserPages, 0);
+    assert.equal(metrics.retained.baselineOwnedProcesses, null);
+    assert.equal(metrics.retained.browserPages, null);
+    assert.match(metrics.environment.resourceDiscovery, /normal Pi discovery enabled/);
+    assert.equal(metrics.frozenContext.commit, "6d7aa3f294e8da64aaa2b2ae5958c846e18472e3");
+    assert.match(metrics.frozenContext.method, /Git object/);
+    assert(metrics.unavailableMeasurements.includes("total direct HTTP requests"));
+    assert(metrics.unavailableMeasurements.includes("retained baseline-owned descendant processes"));
     assert.match(await readFile(path.join(outputDirectory, "brief.md"), "utf8"), /Fake brief/);
     assert.match(await readFile(path.join(outputDirectory, "evaluation.md"), "utf8"), /VERDICT: PASS/);
     assert.deepEqual((await readdir(outputDirectory)).sort(), [
@@ -227,6 +318,50 @@ console.log(JSON.stringify(event));
       "retrievals.jsonl",
     ]);
   } finally {
+    await rm(temporaryDirectory, { recursive: true });
+  }
+});
+
+test("fetch-doc records a response when reading its body fails", async () => {
+  const server = http.createServer((_request, response) => {
+    response.writeHead(200, {
+      "content-length": "100",
+      "content-type": "text/markdown",
+    });
+    response.flushHeaders();
+    response.write("partial");
+    response.destroy();
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+
+  const temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "rlcd-fetch-test-"));
+  try {
+    const address = server.address();
+    assert(address && typeof address === "object");
+    const origin = `http://127.0.0.1:${address.port}`;
+    const logPath = path.join(temporaryDirectory, "retrievals.jsonl");
+    const result = await runNode("fetch-doc.mjs", [`${origin}/document.md`], {
+      env: {
+        BASELINE_ALLOW_ORIGIN: origin,
+        BASELINE_HTTP_LOG: logPath,
+        BASELINE_PHASE: "research",
+      },
+    });
+
+    assert.equal(result.code, 1);
+    const entries = (await readFile(logPath, "utf8"))
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+    assert.equal(entries.length, 1);
+    assert.equal(entries[0].status, 200);
+    assert.equal(entries[0].bytes, null);
+    assert.equal(entries[0].sha256, null);
+    assert.match(entries[0].error, /terminated|body|socket/i);
+  } finally {
+    server.close();
+    await once(server, "close");
     await rm(temporaryDirectory, { recursive: true });
   }
 });

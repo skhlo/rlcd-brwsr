@@ -1,5 +1,8 @@
 {
   "schemaVersion": 1,
+  "artifactStatus": "constrained-pilot",
+  "acceptedBaseline": false,
+  "correctionNote": "Normal Pi resources and network paths were disabled; retained descendant processes were not measured.",
   "condition": "cold",
   "startingCommit": "6d7aa3f294e8da64aaa2b2ae5958c846e18472e3",
   "startedAt": "2026-09-19T15:18:14.862Z",
@@ -93,8 +96,8 @@
     "reason": "not separately distinguishable from ordinary work; failed tool calls are reported independently"
   },
   "retained": {
-    "baselineOwnedProcesses": 0,
-    "processMethod": "the runner awaited both Pi child exits; the protocol starts no daemon",
+    "baselineOwnedProcesses": null,
+    "processMethod": "unavailable: awaiting the direct Pi children did not establish whether they left descendants",
     "browserPages": 0,
     "pageMethod": "browser tools were not enabled and no chrome-devtools command was observed"
   },
@@ -122,6 +125,7 @@
     "evaluation-checklist.md": "4545ef417e604155e5c204df99a18dbde70dce3cc953e532e540544d686adf42"
   },
   "unavailableMeasurements": [
-    "recovery work beyond observable failed tool calls"
+    "recovery work beyond observable failed tool calls",
+    "retained baseline-owned descendant processes"
   ]
 }

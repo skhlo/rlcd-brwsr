@@ -1,0 +1,132 @@
+{
+  "schemaVersion": 2,
+  "trialKind": "normal-pi-baseline",
+  "condition": "cold",
+  "startingCommit": "6d7aa3f294e8da64aaa2b2ae5958c846e18472e3",
+  "startedAt": "2026-09-19T15:51:21.323Z",
+  "endedAt": "2026-09-19T15:58:18.641Z",
+  "wallTimeMs": 417316,
+  "verifiedOutcome": "FAIL",
+  "mainModel": {
+    "provider": "openai-codex",
+    "model": "gpt-5.6-sol",
+    "thinking": "xhigh",
+    "turns": 22,
+    "tokens": {
+      "input": 176415,
+      "output": 19227,
+      "cacheRead": 548736,
+      "cacheWrite": 0,
+      "total": 744378
+    },
+    "phaseTurns": {
+      "research": 15,
+      "evaluation": 7
+    },
+    "phaseTokens": {
+      "research": {
+        "input": 47282,
+        "output": 10382,
+        "cacheRead": 382208,
+        "cacheWrite": 0,
+        "total": 439872
+      },
+      "evaluation": {
+        "input": 129133,
+        "output": 8845,
+        "cacheRead": 166528,
+        "cacheWrite": 0,
+        "total": 304506
+      }
+    }
+  },
+  "cacheConditions": {
+    "freshPiContextPerPhase": true,
+    "sessionPersistence": "disabled with --no-session",
+    "priorAnswerAvailableToResearcher": false,
+    "piCacheRetention": "unset",
+    "providerReportedCacheReadTokens": 548736,
+    "providerReportedCacheWriteTokens": 0,
+    "documentationCache": "the optional fetch-doc helper has no application cache; other normal retrieval paths and upstream DNS/CDN caches are not controlled"
+  },
+  "phaseWallTimeMs": {
+    "research": 227577,
+    "evaluation": 189695
+  },
+  "toolCalls": {
+    "read": 28,
+    "bash": 19
+  },
+  "failedToolCalls": {},
+  "directHttpRequests": {
+    "total": null,
+    "instrumentedFetchDocAttempts": 0,
+    "instrumentedByPhase": {
+      "research": 0,
+      "evaluation": 0
+    },
+    "method": "fetch-doc.mjs retains one entry per HTTP response or failed attempt; normal direct HTTP and extension paths remain permitted and are not fully observable"
+  },
+  "browserCommands": {
+    "total": null,
+    "observedToolCalls": 0,
+    "method": "literal chrome-devtools executable/tool matches in captured bash commands and tool calls; shell loops and extension-internal activity may not map one-to-one to browser commands"
+  },
+  "jev": {
+    "requests": 0,
+    "tokens": 0,
+    "basis": "Jev credentials were removed from trial children and the fixed protocol forbids inference; normal documentation and browser tools remain available"
+  },
+  "verification": {
+    "method": "fresh independent Pi context applying the fixed checklist and re-fetching cited sources",
+    "wallTimeMs": 189695,
+    "mainModelTurns": 7,
+    "mainModelTokens": {
+      "input": 129133,
+      "output": 8845,
+      "cacheRead": 166528,
+      "cacheWrite": 0,
+      "total": 304506
+    },
+    "directHttpRequests": null,
+    "instrumentedFetchDocAttempts": 0
+  },
+  "recoveryWork": {
+    "value": null,
+    "reason": "not separately distinguishable from ordinary work; failed tool calls are reported independently"
+  },
+  "retained": {
+    "baselineOwnedProcesses": null,
+    "processMethod": "unavailable: awaiting the direct Pi children does not establish whether they left descendants",
+    "browserPages": null,
+    "pageMethod": "unavailable: normal browser access is permitted and the runner does not inspect or close pre-existing browser state"
+  },
+  "environment": {
+    "piVersion": "0.85.1",
+    "nodeVersion": "v26.6.0",
+    "platform": "darwin-arm64",
+    "resourceDiscovery": "normal Pi discovery enabled for extensions, skills (including TypeSafe) and prompt templates; only repository trial files are isolated",
+    "toolSelection": "normal Pi defaults; the runner does not apply a tool allowlist or disable browser-capable extensions"
+  },
+  "frozenContext": {
+    "commit": "6d7aa3f294e8da64aaa2b2ae5958c846e18472e3",
+    "method": "shared context files materialized directly from the named Git object with git show"
+  },
+  "inputSha256": {
+    "task.md": "fd98a922fb03507db8acbba806b79085204d8b2f73047cfe093327515b3d51a2",
+    "fetch-doc.mjs": "6d58d059058837121b5283387fe6eeed1d07f518fcbf4cb4d4ca328921d96f4f",
+    "CONTEXT.md": "2a59cbda4357a6c82e410b6a3483045b481888a66feb6674e75df180ba72edd0",
+    "RLCD-BRWSR.md": "ed68ed32da4a5823e7c95560b7108ffb36fa0bea68b19fb2e395ee538031d84a",
+    "0001-classifier-over-existing-browser-executor.md": "d3f0cfae6984afb7eff9cf28d15770ae34d36da646c250cd7da79ddc3d5dd9aa",
+    "prompts/research.md": "f34dee589527046629a7fbcceece232f49f63025dd517a28e7091388591c6c16",
+    "prompts/evaluate.md": "c73d526a931f6d8bc3564e7b0fc12f258b25821199cd9d8ab758b7f1f6437a71",
+    "evaluation-checklist.md": "4545ef417e604155e5c204df99a18dbde70dce3cc953e532e540544d686adf42"
+  },
+  "unavailableMeasurements": [
+    "total direct HTTP requests",
+    "total browser commands across unrestricted tool paths",
+    "recovery work beyond observable failed tool calls",
+    "retained baseline-owned descendant processes",
+    "retained browser pages"
+  ]
+}

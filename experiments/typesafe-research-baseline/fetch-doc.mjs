@@ -53,7 +53,24 @@ async function fetchOnce(url) {
     throw error;
   }
 
-  const bytes = Buffer.from(await response.arrayBuffer());
+  let bytes;
+  try {
+    bytes = Buffer.from(await response.arrayBuffer());
+  } catch (error) {
+    await record({
+      phase: process.env.BASELINE_PHASE ?? "unknown",
+      url: url.href,
+      startedAt,
+      completedAt: new Date().toISOString(),
+      status: response.status,
+      bytes: null,
+      sha256: null,
+      location: response.headers.get("location"),
+      error: error instanceof Error ? error.message : String(error),
+    });
+    throw error;
+  }
+
   await record({
     phase: process.env.BASELINE_PHASE ?? "unknown",
     url: url.href,
