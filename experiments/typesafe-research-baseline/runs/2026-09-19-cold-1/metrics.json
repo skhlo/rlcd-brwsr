@@ -98,8 +98,8 @@
   "retained": {
     "baselineOwnedProcesses": null,
     "processMethod": "unavailable: awaiting the direct Pi children did not establish whether they left descendants",
-    "browserPages": 0,
-    "pageMethod": "browser tools were not enabled and no chrome-devtools command was observed"
+    "browserPages": null,
+    "pageMethod": "unavailable: the pilot did not inspect page state; no recognized browser command is not a page census"
   },
   "environment": {
     "piVersion": "0.85.1",
