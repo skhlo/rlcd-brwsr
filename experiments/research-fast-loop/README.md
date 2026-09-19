@@ -18,6 +18,40 @@ heads while the runner consumes only the head for the selected operation. It mak
 model requests. The main extension remains at `config/pi/extensions/rlcd-brwsr.ts`; this file is only
 the offline host-check adapter and is not installed globally.
 
+## Real Jev trial controls
+
+The production extension now uses built-in `fetch` with the pinned `jev-1.13.0` model and the
+`TYPESAFE_API_KEY` environment variable. It sends one request containing the runner's generic map of
+operation and conditional target questions. Use `run-jev-calibration.ts` only for the four labeled
+calibration cases; those examples are separate from later TUI evaluation trials.
+
+Every real request for issues #5 and #6 must use the repository ledger at
+`../jev-trial-ledger.json`. The adapter reserves one 64k-input-token worst-case request before calling
+TypeSafe, records reported usage after a valid response, and retains the full reservation when
+billing is unknown after an error or cancellation. Never set `ledgerPath: false` outside offline
+contract tests. Do not run trials concurrently; the adjacent `.lock` directory blocks overlapping
+writers and a surviving lock after a crash requires checking that no trial process remains before
+manual cleanup.
+
+Before issue #6 sends any request:
+
+1. Re-read `https://docs.typesafe.ai/models` and stop if the pinned model or input price no longer
+   fits the recorded reservation.
+2. Read the ledger, count every attempt, and sum `actualUsd` where present or `reservedUsd` where
+   actual billing is unknown.
+3. Keep the existing 100-request / US$5 cumulative caps and use `trialIssue: 6` with a short
+   non-sensitive purpose. Do not replace or reset the ledger.
+4. Source the host-owned credential without printing it, then run the child process in that shell.
+
+The model page currently documents a 64k shared request context and a 32k limit for state plus the
+longest question, while the primitives page describes the request budget as around 32k. The adapter
+therefore keeps the runner's 8,000-character state bound and also rejects an HTTP payload over 24,000
+UTF-8 bytes, rather than relying on the larger figure. Its cost reservation still uses the documented
+64k maximum. The selected pre-evaluation uncertainty floor stops an applicable operation or target
+head only when it is maximally uncertain (zero confidence or no unique probability leader within the
+0.001 validation tolerance); uncertainty on unused speculative heads is retained but ignored. This
+is not a calibrated general threshold. Broader gating must wait for labeled real-model results.
+
 Chrome DevTools CLI 1.7.0 replaces each native option's AX `value` with its displayed name in the
 snapshot. Its `fill` implementation resolves that name to the first matching option before reading the
 underlying DOM value. RLCD-brwsr therefore uses a unique observed option name as the executable value

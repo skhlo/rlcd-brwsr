@@ -85,6 +85,85 @@ function registerWithExternalFakes(options: {
 }
 
 describe("Pi registration", () => {
+  test("uses the real TypeSafe HTTP adapter in the registered production tool", async () => {
+    let registered: RegisteredTool | undefined;
+    let fetchCalls = 0;
+    const pi = {
+      registerTool(tool: RegisteredTool) {
+        registered = tool;
+      },
+      async exec() {
+        return processResult(
+          snapshot([
+            {
+              id: "1_1",
+              role: "StaticText",
+              name: "No action can advance the fixture goal.",
+            },
+          ]),
+        );
+      },
+    } as unknown as ExtensionAPI;
+
+    registerRlcdBrwsr(pi, {
+      typeSafe: {
+        apiKey: "local-test-key",
+        ledgerPath: false,
+        fetch: (async (_input, init) => {
+          fetchCalls += 1;
+          const body = JSON.parse(String(init?.body)) as {
+            questions: { operation: { criteria: Record<string, string> } };
+          };
+          const offered = Object.keys(body.questions.operation.criteria);
+          return new Response(
+            JSON.stringify({
+              model: "jev-1.13.0",
+              answers: { operation: choice("BLOCKED", offered) },
+              usage: { input_tokens: 111, output_tokens: 22 },
+            }),
+            { status: 200 },
+          );
+        }) as typeof fetch,
+      },
+      clock: { now: () => 1_000 },
+      wait: async () => {
+        await new Promise(() => {});
+      },
+    });
+    assert.ok(registered);
+
+    const toolResult = await registered.execute(
+      "real-http-adapter",
+      {
+        goal: "Stop when no offered action advances",
+        maxSteps: 1,
+        maxSeconds: 10,
+      },
+      new AbortController().signal,
+    );
+    const details = toolResult.details as RlcdRunResult;
+    const content = JSON.parse(toolResult.content[0]!.text) as {
+      classifierDiagnostics: RlcdRunResult["classifierDiagnostics"];
+    };
+
+    assert.equal(fetchCalls, 1);
+    assert.equal(details.stopReason, "blocked");
+    assert.equal(details.metrics.classifierCalls, 1);
+    assert.equal(details.metrics.modelInputTokens, 111);
+    assert.equal(details.metrics.modelOutputTokens, 22);
+    assert.deepEqual(content.classifierDiagnostics, [
+      {
+        call: 1,
+        step: 1,
+        outcome: "response",
+        durationMs: 0,
+        model: "jev-1.13.0",
+        inputTokens: 111,
+        outputTokens: 22,
+      },
+    ]);
+  });
+
   test("executes the real runner through registered schema, signal, and Pi CLI seams", async () => {
     const execCalls: Array<{
       command: string;

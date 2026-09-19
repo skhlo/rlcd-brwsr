@@ -144,3 +144,47 @@ These checks used Node 26.6.0, pnpm 11.27.0, Pi 0.85.1 and Chrome DevTools CLI 1
 than Paseo MCP. The task-created page, fixture server and TUI terminal were stopped afterward. The
 pre-existing executor daemon, selected `about:blank` page and unrelated Paseo Pi terminal were
 retained.
+
+## Real HTTP adapter and credential-blocked host check
+
+Date: 2026-09-19
+
+Issue #5 started from `f27a592428d99fcfcf0ecdf730d7f76b49b7e5a3`. The implementation adds the
+pinned `jev-1.13.0` HTTP adapter, strict response validation, cumulative trial ledger, per-call
+redacted diagnostics and raw independent judgments in bounded tool details. Public model pricing was
+read from `https://docs.typesafe.ai/models`: US$0.042 per million input tokens, with output tokens
+free. The 64k worst-case reservation is US$0.002688 per attempt, so the 100-request cap is also a
+US$0.2688 conservative ceiling at that price, below the separately authorized US$5 cap.
+
+The documented context limits disagree in presentation: the model page says 64k tokens shared across
+the request and 32k for state plus the longest question, while the primitives page describes the
+request budget as around 32k. The adapter keeps the existing 8,000-character classifier-state bound,
+adds a 24,000-byte serialized HTTP-payload bound, and reserves cost against 64k input tokens. It does
+not assume the larger context is available to the application.
+
+The host credential gate blocked paid calibration and real navigation. Each approved launch disabled
+shell tracing and sourced the host-owned credential file without reading or printing it, but
+`TYPESAFE_API_KEY` remained absent in the sourced shell and child process. Five local calibration
+launches stopped before ledger reservation or `fetch`; they are not API request attempts. The shared
+ledger therefore remains at zero attempted requests, US$0 actual cost, US$0 unknown-cost reserve, 100
+remaining requests and US$5 remaining authorized budget. No model distributions or calibration
+claims were fabricated.
+
+The actual Pi 0.85.1 TUI was still checked through Paseo CLI with the production extension and real
+Chrome executor. The visible `rlcd_brwsr_run` result stopped as `classifier_failed`, retained the
+source URL `http://127.0.0.1:43113/index.html`, included the bounded source excerpt, reported one
+classifier call with zero model tokens, and displayed a redacted per-call `error` diagnostic. A
+separate real-CLI snapshot independently confirmed the source title, text and destination link. The
+browser never mutated, so the destination was not reached or claimed. This is evidence for the local
+credential stop path, not real Jev navigation or uncertainty evaluation.
+
+The only selected uncertainty policy is an uncalibrated fail-safe floor: the applicable operation and
+selected target must have nonzero confidence and a unique probability leader outside the 0.001
+validation tolerance. An uncertain unused speculative target head does not stop an otherwise valid
+selected branch. Offline labeled tests cover both applicable heads and an unused zero-confidence
+head. The four labeled real-model calibration cases remain in `run-jev-calibration.ts`, separate from
+future evaluation, and were not run because no request could be authenticated.
+
+The task-created fixture page, server and four Paseo terminals were closed. The pre-existing Chrome
+daemon, selected `about:blank` page and unrelated Paseo Pi terminal were retained. Tailscale CLI was
+absent and was not installed.

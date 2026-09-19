@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "scope": "TypeSafe Jev trials for GitHub issues #5 and #6",
+  "budget": {
+    "maxRequests": 100,
+    "maxUsd": 5,
+    "model": "jev-1.13.0",
+    "inputUsdPerMillionTokens": 0.042,
+    "reservationInputTokensPerAttempt": 64000,
+    "reservationUsdPerAttempt": 0.002688
+  },
+  "pricing": {
+    "source": "https://docs.typesafe.ai/models",
+    "retrievedAt": "2026-09-19",
+    "note": "Input tokens are billed; output tokens are free. Unknown outcomes retain the full reservation."
+  },
+  "attempts": []
+}

@@ -177,6 +177,175 @@ describe("rlcd_brwsr runner", () => {
     );
   });
 
+  test("retains independent judgments and ignores uncertainty on an unused target branch", async () => {
+    let now = 1_000;
+    const page = snapshot(
+      "1_0",
+      "http://127.0.0.1/independent",
+      "Independent heads fixture",
+      [
+        { id: "1_1", role: "link", name: "Open relevant evidence" },
+        { id: "1_2", role: "textbox", name: "Unused search" },
+      ],
+    );
+    const browserResults = [processResult(page), processResult(page)];
+
+    const result = await createRlcdBrwsrRunner({
+      classifier: async (request) => {
+        now += 25;
+        const clickOptions = Object.keys(
+          request.questions.click_target!.options,
+        );
+        const typeOptions = Object.keys(
+          request.questions.type_text_pair!.options,
+        );
+        return {
+          model: "jev-1.13.0",
+          answers: {
+            operation: choice("CLICK", request.candidates.operations),
+            click_target: choice("CLICK_0", clickOptions),
+            type_text_pair: {
+              type: "choice",
+              choice: typeOptions[0],
+              confidence: 0,
+              probabilities: Object.fromEntries(
+                typeOptions.map((option) => [option, 1 / typeOptions.length]),
+              ),
+            },
+          },
+          usage: { input_tokens: 123, output_tokens: 45 },
+        };
+      },
+      cli: async () => {
+        const browserResult = browserResults.shift();
+        assert.ok(browserResult);
+        return browserResult;
+      },
+      clock: { now: () => now },
+      wait: async () => {
+        await new Promise(() => {});
+      },
+    })({
+      goal: 'Open the evidence; do not use "unused query"',
+      maxSteps: 1,
+      maxSeconds: 10,
+    });
+
+    assert.equal(result.stopReason, "step_budget");
+    assert.deepEqual(Object.keys(result.trace[0]!.judgments), [
+      "operation",
+      "click_target",
+      "type_text_pair",
+    ]);
+    assert.equal(result.trace[0]!.judgments.type_text_pair!.confidence, 0);
+    assert.equal(result.trace[0]!.outcome, "observed");
+    assert.deepEqual(result.classifierDiagnostics, [
+      {
+        call: 1,
+        step: 1,
+        outcome: "response",
+        durationMs: 25,
+        model: "jev-1.13.0",
+        inputTokens: 123,
+        outputTokens: 45,
+      },
+    ]);
+  });
+
+  test("stops before mutation when the selected target judgment is maximally uncertain", async () => {
+    const cliArgv: string[][] = [];
+    const result = await createRlcdBrwsrRunner({
+      classifier: async (request) => {
+        const targetOptions = Object.keys(
+          request.questions.click_target!.options,
+        );
+        return {
+          model: "jev-1.13.0",
+          answers: {
+            operation: choice("CLICK", request.candidates.operations),
+            click_target: {
+              type: "choice",
+              choice: targetOptions[0],
+              confidence: 0,
+              probabilities: Object.fromEntries(
+                targetOptions.map((option) => [
+                  option,
+                  1 / targetOptions.length,
+                ]),
+              ),
+            },
+          },
+          usage: { input_tokens: 100, output_tokens: 20 },
+        };
+      },
+      cli: async (args) => {
+        cliArgv.push([...args]);
+        return processResult(
+          snapshot(
+            "1_0",
+            "http://127.0.0.1/uncertain",
+            "Uncertain target fixture",
+            [
+              { id: "1_1", role: "link", name: "First possible source" },
+              { id: "1_2", role: "link", name: "Second possible source" },
+            ],
+          ),
+        );
+      },
+      clock: { now: () => 1_000 },
+      wait: async () => {
+        await new Promise(() => {});
+      },
+    })({ goal: "Open the relevant source", maxSteps: 1, maxSeconds: 10 });
+
+    assert.equal(result.stopReason, "classifier_uncertain");
+    assert.deepEqual(cliArgv, [["take_snapshot", "--output-format=json"]]);
+    assert.equal(result.trace[0]!.outcome, "classifier_uncertain");
+    assert.equal(result.trace[0]!.judgments.click_target!.confidence, 0);
+    assert.equal(result.classifierDiagnostics[0]!.outcome, "uncertain");
+  });
+
+  test("stops when the selected operation judgment is maximally uncertain", async () => {
+    let cliCalls = 0;
+    const result = await createRlcdBrwsrRunner({
+      classifier: async (request) => ({
+        answers: {
+          operation: {
+            type: "choice",
+            choice: request.candidates.operations[0],
+            confidence: 0,
+            probabilities: Object.fromEntries(
+              request.candidates.operations.map((operation) => [
+                operation,
+                1 / request.candidates.operations.length,
+              ]),
+            ),
+          },
+        },
+      }),
+      cli: async () => {
+        cliCalls += 1;
+        return processResult(
+          snapshot(
+            "1_0",
+            "http://127.0.0.1/uncertain-operation",
+            "Uncertain operation fixture",
+            [{ id: "1_1", role: "StaticText", name: "Ambiguous next step" }],
+          ),
+        );
+      },
+      clock: { now: () => 1_000 },
+      wait: async () => {
+        await new Promise(() => {});
+      },
+    })({ goal: "Choose the next step", maxSteps: 1, maxSeconds: 10 });
+
+    assert.equal(result.stopReason, "classifier_uncertain");
+    assert.equal(result.trace[0]!.operation, "PAGE_UP");
+    assert.equal(result.trace[0]!.outcome, "classifier_uncertain");
+    assert.equal(cliCalls, 1);
+  });
+
   test("types one exact quoted Unicode value into the selected complete field/value pair", async () => {
     const exactValue = 'Jev "quoted" — café \\ path';
     const start = processResult(

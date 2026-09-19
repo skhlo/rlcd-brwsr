@@ -1,4 +1,6 @@
 import { createHash } from "node:crypto";
+import { mkdir, readFile, rename, rmdir, writeFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
@@ -24,6 +26,18 @@ const MAX_TOTAL_EVIDENCE_CHARS = 3_600;
 const MAX_CLASSIFIER_REQUEST_CHARS = 8_000;
 const MAX_TOOL_CONTENT_CHARS = 12_000;
 const WAIT_MILLISECONDS = 250;
+const TYPESAFE_ENDPOINT = "https://api.typesafe.ai/v1/systemone";
+const TYPESAFE_MODEL = "jev-1.13.0";
+const MAX_TYPESAFE_PAYLOAD_BYTES = 24_000;
+const PROBABILITY_SUM_TOLERANCE = 0.001;
+const MAX_JEV_TRIAL_REQUESTS = 100;
+const MAX_JEV_TRIAL_USD = 5;
+const JEV_INPUT_USD_PER_MILLION_TOKENS = 0.042;
+const JEV_RESERVED_INPUT_TOKENS_PER_ATTEMPT = 64_000;
+const JEV_RESERVED_USD_PER_ATTEMPT = 0.002688;
+export const JEV_TRIAL_LEDGER_PATH = fileURLToPath(
+  new URL("../../../experiments/jev-trial-ledger.json", import.meta.url),
+);
 
 type Operation =
   | "CLICK"
@@ -52,6 +66,7 @@ type StopReason =
   | "uncertain_execution"
   | "classifier_failed"
   | "invalid_classifier_response"
+  | "classifier_uncertain"
   | "unchanged_state";
 
 export interface RlcdRunInput {
@@ -129,6 +144,209 @@ export type Classifier = (
   context: ClassifierContext,
 ) => Promise<unknown>;
 
+export interface TypeSafeClassifierOptions {
+  apiKey?: string;
+  fetch?: typeof fetch;
+  ledgerPath?: string | false;
+  trialIssue?: 5 | 6;
+  trialPurpose?: string;
+}
+
+interface JevTrialAttempt {
+  id: number;
+  issue: 5 | 6;
+  purpose: string;
+  startedAt: string;
+  outcome: string;
+  reservedUsd: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  actualUsd?: number;
+}
+
+interface JevTrialLedger {
+  schemaVersion: 1;
+  scope: string;
+  budget: {
+    maxRequests: number;
+    maxUsd: number;
+    model: string;
+    inputUsdPerMillionTokens: number;
+    reservationInputTokensPerAttempt: number;
+    reservationUsdPerAttempt: number;
+  };
+  pricing: {
+    source: string;
+    retrievedAt: string;
+    note: string;
+  };
+  attempts: JevTrialAttempt[];
+}
+
+export function createTypeSafeClassifier(
+  options: TypeSafeClassifierOptions = {},
+): Classifier {
+  return async (request, context) => {
+    context.signal.throwIfAborted();
+    const apiKey = options.apiKey ?? process.env.TYPESAFE_API_KEY;
+    if (!apiKey?.trim()) {
+      throw new Error(
+        "TYPESAFE_API_KEY is not configured; no TypeSafe request was sent",
+      );
+    }
+
+    const questions: Record<
+      string,
+      {
+        type: "choice";
+        instructions: string;
+        criteria: Record<string, string>;
+      }
+    > = {};
+    for (const [questionId, question] of Object.entries(request.questions)) {
+      if (!question) continue;
+      questions[questionId] = {
+        type: "choice",
+        instructions: question.instruction,
+        criteria: question.options,
+      };
+    }
+    const body = JSON.stringify({
+      state: {
+        goal: request.goal,
+        current_page: request.observation,
+        retained_sources: request.retainedSources,
+        recent_actions: request.recentActions,
+      },
+      model: TYPESAFE_MODEL,
+      questions,
+    });
+    if (Buffer.byteLength(body, "utf8") > MAX_TYPESAFE_PAYLOAD_BYTES) {
+      throw new Error(
+        `TypeSafe request exceeds the ${MAX_TYPESAFE_PAYLOAD_BYTES}-byte conservative bound; no request was sent`,
+      );
+    }
+
+    const credential = apiKey.trim();
+    const ledgerPath =
+      options.ledgerPath === false
+        ? undefined
+        : (options.ledgerPath ?? JEV_TRIAL_LEDGER_PATH);
+    const attemptId = ledgerPath
+      ? await reserveJevTrialAttempt(
+          ledgerPath,
+          options.trialIssue ?? 5,
+          options.trialPurpose ?? "rlcd_brwsr_run",
+        )
+      : undefined;
+    let ledgerOutcome = "request_failed";
+    let ledgerSettled = false;
+
+    try {
+      let response: Response;
+      try {
+        response = await (options.fetch ?? globalThis.fetch)(
+          TYPESAFE_ENDPOINT,
+          {
+            method: "POST",
+            headers: {
+              authorization: `Bearer ${credential}`,
+              "content-type": "application/json",
+            },
+            body,
+            signal: context.signal,
+          },
+        );
+      } catch (error) {
+        if (context.signal.aborted) {
+          ledgerOutcome = "cancelled";
+          throw (
+            context.signal.reason ?? new Error("TypeSafe request cancelled")
+          );
+        }
+        ledgerOutcome = "network_error";
+        const diagnostic = (
+          error instanceof Error ? error.message : String(error)
+        )
+          .split(credential)
+          .join("[REDACTED]");
+        throw new Error(
+          boundedText(
+            `TypeSafe network request failed: ${diagnostic}`,
+            MAX_ERROR_CHARS,
+          ),
+        );
+      }
+      let responseText: string;
+      try {
+        responseText = await response.text();
+      } catch (error) {
+        if (context.signal.aborted) {
+          ledgerOutcome = "cancelled";
+          throw (
+            context.signal.reason ?? new Error("TypeSafe request cancelled")
+          );
+        }
+        ledgerOutcome = "body_read_error";
+        const diagnostic = (
+          error instanceof Error ? error.message : String(error)
+        )
+          .split(credential)
+          .join("[REDACTED]");
+        throw new Error(
+          boundedText(
+            `TypeSafe response body read failed: ${diagnostic}`,
+            MAX_ERROR_CHARS,
+          ),
+        );
+      }
+      if (!response.ok) {
+        ledgerOutcome = `http_${response.status}`;
+        const diagnostic = responseText.trim() || "empty response body";
+        const redacted = diagnostic.split(credential).join("[REDACTED]");
+        const status = `${response.status}${response.statusText ? ` ${response.statusText}` : ""}`;
+        throw new Error(
+          boundedText(`TypeSafe HTTP ${status}: ${redacted}`, MAX_ERROR_CHARS),
+        );
+      }
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(responseText) as unknown;
+      } catch {
+        ledgerOutcome = "malformed_json";
+        throw new Error("TypeSafe returned malformed JSON");
+      }
+      if (!validateTypeSafeResponse(parsed, request)) {
+        ledgerOutcome = "invalid_response";
+        throw new Error("TypeSafe returned an invalid response");
+      }
+
+      const parsedRecord = parsed as Record<string, unknown>;
+      const usageRecord = parsedRecord.usage as Record<string, unknown>;
+      ledgerOutcome = "success";
+      if (ledgerPath && attemptId !== undefined) {
+        await completeJevTrialAttempt(ledgerPath, attemptId, ledgerOutcome, {
+          inputTokens: usageRecord.input_tokens as number,
+          outputTokens: usageRecord.output_tokens as number,
+        });
+        ledgerSettled = true;
+      }
+      return parsed;
+    } catch (error) {
+      if (ledgerPath && attemptId !== undefined && !ledgerSettled) {
+        try {
+          await completeJevTrialAttempt(ledgerPath, attemptId, ledgerOutcome);
+        } catch (ledgerError) {
+          throw new Error(
+            `Jev trial ledger could not record ${ledgerOutcome}; its pre-request reservation remains: ${errorText(ledgerError)}`,
+          );
+        }
+      }
+      throw error;
+    }
+  };
+}
+
 export interface CliOptions {
   signal: AbortSignal;
   timeoutMs: number;
@@ -169,6 +387,23 @@ export interface ActionTraceEntry {
   model?: string;
   operationProbabilities: Record<string, number>;
   targetProbabilities?: Record<string, number>;
+  judgments: Record<string, ChoiceAnswer>;
+}
+
+export interface ClassifierDiagnostic {
+  call: number;
+  step: number;
+  outcome:
+    | "response"
+    | "cancelled"
+    | "timeout"
+    | "error"
+    | "invalid_response"
+    | "uncertain";
+  durationMs: number;
+  model?: string;
+  inputTokens?: number;
+  outputTokens?: number;
 }
 
 export interface RlcdRunResult {
@@ -194,6 +429,7 @@ export interface RlcdRunResult {
     excludedConsequentialControlsTruncated: boolean;
   };
   trace: ActionTraceEntry[];
+  classifierDiagnostics: ClassifierDiagnostic[];
   errors: string[];
   metrics: {
     elapsedMs: number;
@@ -244,7 +480,7 @@ interface Observation {
   excludedConsequentialControlsTruncated: boolean;
 }
 
-interface ChoiceAnswer {
+export interface ChoiceAnswer {
   choice: string;
   confidence: number;
   probabilities: Record<string, number>;
@@ -253,6 +489,7 @@ interface ChoiceAnswer {
 interface ValidDecision {
   operation: ChoiceAnswer & { choice: Operation };
   target?: ChoiceAnswer;
+  judgments: Record<string, ChoiceAnswer>;
   model?: string;
   usage?: { inputTokens: number; outputTokens: number };
 }
@@ -305,6 +542,205 @@ const consequentialControl =
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isNodeErrorWithCode(
+  error: unknown,
+): error is NodeJS.ErrnoException & { code: string } {
+  return (
+    error instanceof Error &&
+    typeof (error as NodeJS.ErrnoException).code === "string"
+  );
+}
+
+function parseJevTrialLedger(value: unknown): JevTrialLedger | undefined {
+  if (
+    !isRecord(value) ||
+    value.schemaVersion !== 1 ||
+    typeof value.scope !== "string" ||
+    !isRecord(value.budget) ||
+    value.budget.maxRequests !== MAX_JEV_TRIAL_REQUESTS ||
+    value.budget.maxUsd !== MAX_JEV_TRIAL_USD ||
+    value.budget.model !== TYPESAFE_MODEL ||
+    value.budget.inputUsdPerMillionTokens !==
+      JEV_INPUT_USD_PER_MILLION_TOKENS ||
+    value.budget.reservationInputTokensPerAttempt !==
+      JEV_RESERVED_INPUT_TOKENS_PER_ATTEMPT ||
+    value.budget.reservationUsdPerAttempt !== JEV_RESERVED_USD_PER_ATTEMPT ||
+    !isRecord(value.pricing) ||
+    typeof value.pricing.source !== "string" ||
+    typeof value.pricing.retrievedAt !== "string" ||
+    typeof value.pricing.note !== "string" ||
+    !Array.isArray(value.attempts)
+  ) {
+    return undefined;
+  }
+
+  const attempts: JevTrialAttempt[] = [];
+  const ids = new Set<number>();
+  for (const attempt of value.attempts) {
+    if (
+      !isRecord(attempt) ||
+      typeof attempt.id !== "number" ||
+      !Number.isSafeInteger(attempt.id) ||
+      attempt.id < 1 ||
+      ids.has(attempt.id) ||
+      (attempt.issue !== 5 && attempt.issue !== 6) ||
+      typeof attempt.purpose !== "string" ||
+      typeof attempt.startedAt !== "string" ||
+      typeof attempt.outcome !== "string" ||
+      attempt.reservedUsd !== JEV_RESERVED_USD_PER_ATTEMPT
+    ) {
+      return undefined;
+    }
+    const inputTokens = attempt.inputTokens;
+    const outputTokens = attempt.outputTokens;
+    const actualUsd = attempt.actualUsd;
+    const hasUsage =
+      typeof inputTokens === "number" ||
+      typeof outputTokens === "number" ||
+      typeof actualUsd === "number";
+    if (
+      hasUsage &&
+      (typeof inputTokens !== "number" ||
+        !Number.isSafeInteger(inputTokens) ||
+        inputTokens < 0 ||
+        typeof outputTokens !== "number" ||
+        !Number.isSafeInteger(outputTokens) ||
+        outputTokens < 0 ||
+        typeof actualUsd !== "number" ||
+        !Number.isFinite(actualUsd) ||
+        actualUsd < 0 ||
+        actualUsd > JEV_RESERVED_USD_PER_ATTEMPT)
+    ) {
+      return undefined;
+    }
+    ids.add(attempt.id);
+    attempts.push(attempt as unknown as JevTrialAttempt);
+  }
+
+  return {
+    schemaVersion: 1,
+    scope: value.scope,
+    budget: value.budget as unknown as JevTrialLedger["budget"],
+    pricing: value.pricing as unknown as JevTrialLedger["pricing"],
+    attempts,
+  };
+}
+
+async function withJevTrialLedgerLock<T>(
+  ledgerPath: string,
+  work: () => Promise<T>,
+): Promise<T> {
+  const lockPath = `${ledgerPath}.lock`;
+  try {
+    await mkdir(lockPath);
+  } catch (error) {
+    if (isNodeErrorWithCode(error) && error.code === "EEXIST") {
+      throw new Error(
+        "Jev trial ledger is locked; no TypeSafe request was sent",
+      );
+    }
+    throw error;
+  }
+
+  try {
+    return await work();
+  } finally {
+    await rmdir(lockPath);
+  }
+}
+
+async function readJevTrialLedger(ledgerPath: string): Promise<JevTrialLedger> {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(await readFile(ledgerPath, "utf8")) as unknown;
+  } catch (error) {
+    throw new Error(
+      `Cannot read Jev trial ledger; no TypeSafe request was sent: ${errorText(error)}`,
+    );
+  }
+  const ledger = parseJevTrialLedger(parsed);
+  if (!ledger) {
+    throw new Error(
+      "Jev trial ledger is malformed; no TypeSafe request was sent",
+    );
+  }
+  return ledger;
+}
+
+async function writeJevTrialLedger(
+  ledgerPath: string,
+  ledger: JevTrialLedger,
+): Promise<void> {
+  const temporaryPath = `${ledgerPath}.tmp`;
+  await writeFile(
+    temporaryPath,
+    `${JSON.stringify(ledger, null, 2)}\n`,
+    "utf8",
+  );
+  await rename(temporaryPath, ledgerPath);
+}
+
+async function reserveJevTrialAttempt(
+  ledgerPath: string,
+  issue: 5 | 6,
+  purpose: string,
+): Promise<number> {
+  return withJevTrialLedgerLock(ledgerPath, async () => {
+    const ledger = await readJevTrialLedger(ledgerPath);
+    const committedUsd = ledger.attempts.reduce(
+      (total, attempt) => total + (attempt.actualUsd ?? attempt.reservedUsd),
+      0,
+    );
+    if (
+      ledger.attempts.length >= MAX_JEV_TRIAL_REQUESTS ||
+      committedUsd + JEV_RESERVED_USD_PER_ATTEMPT > MAX_JEV_TRIAL_USD
+    ) {
+      throw new Error(
+        "Jev trial budget is exhausted; no TypeSafe request was sent",
+      );
+    }
+
+    const id =
+      ledger.attempts.reduce(
+        (maximum, attempt) => Math.max(maximum, attempt.id),
+        0,
+      ) + 1;
+    ledger.attempts.push({
+      id,
+      issue,
+      purpose: boundedText(purpose, 120),
+      startedAt: new Date().toISOString(),
+      outcome: "reserved",
+      reservedUsd: JEV_RESERVED_USD_PER_ATTEMPT,
+    });
+    await writeJevTrialLedger(ledgerPath, ledger);
+    return id;
+  });
+}
+
+async function completeJevTrialAttempt(
+  ledgerPath: string,
+  attemptId: number,
+  outcome: string,
+  usage?: { inputTokens: number; outputTokens: number },
+): Promise<void> {
+  await withJevTrialLedgerLock(ledgerPath, async () => {
+    const ledger = await readJevTrialLedger(ledgerPath);
+    const attempt = ledger.attempts.find(({ id }) => id === attemptId);
+    if (!attempt || attempt.outcome !== "reserved") {
+      throw new Error("Jev trial ledger reservation is missing or settled");
+    }
+    attempt.outcome = boundedText(outcome, 80);
+    if (usage) {
+      attempt.inputTokens = usage.inputTokens;
+      attempt.outputTokens = usage.outputTokens;
+      attempt.actualUsd =
+        (usage.inputTokens / 1_000_000) * JEV_INPUT_USD_PER_MILLION_TOKENS;
+    }
+    await writeJevTrialLedger(ledgerPath, ledger);
+  });
 }
 
 function boundedText(value: string, maximum: number): string {
@@ -696,8 +1132,80 @@ function validateChoice(
     probabilities[candidate] = probability;
     total += probability;
   }
-  if (Math.abs(total - 1) > 0.001) return undefined;
+  if (Math.abs(total - 1) > PROBABILITY_SUM_TOLERANCE) return undefined;
+  const selectedProbability = probabilities[value.choice];
+  if (selectedProbability === undefined) return undefined;
+  if (
+    entries.some(
+      ([, probability]) =>
+        (probability as number) >
+        selectedProbability + PROBABILITY_SUM_TOLERANCE,
+    )
+  ) {
+    return undefined;
+  }
   return { choice: value.choice, confidence: value.confidence, probabilities };
+}
+
+function isMaximallyUncertain(answer: ChoiceAnswer): boolean {
+  const selectedProbability = answer.probabilities[answer.choice];
+  if (selectedProbability === undefined || answer.confidence <= 0) return true;
+  return Object.entries(answer.probabilities).some(
+    ([choice, probability]) =>
+      choice !== answer.choice &&
+      probability + PROBABILITY_SUM_TOLERANCE >= selectedProbability,
+  );
+}
+
+function validateTypeSafeResponse(
+  value: unknown,
+  request: ClassifierRequest,
+): boolean {
+  if (
+    !isRecord(value) ||
+    value.model !== TYPESAFE_MODEL ||
+    !isRecord(value.answers) ||
+    !isRecord(value.usage)
+  ) {
+    return false;
+  }
+
+  const expectedAnswerIds = Object.keys(request.questions).filter(
+    (questionId) =>
+      request.questions[questionId as keyof ClassifierRequest["questions"]] !==
+      undefined,
+  );
+  const returnedAnswerIds = Object.keys(value.answers);
+  if (
+    returnedAnswerIds.length !== expectedAnswerIds.length ||
+    returnedAnswerIds.some(
+      (questionId) => !expectedAnswerIds.includes(questionId),
+    )
+  ) {
+    return false;
+  }
+  for (const questionId of expectedAnswerIds) {
+    const question =
+      request.questions[questionId as keyof ClassifierRequest["questions"]];
+    if (
+      !question ||
+      !validateChoice(value.answers[questionId], Object.keys(question.options))
+    ) {
+      return false;
+    }
+  }
+
+  const inputTokens = value.usage.input_tokens;
+  const outputTokens = value.usage.output_tokens;
+  return (
+    typeof inputTokens === "number" &&
+    Number.isSafeInteger(inputTokens) &&
+    inputTokens >= 0 &&
+    inputTokens <= JEV_RESERVED_INPUT_TOKENS_PER_ATTEMPT &&
+    typeof outputTokens === "number" &&
+    Number.isSafeInteger(outputTokens) &&
+    outputTokens >= 0
+  );
 }
 
 function validateDecision(
@@ -711,28 +1219,26 @@ function validateDecision(
   );
   if (!operation) return undefined;
 
+  const judgments: Record<string, ChoiceAnswer> = { operation };
+  for (const [questionId, question] of Object.entries(request.questions)) {
+    if (!question || questionId === "operation") continue;
+    const answer = validateChoice(
+      value.answers[questionId],
+      Object.keys(question.options),
+    );
+    if (answer) judgments[questionId] = answer;
+  }
+
   let target: ChoiceAnswer | undefined;
   if (operation.choice === "CLICK") {
-    if (!request.questions.click_target) return undefined;
-    target = validateChoice(
-      value.answers.click_target,
-      Object.keys(request.questions.click_target.options),
-    );
-    if (!target) return undefined;
+    target = judgments.click_target;
+    if (!request.questions.click_target || !target) return undefined;
   } else if (operation.choice === "TYPE_TEXT") {
-    if (!request.questions.type_text_pair) return undefined;
-    target = validateChoice(
-      value.answers.type_text_pair,
-      Object.keys(request.questions.type_text_pair.options),
-    );
-    if (!target) return undefined;
+    target = judgments.type_text_pair;
+    if (!request.questions.type_text_pair || !target) return undefined;
   } else if (operation.choice === "SELECT") {
-    if (!request.questions.select_pair) return undefined;
-    target = validateChoice(
-      value.answers.select_pair,
-      Object.keys(request.questions.select_pair.options),
-    );
-    if (!target) return undefined;
+    target = judgments.select_pair;
+    if (!request.questions.select_pair || !target) return undefined;
   }
 
   let usage: ValidDecision["usage"];
@@ -744,6 +1250,7 @@ function validateDecision(
       typeof inputTokens !== "number" ||
       !Number.isSafeInteger(inputTokens) ||
       inputTokens < 0 ||
+      inputTokens > JEV_RESERVED_INPUT_TOKENS_PER_ATTEMPT ||
       typeof outputTokens !== "number" ||
       !Number.isSafeInteger(outputTokens) ||
       outputTokens < 0
@@ -756,6 +1263,7 @@ function validateDecision(
   return {
     operation: { ...operation, choice: operation.choice as Operation },
     ...(target ? { target } : {}),
+    judgments,
     ...(typeof value.model === "string"
       ? { model: boundedText(value.model, MAX_TARGET_LABEL_CHARS) }
       : {}),
@@ -1068,6 +1576,12 @@ function modelVisibleResultText(result: RlcdRunResult): string {
     },
     evidence: compactEvidence,
     trace: compactTrace,
+    classifierDiagnostics: result.classifierDiagnostics.map((diagnostic) => ({
+      ...diagnostic,
+      ...(diagnostic.model
+        ? { model: contentText(diagnostic.model, MAX_TARGET_LABEL_CHARS) }
+        : {}),
+    })),
     errors: result.errors.map((error) => contentText(error, 500)),
     metrics: result.metrics,
     limits: result.limits,
@@ -1142,6 +1656,12 @@ function modelVisibleResultText(result: RlcdRunResult): string {
         : {}),
       outcome: entry.outcome,
     })),
+    classifierDiagnostics: result.classifierDiagnostics.map((diagnostic) => ({
+      ...diagnostic,
+      ...(diagnostic.model
+        ? { model: boundedText(diagnostic.model, MAX_TARGET_LABEL_CHARS) }
+        : {}),
+    })),
     errors: result.errors.slice(0, 2).map((error) => boundedText(error, 200)),
     metrics: result.metrics,
     limits: result.limits,
@@ -1178,7 +1698,9 @@ function modelVisibleResultText(result: RlcdRunResult): string {
           omittedCaptures: result.evidence.omittedCaptures,
         },
       },
-      ["evidence, trace, errors, and metrics to enforce the bound"],
+      [
+        "evidence, trace, classifier diagnostics, errors, and metrics to enforce the bound",
+      ],
     ),
     null,
     2,
@@ -1219,6 +1741,7 @@ export function createRlcdBrwsrRunner(dependencies: RlcdDependencies) {
       excludedConsequentialControlsTruncated: false,
     };
     const trace: ActionTraceEntry[] = [];
+    const classifierDiagnostics: ClassifierDiagnostic[] = [];
     const errors: string[] = [];
     let observation = emptyObservation();
     let classifierCalls = 0;
@@ -1258,6 +1781,7 @@ export function createRlcdBrwsrRunner(dependencies: RlcdDependencies) {
             evidence.excludedConsequentialControlsTruncated,
         },
         trace,
+        classifierDiagnostics,
         errors,
         metrics: {
           elapsedMs: Math.max(0, finishedAt - startedAt),
@@ -1354,6 +1878,7 @@ export function createRlcdBrwsrRunner(dependencies: RlcdDependencies) {
       }
       const request = requestBuild.request;
       classifierCalls += 1;
+      const classifierStartedAt = dependencies.clock.now();
       const classified = await runBounded(
         (operationSignal) =>
           dependencies.classifier(request, { signal: operationSignal }),
@@ -1361,17 +1886,49 @@ export function createRlcdBrwsrRunner(dependencies: RlcdDependencies) {
         remainingMs(),
         dependencies.wait,
       );
-      if (classified.kind === "cancelled") return finish("cancelled");
-      if (classified.kind === "timeout") return finish("time_budget");
+      const classifierDurationMs = Math.max(
+        0,
+        dependencies.clock.now() - classifierStartedAt,
+      );
+      const diagnosticBase = {
+        call: classifierCalls,
+        step,
+        durationMs: classifierDurationMs,
+      };
+      if (classified.kind === "cancelled") {
+        classifierDiagnostics.push({
+          ...diagnosticBase,
+          outcome: "cancelled",
+        });
+        return finish("cancelled");
+      }
+      if (classified.kind === "timeout") {
+        classifierDiagnostics.push({ ...diagnosticBase, outcome: "timeout" });
+        return finish("time_budget");
+      }
       if (classified.kind === "error") {
+        classifierDiagnostics.push({ ...diagnosticBase, outcome: "error" });
         addError(errorText(classified.error));
         return finish("classifier_failed");
       }
-      if (signal?.aborted) return finish("cancelled");
-      if (remainingMs() <= 0) return finish("time_budget");
+      if (signal?.aborted) {
+        classifierDiagnostics.push({
+          ...diagnosticBase,
+          outcome: "cancelled",
+        });
+        return finish("cancelled");
+      }
+      if (remainingMs() <= 0) {
+        classifierDiagnostics.push({ ...diagnosticBase, outcome: "timeout" });
+        return finish("time_budget");
+      }
 
       const decision = validateDecision(classified.value, request);
       if (!decision) {
+        classifierDiagnostics.push({
+          ...diagnosticBase,
+          outcome: "invalid_response",
+        });
         addError("Classifier returned a malformed or unoffered choice");
         return finish("invalid_classifier_response");
       }
@@ -1379,6 +1936,17 @@ export function createRlcdBrwsrRunner(dependencies: RlcdDependencies) {
         modelInputTokens += decision.usage.inputTokens;
         modelOutputTokens += decision.usage.outputTokens;
       }
+      classifierDiagnostics.push({
+        ...diagnosticBase,
+        outcome: "response",
+        ...(decision.model ? { model: decision.model } : {}),
+        ...(decision.usage
+          ? {
+              inputTokens: decision.usage.inputTokens,
+              outputTokens: decision.usage.outputTokens,
+            }
+          : {}),
+      });
 
       const baseTrace: ActionTraceEntry = {
         step,
@@ -1386,10 +1954,27 @@ export function createRlcdBrwsrRunner(dependencies: RlcdDependencies) {
         outcome: "selected",
         ...(decision.model ? { model: decision.model } : {}),
         operationProbabilities: decision.operation.probabilities,
+        judgments: decision.judgments,
         ...(decision.target
           ? { targetProbabilities: decision.target.probabilities }
           : {}),
       };
+      const uncertainHead = isMaximallyUncertain(decision.operation)
+        ? "operation"
+        : decision.target && isMaximallyUncertain(decision.target)
+          ? "selected target"
+          : undefined;
+      if (uncertainHead) {
+        trace.push({ ...baseTrace, outcome: "classifier_uncertain" });
+        classifierDiagnostics[classifierDiagnostics.length - 1] = {
+          ...classifierDiagnostics[classifierDiagnostics.length - 1]!,
+          outcome: "uncertain",
+        };
+        addError(
+          `Classifier ${uncertainHead} judgment was maximally uncertain; no browser mutation was dispatched`,
+        );
+        return finish("classifier_uncertain");
+      }
 
       if (decision.operation.choice === "DONE") {
         trace.push({ ...baseTrace, outcome: "completion_claimed" });
@@ -1606,6 +2191,7 @@ const toolParameters = Type.Object({
 
 export interface RegistrationOptions {
   classifier?: Classifier;
+  typeSafe?: TypeSafeClassifierOptions;
   clock?: RlcdDependencies["clock"];
   wait?: RlcdDependencies["wait"];
 }
@@ -1616,13 +2202,7 @@ export function registerRlcdBrwsr(
 ): void {
   const runner = createRlcdBrwsrRunner({
     classifier:
-      options.classifier ??
-      (async (_request, context) => {
-        context.signal.throwIfAborted();
-        throw new Error(
-          "No classifier adapter is configured. Load an explicitly injected fixture adapter for the offline slice.",
-        );
-      }),
+      options.classifier ?? createTypeSafeClassifier(options.typeSafe),
     cli: createChromeCliExecutor(pi.exec.bind(pi) as PiExec),
     clock: options.clock ?? { now: () => Date.now() },
     wait: options.wait ?? waitForDuration,
