@@ -1,6 +1,6 @@
 # RLCD-brwsr v0.1 plan
 
-Status: approved direction; not implemented.
+Status: approved direction; the offline CLICK/WAIT/DONE/BLOCKED vertical slice is implemented experimentally and is not rolled out.
 
 RLCD-brwsr is a minimal Pi extension that uses TypeSafe Jev as a fast
 classifier inside a bounded browser loop. Pi owns the goal, planning,
