@@ -14,3 +14,12 @@ only the offline host-check adapter and is not installed globally.
 
 Pi schedules this tool sequentially, but that is not a page lock. Another Chrome client or a person
 can still change the selected page during a run.
+
+For the lifecycle check, select `lifecycle.html` and invoke the same registered tool. The fake
+classifier selects `Open slow documentation`; `/slow` delays its response for 60 seconds. Use a
+one-second tool budget for timeout, or a longer budget and cancel the active tool in Pi for
+cancellation. This path uses the production `createChromeCliExecutor(pi.exec)` adapter inside the
+real runner. Compare `pgrep -lf chrome-devtools` before dispatch, while the tool runs, and after its
+result to identify the task-created CLI client without stopping the pre-existing executor daemon.
+List pages before and after, close only the task-created fixture page, and preserve unrelated pages.
+The removed `check-cli-lifecycle.mjs` spawn surrogate is not valid evidence for runner cleanup.

@@ -1,12 +1,8 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 import {
-  createChromeCliExecutor,
-  createRlcdBrwsrRunner,
   registerRlcdBrwsr,
-  waitForDuration,
   type ClassifierRequest,
-  type PiExec,
 } from "../../config/pi/extensions/rlcd-brwsr.ts";
 
 function choice(selected: string, offered: readonly string[]) {
@@ -22,7 +18,9 @@ function choice(selected: string, offered: readonly string[]) {
 
 function fakeJevResponse(request: ClassifierRequest): unknown {
   const target = request.candidates.clickTargets.find(
-    (candidate) => candidate.label === "Continue to uncertainty evidence",
+    (candidate) =>
+      candidate.label === "Continue to uncertainty evidence" ||
+      candidate.label === "Open slow documentation",
   );
   const operation = target
     ? "CLICK"
@@ -49,14 +47,10 @@ function fakeJevResponse(request: ClassifierRequest): unknown {
 }
 
 export default function fakeJevFixtureExtension(pi: ExtensionAPI): void {
-  const runner = createRlcdBrwsrRunner({
+  registerRlcdBrwsr(pi, {
     classifier: async (request, context) => {
       context.signal.throwIfAborted();
       return fakeJevResponse(request);
     },
-    cli: createChromeCliExecutor(pi.exec.bind(pi) as PiExec),
-    clock: { now: () => Date.now() },
-    wait: waitForDuration,
   });
-  registerRlcdBrwsr(pi, { runner });
 }

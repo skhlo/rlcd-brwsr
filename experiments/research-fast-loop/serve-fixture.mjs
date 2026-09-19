@@ -23,6 +23,7 @@ const routes = new Map([
   ["/", "index.html"],
   ["/index.html", "index.html"],
   ["/evidence.html", "evidence.html"],
+  ["/lifecycle.html", "lifecycle.html"],
 ]);
 
 const server = createServer(async (request, response) => {

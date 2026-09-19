@@ -13,12 +13,15 @@ const MAX_ERROR_CHARS = 500;
 const MAX_ERRORS = 4;
 const MAX_SNAPSHOT_NODES = 2_000;
 const MAX_CLICK_TARGETS = 16;
+const MAX_EXCLUDED_CONTROLS = 8;
+const MAX_TARGET_UID_CHARS = 160;
 const MAX_TARGET_LABEL_CHARS = 160;
 const MAX_URL_CHARS = 2_048;
 const MAX_EXCERPT_CHARS = 1_200;
 const MAX_SOURCE_RECORDS = 4;
 const MAX_TOTAL_EVIDENCE_CHARS = 3_600;
-const MAX_MODEL_VISIBLE_CHARS = 8_000;
+const MAX_CLASSIFIER_REQUEST_CHARS = 8_000;
+const MAX_TOOL_CONTENT_CHARS = 12_000;
 const WAIT_MILLISECONDS = 250;
 
 type Operation = "CLICK" | "WAIT" | "DONE" | "BLOCKED";
@@ -29,6 +32,7 @@ type StopReason =
   | "time_budget"
   | "step_budget"
   | "evidence_budget"
+  | "consequential_action"
   | "command_failed"
   | "uncertain_execution"
   | "classifier_failed"
@@ -105,6 +109,13 @@ export interface EvidenceSource {
   excerptTruncated: boolean;
 }
 
+export interface ExcludedConsequentialControl {
+  pageUrl: string;
+  pageTitle: string;
+  role: string;
+  label: string;
+}
+
 export interface ActionTraceEntry {
   step: number;
   operation: Operation;
@@ -135,11 +146,14 @@ export interface RlcdRunResult {
     totalExcerptChars: number;
     truncated: boolean;
     omittedCaptures: number;
+    excludedConsequentialControls: ExcludedConsequentialControl[];
+    excludedConsequentialControlsTruncated: boolean;
   };
   trace: ActionTraceEntry[];
   errors: string[];
   metrics: {
     elapsedMs: number;
+    budgetOverrunMs: number;
     classifierCalls: number;
     browserCommands: number;
     waits: number;
@@ -150,7 +164,8 @@ export interface RlcdRunResult {
     maxSourceRecords: number;
     maxExcerptChars: number;
     maxTotalEvidenceChars: number;
-    maxModelVisibleChars: number;
+    maxClassifierRequestChars: number;
+    maxToolContentChars: number;
   };
 }
 
@@ -170,6 +185,8 @@ interface Observation {
   textTruncated: boolean;
   clickTargets: ClickTarget[];
   clickTargetsTruncated: boolean;
+  excludedConsequentialControls: ClickTarget[];
+  excludedConsequentialControlsTruncated: boolean;
 }
 
 interface ChoiceAnswer {
@@ -222,10 +239,13 @@ interface EvidenceState {
   totalExcerptChars: number;
   truncated: boolean;
   omittedCaptures: number;
+  excludedConsequentialControls: ExcludedConsequentialControl[];
+  excludedControlKeys: Set<string>;
+  excludedConsequentialControlsTruncated: boolean;
 }
 
 const consequentialControl =
-  /\b(?:buy|checkout|pay|purchase|book|reserve|upload|download|install|delete|remove|publish|post|send|submit|sign[ -]?in|log[ -]?in|consent|authorize|grant)\b/i;
+  /\b(?:buy|checkout|donate|pay|purchase|book|reserve|upload|download|install|delete|remove|publish|post|send|submit|sign[ -]?in|log[ -]?in|consent|authorize|grant)\b/i;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -307,11 +327,18 @@ async function runBounded<T>(
 
   timerController.abort();
   parentSignal?.removeEventListener("abort", onParentAbort);
-  if (settled.kind === "timeout")
+  if (settled.kind === "success" || settled.kind === "error") return settled;
+
+  if (settled.kind === "timeout") {
     workController.abort(new Error("time budget expired"));
-  if (settled.kind === "cancelled" && !workController.signal.aborted) {
+  } else if (!workController.signal.aborted) {
     workController.abort(parentSignal?.reason);
   }
+
+  // The boundary decides the result, but the adapter still owns cleanup. Waiting
+  // here prevents a cooperative CLI child from outliving the returned tool result.
+  // A non-cooperating adapter can still keep the run pending indefinitely.
+  await workPromise;
   return settled;
 }
 
@@ -346,6 +373,8 @@ function observationFromSnapshot(value: unknown): Observation | undefined {
   let scannedNodes = 0;
   let textTruncated = false;
   let clickTargetsTruncated = false;
+  const excludedConsequentialControls: ClickTarget[] = [];
+  let excludedConsequentialControlsTruncated = false;
   const stack = [...(root.children ?? [])].reverse();
 
   while (stack.length > 0) {
@@ -382,15 +411,25 @@ function observationFromSnapshot(value: unknown): Observation | undefined {
     if (
       node.id &&
       name &&
-      (role === "link" || role === "button" || role === "tab") &&
-      !consequentialControl.test(name)
+      (role === "link" || role === "button" || role === "tab")
     ) {
-      if (clickTargets.length < MAX_CLICK_TARGETS) {
-        clickTargets.push({
-          uid: node.id,
-          role,
-          label: boundedText(name, MAX_TARGET_LABEL_CHARS),
-        });
+      if (node.id.length > MAX_TARGET_UID_CHARS) {
+        clickTargetsTruncated = true;
+        continue;
+      }
+      const target = {
+        uid: node.id,
+        role,
+        label: boundedText(name, MAX_TARGET_LABEL_CHARS),
+      };
+      if (consequentialControl.test(name)) {
+        if (excludedConsequentialControls.length < MAX_EXCLUDED_CONTROLS) {
+          excludedConsequentialControls.push(target);
+        } else {
+          excludedConsequentialControlsTruncated = true;
+        }
+      } else if (clickTargets.length < MAX_CLICK_TARGETS) {
+        clickTargets.push(target);
       } else {
         clickTargetsTruncated = true;
       }
@@ -405,6 +444,8 @@ function observationFromSnapshot(value: unknown): Observation | undefined {
     textTruncated,
     clickTargets,
     clickTargetsTruncated,
+    excludedConsequentialControls,
+    excludedConsequentialControlsTruncated,
   };
 }
 
@@ -583,6 +624,29 @@ function addEvidence(
   if (evidence.signatures.has(observation.captureSignature)) return false;
   evidence.signatures.add(observation.captureSignature);
 
+  for (const control of observation.excludedConsequentialControls) {
+    const key = JSON.stringify([
+      observation.url,
+      observation.title,
+      control.role,
+      control.label,
+    ]);
+    if (evidence.excludedControlKeys.has(key)) continue;
+    evidence.excludedControlKeys.add(key);
+    if (evidence.excludedConsequentialControls.length < MAX_EXCLUDED_CONTROLS) {
+      evidence.excludedConsequentialControls.push({
+        pageUrl: observation.url,
+        pageTitle: observation.title,
+        role: control.role,
+        label: control.label,
+      });
+    } else {
+      evidence.excludedConsequentialControlsTruncated = true;
+    }
+  }
+  evidence.excludedConsequentialControlsTruncated ||=
+    observation.excludedConsequentialControlsTruncated;
+
   if (evidence.sources.length >= MAX_SOURCE_RECORDS) {
     evidence.truncated = true;
     evidence.omittedCaptures += 1;
@@ -652,7 +716,7 @@ function makeClassifierRequest(
       outcome: entry.outcome,
     })),
   };
-  return JSON.stringify(request).length <= MAX_MODEL_VISIBLE_CHARS
+  return JSON.stringify(request).length <= MAX_CLASSIFIER_REQUEST_CHARS
     ? request
     : undefined;
 }
@@ -666,7 +730,175 @@ function emptyObservation(): Observation {
     textTruncated: false,
     clickTargets: [],
     clickTargetsTruncated: false,
+    excludedConsequentialControls: [],
+    excludedConsequentialControlsTruncated: false,
   };
+}
+
+function modelVisibleResultText(result: RlcdRunResult): string {
+  let fieldsTruncated = false;
+  const contentText = (value: string, maximum: number) => {
+    const bounded = boundedText(value, maximum);
+    fieldsTruncated ||= bounded.length < value.length;
+    return bounded;
+  };
+  const compactTrace = result.trace.map((entry) => ({
+    step: entry.step,
+    operation: entry.operation,
+    ...(entry.targetLabel
+      ? { targetLabel: contentText(entry.targetLabel, 160) }
+      : {}),
+    outcome: entry.outcome,
+  }));
+  const compactEvidence = {
+    sources: result.evidence.sources.map((source) => ({
+      url: contentText(source.url, 512),
+      title: contentText(source.title, 160),
+      excerpt: source.excerpt,
+      excerptTruncated: source.excerptTruncated,
+    })),
+    totalExcerptChars: result.evidence.totalExcerptChars,
+    truncated: result.evidence.truncated,
+    omittedCaptures: result.evidence.omittedCaptures,
+    excludedConsequentialControls:
+      result.evidence.excludedConsequentialControls.map((control) => ({
+        pageUrl: contentText(control.pageUrl, 256),
+        pageTitle: contentText(control.pageTitle, 80),
+        role: control.role,
+        label: contentText(control.label, 160),
+      })),
+    excludedConsequentialControlsTruncated:
+      result.evidence.excludedConsequentialControlsTruncated,
+  };
+  const compact = {
+    status: result.status,
+    stopReason: result.stopReason,
+    completionClaim: result.completionClaim,
+    finalPage: {
+      url: contentText(result.finalPage.url, 512),
+      title: contentText(result.finalPage.title, 160),
+      excerpt: contentText(result.finalPage.excerpt, 800),
+      excerptTruncated:
+        result.finalPage.excerptTruncated ||
+        result.finalPage.excerpt.length > 800,
+    },
+    evidence: compactEvidence,
+    trace: compactTrace,
+    errors: result.errors.map((error) => contentText(error, 500)),
+    metrics: result.metrics,
+    limits: result.limits,
+  };
+  const omitted: string[] = [];
+  if (result.trace.length > 0) omitted.push("trace probabilities");
+  if (
+    result.trace.some(
+      (entry) => entry.targetUid !== undefined || entry.model !== undefined,
+    )
+  ) {
+    omitted.push("trace target UIDs and model identifiers");
+  }
+  if (fieldsTruncated) omitted.push("long fields beyond content field limits");
+
+  const withDisclosure = (
+    value: object,
+    extraOmissions: readonly string[],
+  ) => ({
+    ...value,
+    modelVisible: {
+      truncated: omitted.length > 0 || extraOmissions.length > 0,
+      omitted: [...omitted, ...extraOmissions],
+      maxChars: MAX_TOOL_CONTENT_CHARS,
+    },
+  });
+
+  let serialized = JSON.stringify(withDisclosure(compact, []), null, 2);
+  if (serialized.length <= MAX_TOOL_CONTENT_CHARS) return serialized;
+
+  const fallback = {
+    status: result.status,
+    stopReason: result.stopReason,
+    completionClaim: result.completionClaim,
+    finalPage: {
+      url: boundedText(result.finalPage.url, 256),
+      title: boundedText(result.finalPage.title, 80),
+      excerpt: boundedText(result.finalPage.excerpt, 300),
+      excerptTruncated:
+        result.finalPage.excerptTruncated ||
+        result.finalPage.excerpt.length > 300,
+    },
+    evidence: {
+      sources: result.evidence.sources.map((source) => ({
+        url: boundedText(source.url, 256),
+        title: boundedText(source.title, 80),
+        excerpt: boundedText(source.excerpt, 400),
+        excerptTruncated:
+          source.excerptTruncated || source.excerpt.length > 400,
+      })),
+      totalExcerptChars: result.evidence.totalExcerptChars,
+      truncated: result.evidence.truncated,
+      omittedCaptures: result.evidence.omittedCaptures,
+      excludedConsequentialControls:
+        result.evidence.excludedConsequentialControls
+          .slice(0, 4)
+          .map((control) => ({
+            pageUrl: boundedText(control.pageUrl, 128),
+            pageTitle: boundedText(control.pageTitle, 60),
+            role: control.role,
+            label: boundedText(control.label, 120),
+          })),
+      excludedConsequentialControlsTruncated:
+        result.evidence.excludedConsequentialControlsTruncated ||
+        result.evidence.excludedConsequentialControls.length > 4,
+    },
+    trace: result.trace.map((entry) => ({
+      step: entry.step,
+      operation: entry.operation,
+      ...(entry.targetLabel
+        ? { targetLabel: boundedText(entry.targetLabel, 80) }
+        : {}),
+      outcome: entry.outcome,
+    })),
+    errors: result.errors.slice(0, 2).map((error) => boundedText(error, 200)),
+    metrics: result.metrics,
+    limits: result.limits,
+  };
+  serialized = JSON.stringify(
+    withDisclosure(fallback, [
+      "additional compact fields to enforce the bound",
+    ]),
+    null,
+    2,
+  );
+  if (serialized.length <= MAX_TOOL_CONTENT_CHARS) return serialized;
+
+  return JSON.stringify(
+    withDisclosure(
+      {
+        status: result.status,
+        stopReason: result.stopReason,
+        completionClaim: result.completionClaim,
+        finalPage: {
+          url: boundedText(result.finalPage.url, 256),
+          title: boundedText(result.finalPage.title, 80),
+          excerpt: boundedText(result.finalPage.excerpt, 300),
+          excerptTruncated: true,
+        },
+        evidence: {
+          sources: result.evidence.sources.slice(0, 1).map((source) => ({
+            url: boundedText(source.url, 256),
+            title: boundedText(source.title, 80),
+            excerpt: boundedText(source.excerpt, 500),
+            excerptTruncated: true,
+          })),
+          truncated: true,
+          omittedCaptures: result.evidence.omittedCaptures,
+        },
+      },
+      ["evidence, trace, errors, and metrics to enforce the bound"],
+    ),
+    null,
+    2,
+  );
 }
 
 export function createRlcdBrwsrRunner(dependencies: RlcdDependencies) {
@@ -698,6 +930,9 @@ export function createRlcdBrwsrRunner(dependencies: RlcdDependencies) {
       totalExcerptChars: 0,
       truncated: false,
       omittedCaptures: 0,
+      excludedConsequentialControls: [],
+      excludedControlKeys: new Set(),
+      excludedConsequentialControlsTruncated: false,
     };
     const trace: ActionTraceEntry[] = [];
     const errors: string[] = [];
@@ -713,43 +948,51 @@ export function createRlcdBrwsrRunner(dependencies: RlcdDependencies) {
       if (errors.length < MAX_ERRORS)
         errors.push(boundedText(message, MAX_ERROR_CHARS));
     };
-    const finish = (stopReason: StopReason): RlcdRunResult => ({
-      status: stopReason === "done_claim" ? "completion_claim" : "stopped",
-      stopReason,
-      completionClaim: {
-        claimed: stopReason === "done_claim",
-        requiresIndependentVerification: true,
-        sourceCoverageComplete: false,
-      },
-      finalPage: {
-        url: observation.url,
-        title: observation.title,
-        excerpt: observation.text,
-        excerptTruncated: observation.textTruncated,
-      },
-      evidence: {
-        sources: evidence.sources,
-        totalExcerptChars: evidence.totalExcerptChars,
-        truncated: evidence.truncated,
-        omittedCaptures: evidence.omittedCaptures,
-      },
-      trace,
-      errors,
-      metrics: {
-        elapsedMs: Math.max(0, dependencies.clock.now() - startedAt),
-        classifierCalls,
-        browserCommands,
-        waits,
-        modelInputTokens,
-        modelOutputTokens,
-      },
-      limits: {
-        maxSourceRecords: MAX_SOURCE_RECORDS,
-        maxExcerptChars: MAX_EXCERPT_CHARS,
-        maxTotalEvidenceChars: MAX_TOTAL_EVIDENCE_CHARS,
-        maxModelVisibleChars: MAX_MODEL_VISIBLE_CHARS,
-      },
-    });
+    const finish = (stopReason: StopReason): RlcdRunResult => {
+      const finishedAt = dependencies.clock.now();
+      return {
+        status: stopReason === "done_claim" ? "completion_claim" : "stopped",
+        stopReason,
+        completionClaim: {
+          claimed: stopReason === "done_claim",
+          requiresIndependentVerification: true,
+          sourceCoverageComplete: false,
+        },
+        finalPage: {
+          url: observation.url,
+          title: observation.title,
+          excerpt: observation.text,
+          excerptTruncated: observation.textTruncated,
+        },
+        evidence: {
+          sources: evidence.sources,
+          totalExcerptChars: evidence.totalExcerptChars,
+          truncated: evidence.truncated,
+          omittedCaptures: evidence.omittedCaptures,
+          excludedConsequentialControls: evidence.excludedConsequentialControls,
+          excludedConsequentialControlsTruncated:
+            evidence.excludedConsequentialControlsTruncated,
+        },
+        trace,
+        errors,
+        metrics: {
+          elapsedMs: Math.max(0, finishedAt - startedAt),
+          budgetOverrunMs: Math.max(0, finishedAt - deadline),
+          classifierCalls,
+          browserCommands,
+          waits,
+          modelInputTokens,
+          modelOutputTokens,
+        },
+        limits: {
+          maxSourceRecords: MAX_SOURCE_RECORDS,
+          maxExcerptChars: MAX_EXCERPT_CHARS,
+          maxTotalEvidenceChars: MAX_TOTAL_EVIDENCE_CHARS,
+          maxClassifierRequestChars: MAX_CLASSIFIER_REQUEST_CHARS,
+          maxToolContentChars: MAX_TOOL_CONTENT_CHARS,
+        },
+      };
+    };
     const remainingMs = () => deadline - dependencies.clock.now();
     const runCli = async (
       argv: readonly string[],
@@ -797,6 +1040,12 @@ export function createRlcdBrwsrRunner(dependencies: RlcdDependencies) {
     if ("status" in initial) return initial;
     observation = initial.observation;
     if (addEvidence(evidence, observation)) return finish("evidence_budget");
+    if (
+      observation.clickTargets.length === 0 &&
+      observation.excludedConsequentialControls.length > 0
+    ) {
+      return finish("consequential_action");
+    }
 
     for (let step = 1; step <= maxSteps; step += 1) {
       if (signal?.aborted) return finish("cancelled");
@@ -804,7 +1053,7 @@ export function createRlcdBrwsrRunner(dependencies: RlcdDependencies) {
 
       const request = makeClassifierRequest(goal, observation, evidence, trace);
       if (!request) {
-        addError("Model-visible state exceeded its configured bound");
+        addError("Classifier state exceeded its configured bound");
         return finish("evidence_budget");
       }
       classifierCalls += 1;
@@ -877,6 +1126,12 @@ export function createRlcdBrwsrRunner(dependencies: RlcdDependencies) {
         observation = refreshed.observation;
         if (addEvidence(evidence, observation))
           return finish("evidence_budget");
+        if (
+          observation.clickTargets.length === 0 &&
+          observation.excludedConsequentialControls.length > 0
+        ) {
+          return finish("consequential_action");
+        }
         continue;
       }
 
@@ -914,6 +1169,12 @@ export function createRlcdBrwsrRunner(dependencies: RlcdDependencies) {
       unchangedMutationCount = stateUnchanged ? unchangedMutationCount + 1 : 0;
       observation = clicked.observation;
       if (addEvidence(evidence, observation)) return finish("evidence_budget");
+      if (
+        observation.clickTargets.length === 0 &&
+        observation.excludedConsequentialControls.length > 0
+      ) {
+        return finish("consequential_action");
+      }
       if (unchangedMutationCount >= 3) return finish("unchanged_state");
     }
 
@@ -959,32 +1220,33 @@ const toolParameters = Type.Object({
 });
 
 export interface RegistrationOptions {
-  runner?: ReturnType<typeof createRlcdBrwsrRunner>;
+  classifier?: Classifier;
+  clock?: RlcdDependencies["clock"];
+  wait?: RlcdDependencies["wait"];
 }
 
 export function registerRlcdBrwsr(
   pi: ExtensionAPI,
   options: RegistrationOptions = {},
 ): void {
-  const runner =
-    options.runner ??
-    createRlcdBrwsrRunner({
-      classifier: async (_request, context) => {
+  const runner = createRlcdBrwsrRunner({
+    classifier:
+      options.classifier ??
+      (async (_request, context) => {
         context.signal.throwIfAborted();
         throw new Error(
           "No classifier adapter is configured. Load an explicitly injected fixture adapter for the offline slice.",
         );
-      },
-      cli: createChromeCliExecutor(pi.exec.bind(pi) as PiExec),
-      clock: { now: () => Date.now() },
-      wait: waitForDuration,
-    });
+      }),
+    cli: createChromeCliExecutor(pi.exec.bind(pi) as PiExec),
+    clock: options.clock ?? { now: () => Date.now() },
+    wait: options.wait ?? waitForDuration,
+  });
 
   pi.registerTool({
     name: "rlcd_brwsr_run",
     label: "RLCD-brwsr",
-    description:
-      "Run a bounded CLICK/WAIT browser loop on the page selected by Chrome DevTools CLI. Returns copied page evidence and a completion claim that the outer agent must independently verify.",
+    description: `Run a bounded CLICK/WAIT browser loop on the page selected by Chrome DevTools CLI. Returns copied page evidence and a completion claim that the outer agent must independently verify. Model-visible result content is capped at ${MAX_TOOL_CONTENT_CHARS} characters with truncation disclosed.`,
     promptSnippet:
       "Run a bounded browser fast loop and return retained source evidence",
     promptGuidelines: [
@@ -995,7 +1257,7 @@ export function registerRlcdBrwsr(
     async execute(_toolCallId, params, signal) {
       const result = await runner(params, signal);
       return {
-        content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+        content: [{ type: "text", text: modelVisibleResultText(result) }],
         details: result,
       };
     },

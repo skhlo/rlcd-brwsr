@@ -67,6 +67,8 @@ describe("rlcd_brwsr runner", () => {
             name: "Continue to uncertainty evidence",
             url: destinationUrl,
           },
+          { id: "1_4", role: "link", name: "Log in" },
+          { id: "1_5", role: "button", name: "Donate" },
         ]),
       ),
       processResult(
@@ -148,6 +150,10 @@ describe("rlcd_brwsr runner", () => {
     );
     assert.match(result.evidence.sources[0]!.excerpt, /Ask narrow questions/);
     assert.match(result.evidence.sources[1]!.excerpt, /DONE choice is a claim/);
+    assert.deepEqual(
+      result.evidence.excludedConsequentialControls.map(({ label }) => label),
+      ["Log in", "Donate"],
+    );
     assert.equal(result.finalPage.url, destinationUrl);
     assert.equal(result.completionClaim.claimed, true);
     assert.equal(result.completionClaim.requiresIndependentVerification, true);
@@ -156,6 +162,55 @@ describe("rlcd_brwsr runner", () => {
       result.trace.map(({ operation }) => operation),
       ["CLICK", "DONE"],
     );
+  });
+
+  test("hands off when recognized consequential controls are the only click actions", async () => {
+    let classifierCalled = false;
+    const cliArgv: string[][] = [];
+    const result = await createRlcdBrwsrRunner({
+      classifier: async () => {
+        classifierCalled = true;
+        return {};
+      },
+      cli: async (args) => {
+        cliArgv.push([...args]);
+        return processResult(
+          snapshot("1_0", "http://127.0.0.1/account", "Account documentation", [
+            {
+              id: "1_1",
+              role: "StaticText",
+              name: "Read the public account documentation before continuing.",
+            },
+            { id: "1_2", role: "link", name: "Log in to continue" },
+            { id: "1_3", role: "button", name: "Donate now" },
+          ]),
+        );
+      },
+      clock: { now: () => 1_000 },
+      wait: async () => {
+        await new Promise(() => {});
+      },
+    })({
+      goal: "Continue only if the public documentation permits it",
+      maxSteps: 2,
+      maxSeconds: 10,
+    });
+
+    assert.equal(result.stopReason, "consequential_action");
+    assert.equal(result.completionClaim.claimed, false);
+    assert.equal(classifierCalled, false);
+    assert.deepEqual(cliArgv, [["take_snapshot", "--output-format=json"]]);
+    assert.deepEqual(
+      result.evidence.excludedConsequentialControls.map(({ role, label }) => ({
+        role,
+        label,
+      })),
+      [
+        { role: "link", label: "Log in to continue" },
+        { role: "button", label: "Donate now" },
+      ],
+    );
+    assert.equal(result.evidence.excludedConsequentialControlsTruncated, false);
   });
 
   test("rejects an unoffered classifier target before browser mutation", async () => {
@@ -242,6 +297,137 @@ describe("rlcd_brwsr runner", () => {
       /Evidence before cancellation/,
     );
     assert.equal(result.metrics.classifierCalls, 1);
+  });
+
+  test("waits for a cancelled CLI adapter to settle before returning", async () => {
+    const controller = new AbortController();
+    let markCliStarted!: () => void;
+    const cliStarted = new Promise<void>((resolve) => {
+      markCliStarted = resolve;
+    });
+    let markCliAborted!: () => void;
+    const cliAborted = new Promise<void>((resolve) => {
+      markCliAborted = resolve;
+    });
+    let settleCli!: () => void;
+
+    const run = createRlcdBrwsrRunner({
+      classifier: async () => {
+        throw new Error(
+          "classifier must not run before the initial observation",
+        );
+      },
+      cli: async (_args, options) => {
+        markCliStarted();
+        await new Promise<void>((resolve) => {
+          settleCli = resolve;
+          options.signal.addEventListener("abort", markCliAborted, {
+            once: true,
+          });
+        });
+        return {
+          code: null,
+          killed: true,
+          stderr: "cancelled after CLI cleanup",
+          stdout: "",
+        };
+      },
+      clock: { now: () => 1_000 },
+      wait: async () => {
+        await new Promise(() => {});
+      },
+    });
+
+    let returned = false;
+    const pendingResult = run(
+      { goal: "Cancel the initial observation", maxSteps: 1, maxSeconds: 10 },
+      controller.signal,
+    ).then((result) => {
+      returned = true;
+      return result;
+    });
+    await cliStarted;
+    controller.abort(new Error("test cancellation"));
+    await cliAborted;
+    await new Promise((resolve) => setImmediate(resolve));
+
+    assert.equal(returned, false);
+    settleCli();
+    const result = await pendingResult;
+
+    assert.equal(returned, true);
+    assert.equal(result.stopReason, "cancelled");
+    assert.equal(result.metrics.browserCommands, 1);
+  });
+
+  test("waits for a timed-out CLI adapter and reports cleanup beyond the budget", async () => {
+    let now = 1_000;
+    let markCliStarted!: () => void;
+    const cliStarted = new Promise<void>((resolve) => {
+      markCliStarted = resolve;
+    });
+    let markCliAborted!: () => void;
+    const cliAborted = new Promise<void>((resolve) => {
+      markCliAborted = resolve;
+    });
+    let settleCli!: () => void;
+    let expireTimer!: () => void;
+
+    const run = createRlcdBrwsrRunner({
+      classifier: async () => {
+        throw new Error(
+          "classifier must not run before the initial observation",
+        );
+      },
+      cli: async (_args, options) => {
+        markCliStarted();
+        await new Promise<void>((resolve) => {
+          settleCli = resolve;
+          options.signal.addEventListener("abort", markCliAborted, {
+            once: true,
+          });
+        });
+        return {
+          code: null,
+          killed: true,
+          stderr: "timed out after CLI cleanup",
+          stdout: "",
+        };
+      },
+      clock: { now: () => now },
+      wait: async (_milliseconds, signal) => {
+        await new Promise<void>((resolve, reject) => {
+          expireTimer = resolve;
+          signal.addEventListener("abort", () => reject(signal.reason), {
+            once: true,
+          });
+        });
+      },
+    });
+
+    let returned = false;
+    const pendingResult = run({
+      goal: "Time out the initial observation",
+      maxSteps: 1,
+      maxSeconds: 1,
+    }).then((result) => {
+      returned = true;
+      return result;
+    });
+    await cliStarted;
+    now = 2_000;
+    expireTimer();
+    await cliAborted;
+    now = 2_250;
+    await new Promise((resolve) => setImmediate(resolve));
+
+    assert.equal(returned, false);
+    settleCli();
+    const result = await pendingResult;
+
+    assert.equal(result.stopReason, "time_budget");
+    assert.equal(result.metrics.elapsedMs, 1_250);
+    assert.equal(result.metrics.budgetOverrunMs, 250);
   });
 
   test("does not retry a killed click whose mutation outcome is uncertain", async () => {

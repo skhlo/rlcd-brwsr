@@ -49,17 +49,25 @@ The real 1.7.0 CLI also demonstrated the two JSON result forms used by the runne
 - failure: a text-record array such as
   `[{"type":"text","text":"Error: Element uid ... not found ..."}]`, even with process exit code 0.
 
-## Cancellation, timeout, and cleanup
+## Cancellation, timeout, and cleanup correction
 
-`check-cli-lifecycle.mjs` uses `spawn` with `shell: false` against the real CLI and the fixture's slow
-route.
+Repeated on 2026-09-20 through the actual registered tool in Pi's TUI. The fixture extension injected
+only the fake classifier; registration created the real runner and the production
+`createChromeCliExecutor(pi.exec)` adapter. The old standalone-spawn surrogate was removed because it
+did not exercise this path.
 
-- CLI timeout: `new_page ... --timeout 250` returned the CLI's JSON error array containing
-  `Navigation timeout of 250 ms exceeded`; the client exited and its PID was absent afterward.
-- Client cancellation: aborting a dispatched `new_page` produced `AbortError` / `ABORT_ERR`, ended the
-  client with `SIGTERM`, and its PID was absent afterward.
-- The browser was listed after both cases rather than assuming client cancellation stopped work in
-  the existing executor daemon. One task-created blank page remained and was closed explicitly.
-- The two-page journey tab and all fixture, Pi-demo, cancellation, and timeout processes were stopped.
-  The pre-existing `about:blank` page was preserved. The Chrome DevTools CLI daemon was retained
-  because it is executor-owned, not RLCD-brwsr-owned.
+- Timeout: a tool call with `maxSeconds: 1` clicked `Open slow documentation`. The visible tool result
+  returned `uncertain_execution`, `budgetOverrunMs: 18`, and a model-visible truncation disclosure
+  naming omitted trace probabilities and the 12,000-character content cap.
+- Cancellation: a tool call with `maxSeconds: 30` showed a task-created `chrome-devtools` client as a
+  direct child of Pi while the click was active. Pressing Escape produced a visible
+  `uncertain_execution` tool result. The tracked CLI child was absent when that result appeared; Pi
+  then displayed that the enclosing operation was aborted.
+- In both cases the existing daemon continued the already-dispatched slow navigation after the CLI
+  client ended. A separate `list_pages` call could not complete until the fixture responded, and the
+  page later changed to `/slow`. This confirms why the result remains uncertain and why client cleanup
+  is not represented as cancellation of daemon-side browser work.
+- The pre-existing daemon and `about:blank` page were preserved. The task-created lifecycle page was
+  closed, the original page was reselected, and both Paseo fixture/TUI terminals and their processes
+  were stopped. No RLCD-brwsr-owned CLI child remained. Tailscale CLI remained unavailable and no Jev
+  request was made.
