@@ -24,6 +24,8 @@ const routes = new Map([
   ["/index.html", "index.html"],
   ["/evidence.html", "evidence.html"],
   ["/journey.html", "journey.html"],
+  ["/ambiguous-select.html", "ambiguous-select.html"],
+  ["/adversarial.html", "adversarial.html"],
   ["/lifecycle.html", "lifecycle.html"],
 ]);
 

@@ -396,6 +396,61 @@ describe("rlcd_brwsr runner", () => {
     ]);
   });
 
+  test("hands off when a native select has duplicate executable labels", async () => {
+    let classifierCalled = false;
+    const cliArgv: string[][] = [];
+
+    const result = await createRlcdBrwsrRunner({
+      classifier: async () => {
+        classifierCalled = true;
+        return {};
+      },
+      cli: async (args) => {
+        cliArgv.push([...args]);
+        return processResult(
+          snapshot(
+            "1_0",
+            "http://127.0.0.1/ambiguous-select",
+            "Ambiguous select fixture",
+            [
+              {
+                id: "1_1",
+                role: "combobox",
+                name: "Research topic",
+                children: [
+                  {
+                    id: "1_2",
+                    role: "option",
+                    name: "Response validation",
+                    value: "Response validation",
+                  },
+                  {
+                    id: "1_3",
+                    role: "option",
+                    name: "Response validation",
+                    value: "Response validation",
+                  },
+                ],
+              },
+            ],
+          ),
+        );
+      },
+      clock: { now: () => 1_000 },
+      wait: async () => {
+        await new Promise(() => {});
+      },
+    })({
+      goal: "Choose the relevant response validation source",
+      maxSteps: 1,
+      maxSeconds: 10,
+    });
+
+    assert.equal(result.stopReason, "ambiguous_select_option");
+    assert.equal(classifierCalled, false);
+    assert.deepEqual(cliArgv, [["take_snapshot", "--output-format=json"]]);
+  });
+
   test("scrolls down and up with fixed keys while WAIT refreshes without an empty target head", async () => {
     const browserResults = [
       processResult(
@@ -743,6 +798,46 @@ describe("rlcd_brwsr runner", () => {
     assert.equal(result.evidence.sources.length, 1);
   });
 
+  test("counts duplicate native options before enforcing target capacity", async () => {
+    let classifierCalled = false;
+    const duplicateOptions = Array.from({ length: 255 }, (_, index) => ({
+      id: `1_${index + 2}`,
+      role: "option",
+      name: "Same displayed label",
+      value: "Same displayed label",
+    }));
+
+    const result = await createRlcdBrwsrRunner({
+      classifier: async () => {
+        classifierCalled = true;
+        return {};
+      },
+      cli: async () =>
+        processResult(
+          snapshot(
+            "1_0",
+            "http://127.0.0.1/select-capacity",
+            "Native option capacity fixture",
+            [
+              {
+                id: "1_1",
+                role: "combobox",
+                name: "Research topic",
+                children: duplicateOptions,
+              },
+            ],
+          ),
+        ),
+      clock: { now: () => 1_000 },
+      wait: async () => {
+        await new Promise(() => {});
+      },
+    })({ goal: "Choose one observed topic", maxSteps: 1, maxSeconds: 10 });
+
+    assert.equal(result.stopReason, "candidate_overflow");
+    assert.equal(classifierCalled, false);
+  });
+
   test("returns candidate_overflow when complete field/value pairs exceed the choice limit", async () => {
     let classifierCalled = false;
     const quotedValues = Array.from(
@@ -1038,6 +1133,88 @@ describe("rlcd_brwsr runner", () => {
     assert.equal(cliArgv.length, 2);
     assert.equal(result.trace[0]!.outcome, "stale_target");
     assert.equal(result.evidence.sources.length, 1);
+  });
+
+  test("recognizes the pinned CLI detached-target wording without retrying", async () => {
+    const cliArgv: string[][] = [];
+    const start = processResult(
+      snapshot("1_0", "http://127.0.0.1/stale", "Stale fixture", [
+        { id: "1_1", role: "link", name: "Detached documentation link" },
+      ]),
+    );
+
+    const result = await createRlcdBrwsrRunner({
+      classifier: async (request) => {
+        const targetIds = request.candidates.clickTargets.map(
+          (target) => target.id,
+        );
+        return {
+          answers: {
+            operation: choice("CLICK", request.candidates.operations),
+            click_target: choice(targetIds[0]!, [...targetIds, "NO_MATCH"]),
+          },
+        };
+      },
+      cli: async (args) => {
+        cliArgv.push([...args]);
+        if (cliArgv.length === 1) return start;
+        return processResult([
+          {
+            type: "text",
+            text: "Error: Element with uid 1_1 no longer exists on the page.",
+          },
+        ]);
+      },
+      clock: { now: () => 1_000 },
+      wait: async () => {
+        await new Promise(() => {});
+      },
+    })({ goal: "Follow the detached link", maxSteps: 3, maxSeconds: 10 });
+
+    assert.equal(result.stopReason, "stale_target");
+    assert.equal(cliArgv.length, 2);
+    assert.equal(result.trace[0]!.outcome, "stale_target");
+  });
+
+  test("keeps an unknown dispatched CLI mutation failure uncertain", async () => {
+    const cliArgv: string[][] = [];
+    const start = processResult(
+      snapshot("1_0", "http://127.0.0.1/error", "Mutation error fixture", [
+        { id: "1_1", role: "link", name: "Documentation link" },
+      ]),
+    );
+
+    const result = await createRlcdBrwsrRunner({
+      classifier: async (request) => {
+        const targetIds = request.candidates.clickTargets.map(
+          (target) => target.id,
+        );
+        return {
+          answers: {
+            operation: choice("CLICK", request.candidates.operations),
+            click_target: choice(targetIds[0]!, [...targetIds, "NO_MATCH"]),
+          },
+        };
+      },
+      cli: async (args) => {
+        cliArgv.push([...args]);
+        if (cliArgv.length === 1) return start;
+        return processResult([
+          {
+            type: "text",
+            text: "Error: Element with uid 1_1 could not be activated.",
+          },
+        ]);
+      },
+      clock: { now: () => 1_000 },
+      wait: async () => {
+        await new Promise(() => {});
+      },
+    })({ goal: "Follow the documentation link", maxSteps: 3, maxSeconds: 10 });
+
+    assert.equal(result.stopReason, "uncertain_execution");
+    assert.equal(cliArgv.length, 2);
+    assert.equal(result.trace[0]!.outcome, "uncertain_execution");
   });
 
   test("treats the CLI JSON error array as failure rather than a success snapshot", async () => {

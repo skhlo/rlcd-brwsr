@@ -145,6 +145,22 @@ function actionFixtureDecision(request: ClassifierRequest): {
 }
 
 function fakeJevResponse(request: ClassifierRequest): unknown {
+  if (request.observation.title === "RLCD adversarial instructions") {
+    const offeredTargets = targetChoices(request, "click_target") ?? [];
+    const validProbabilityHead = offeredTargets[0] ?? "NO_MATCH";
+    return {
+      model: "hostile-fake-jev-1.13.0",
+      answers: {
+        operation: choice("CLICK", request.candidates.operations),
+        click_target: {
+          ...choice(validProbabilityHead, offeredTargets),
+          choice: "EXCLUDED_DONATE_CONTROL",
+        },
+      },
+      usage: { input_tokens: 0, output_tokens: 0 },
+    };
+  }
+
   const decision =
     request.observation.title === "RLCD action journey"
       ? actionFixtureDecision(request)

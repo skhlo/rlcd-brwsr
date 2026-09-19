@@ -41,6 +41,7 @@ type StopReason =
   | "no_matching_target"
   | "candidate_overflow"
   | "classifier_state_budget"
+  | "ambiguous_select_option"
   | "stale_target"
   | "cancelled"
   | "time_budget"
@@ -238,6 +239,7 @@ interface Observation {
   textFields: TextField[];
   selectPairs: SelectPairCandidate[];
   actionCandidatesOverflow: boolean;
+  ambiguousSelectOption: boolean;
   excludedConsequentialControls: ClickTarget[];
   excludedConsequentialControlsTruncated: boolean;
 }
@@ -433,6 +435,8 @@ function observationFromSnapshot(value: unknown): Observation | undefined {
   let scannedNodes = 0;
   let textTruncated = false;
   let actionCandidatesOverflow = false;
+  let observedNativeOptionCount = 0;
+  let ambiguousSelectOption = false;
   const excludedConsequentialControls: ClickTarget[] = [];
   let excludedConsequentialControlsTruncated = false;
   const stack = [...(root.children ?? [])].reverse();
@@ -508,13 +512,20 @@ function observationFromSnapshot(value: unknown): Observation | undefined {
         if (observedOptions.length > 0) {
           const fieldOptions = new Set<string>();
           for (const option of observedOptions) {
-            const optionName = option.name!;
-            if (fieldOptions.has(optionName)) continue;
-            fieldOptions.add(optionName);
-            if (selectPairs.length >= MAX_EXECUTABLE_OPTIONS) {
+            if (observedNativeOptionCount >= MAX_EXECUTABLE_OPTIONS) {
               actionCandidatesOverflow = true;
               break;
             }
+            observedNativeOptionCount += 1;
+
+            const optionName = option.name!;
+            if (fieldOptions.has(optionName)) {
+              // CLI 1.7.0 snapshots replace an option's AX value with its name,
+              // and fill resolves that name to the first matching DOM option.
+              ambiguousSelectOption = true;
+              continue;
+            }
+            fieldOptions.add(optionName);
             selectPairs.push({
               id: `SELECT_${selectPairs.length}`,
               fieldUid: node.id,
@@ -555,6 +566,7 @@ function observationFromSnapshot(value: unknown): Observation | undefined {
     textFields,
     selectPairs,
     actionCandidatesOverflow,
+    ambiguousSelectOption,
     excludedConsequentialControls,
     excludedConsequentialControlsTruncated,
   };
@@ -628,7 +640,7 @@ function parseCommandResult(
   if (cliError) {
     const staleTarget =
       mutation &&
-      /\bElement uid\b.*\bnot found\b|\b(?:element|target)\b.*\b(?:detached|no longer attached|stale)\b/i.test(
+      /\bElement uid\b.*\bnot found\b|\bElement with uid\b.*\bno longer exists on the page\b|\b(?:element|target)\b.*\b(?:detached|no longer attached|stale)\b/i.test(
         cliError,
       );
     return {
@@ -1001,6 +1013,7 @@ function emptyObservation(): Observation {
     textFields: [],
     selectPairs: [],
     actionCandidatesOverflow: false,
+    ambiguousSelectOption: false,
     excludedConsequentialControls: [],
     excludedConsequentialControlsTruncated: false,
   };
@@ -1314,6 +1327,8 @@ export function createRlcdBrwsrRunner(dependencies: RlcdDependencies) {
     if (addEvidence(evidence, observation)) return finish("evidence_budget");
     if (observation.actionCandidatesOverflow)
       return finish("candidate_overflow");
+    if (observation.ambiguousSelectOption)
+      return finish("ambiguous_select_option");
     if (
       observation.clickTargets.length === 0 &&
       observation.excludedConsequentialControls.length > 0
@@ -1416,6 +1431,8 @@ export function createRlcdBrwsrRunner(dependencies: RlcdDependencies) {
           return finish("evidence_budget");
         if (observation.actionCandidatesOverflow)
           return finish("candidate_overflow");
+        if (observation.ambiguousSelectOption)
+          return finish("ambiguous_select_option");
         if (
           observation.clickTargets.length === 0 &&
           observation.excludedConsequentialControls.length > 0
@@ -1535,6 +1552,8 @@ export function createRlcdBrwsrRunner(dependencies: RlcdDependencies) {
       if (addEvidence(evidence, observation)) return finish("evidence_budget");
       if (observation.actionCandidatesOverflow)
         return finish("candidate_overflow");
+      if (observation.ambiguousSelectOption)
+        return finish("ambiguous_select_option");
       if (
         observation.clickTargets.length === 0 &&
         observation.excludedConsequentialControls.length > 0

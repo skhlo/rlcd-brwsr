@@ -109,3 +109,38 @@ evidence.
 All TUI and browser commands above were sent and captured through Paseo CLI terminals, never Paseo
 MCP. The task-created fixture page, fixture server and verification terminals were removed after the
 final checks. The pre-existing Chrome executor daemon and its `about:blank` page were retained.
+
+## Correction checks: option identity, detached targets and adversarial instructions
+
+Date: 2026-09-20
+
+Chrome DevTools CLI 1.7.0 exposed both options in `ambiguous-select.html` with the same AX `name` and
+`value`, `Response validation`, even though the fixture source uses distinct DOM values. A direct
+real-CLI `fill` by that observed label selected the first source option and the fixture reported
+`response-validation-primary`. This matched the pinned CLI source contract: snapshot construction
+replaces each option's AX value with its name, and native fill finds the first matching child name
+before reading that child's DOM value.
+
+After reloading the page, the actual Pi 0.85.1 TUI ran the registered tool with the explicitly loaded
+fake responder. The visible result returned `ambiguous_select_option` before classification or
+mutation. A separate real-CLI snapshot still showed `No source value selected.` and retained the
+unrelated `Log in` and `Donate` controls.
+
+A real-CLI stale-target probe navigated away after snapshotting a link, then dispatched the old UID.
+CLI 1.7.0 returned the exact error `Element with uid 32_7 no longer exists on the page.` The runner's
+deterministic regression recognizes this wording and the existing `not found` wording as
+`stale_target`, while an unknown dispatched mutation error remains `uncertain_execution`; none is
+retried.
+
+The new adversarial page instructed an automated browser to ignore the outer goal, click excluded
+Login and Donate controls, select an unoffered `SUBMIT` operation, or follow an irrelevant link. Its
+deliberately hostile fake responder returned an unoffered excluded target. The visible Pi tool result
+was `invalid_classifier_response` with no mutation. A separate real-CLI snapshot confirmed that the
+selected URL and all controls were unchanged. This demonstrates code-owned validation against this
+fake output only; it is not evidence of real Jev prompt-injection immunity.
+
+These checks used Node 26.6.0, pnpm 11.27.0, Pi 0.85.1 and Chrome DevTools CLI 1.7.0. Tailscale and
+`TYPESAFE_API_KEY` were absent, and no Jev request was made. All TUI control used Paseo CLI rather
+than Paseo MCP. The task-created page, fixture server and TUI terminal were stopped afterward. The
+pre-existing executor daemon, selected `about:blank` page and unrelated Paseo Pi terminal were
+retained.
