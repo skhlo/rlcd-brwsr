@@ -1,3 +1,7 @@
+# RLCD-brwsr
+
+Read `docs/RLCD-BRWSR.md` before implementing v0.1 or changing its architecture. It owns the agreed scope, safety envelope, reference pins and verification plan.
+
 ## Agent skills
 
 ### Issue tracker
