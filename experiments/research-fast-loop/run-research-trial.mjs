@@ -605,14 +605,9 @@ export async function runTrial(options) {
   const trialStartedAt = new Date().toISOString();
   const trialStarted = performance.now();
   await ensureNewDirectory(output);
-  const temporaryRoot = await mkdtemp(
-    path.join(os.tmpdir(), "rlcd-typesafe-fast-loop-"),
-  );
-  const workspace = path.join(temporaryRoot, "workspace");
-  const retrievalLog = path.join(temporaryRoot, "retrievals.jsonl");
-  await mkdir(workspace);
-  await writeFile(retrievalLog, "", { mode: 0o600 });
-
+  let temporaryRoot;
+  let browserWorkStarted = false;
+  let pageCreationAttempted = false;
   let pagesBefore = [];
   let preparedPage;
   let cleanupComplete = false;
@@ -620,8 +615,8 @@ export async function runTrial(options) {
   const completedPhases = [];
   let ledgerBefore;
   const cleanup = {
-    taskPageClosed: false,
-    preExistingPagesPreserved: false,
+    taskPageClosed: null,
+    preExistingPagesPreserved: null,
     pagesAfterCleanup: [],
     commands: 0,
     errors: [],
@@ -634,6 +629,7 @@ export async function runTrial(options) {
   const cleanupPreparedPage = async () => {
     if (cleanupComplete) return cleanup;
     cleanupComplete = true;
+    if (!browserWorkStarted) return cleanup;
     if (preparedPage) {
       cleanup.commands += 1;
       const closed = await captureProcess(
@@ -669,10 +665,13 @@ export async function runTrial(options) {
       cleanup.errors.push(
         error instanceof Error ? error.message : String(error),
       );
+      return cleanup;
     }
     cleanup.taskPageClosed = preparedPage
       ? !cleanup.pagesAfterCleanup.some((page) => page.id === preparedPage.id)
-      : true;
+      : pageCreationAttempted
+        ? null
+        : true;
     cleanup.preExistingPagesPreserved = pagesBefore.every((beforePage) =>
       cleanup.pagesAfterCleanup.some(
         (afterPage) =>
@@ -692,15 +691,24 @@ export async function runTrial(options) {
   };
 
   try {
+    temporaryRoot = await mkdtemp(
+      path.join(os.tmpdir(), "rlcd-typesafe-fast-loop-"),
+    );
+    const workspace = path.join(temporaryRoot, "workspace");
+    const retrievalLog = path.join(temporaryRoot, "retrievals.jsonl");
+    await mkdir(workspace);
+    await writeFile(retrievalLog, "", { mode: 0o600 });
     const inputSha256 = await prepareWorkspace(workspace);
     failedStage = "ledger_snapshot";
     ledgerBefore = await readLedger(ledgerPath);
     const protocolCommit = await currentCommit();
 
     failedStage = "page_preparation";
+    browserWorkStarted = true;
     const pagePreparationStartedAt = new Date().toISOString();
     const pagePreparationStarted = performance.now();
     pagesBefore = await listPages(chromeBin, process.env);
+    pageCreationAttempted = true;
     await checkedCommand(
       chromeBin,
       ["new_page", startUrl, "--timeout", "30000", "--output-format=json"],
@@ -1015,7 +1023,7 @@ export async function runTrial(options) {
     throw error;
   } finally {
     await finalizeCleanup();
-    await rm(temporaryRoot, { recursive: true });
+    if (temporaryRoot) await rm(temporaryRoot, { recursive: true });
   }
 }
 

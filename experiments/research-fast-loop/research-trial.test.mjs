@@ -70,12 +70,16 @@ let pages = [{ id: 1, url: "about:blank", title: "", selected: true }];
 try { pages = JSON.parse(await readFile(process.env.FAKE_CHROME_STATE, "utf8")); } catch {}
 const command = args[0];
 if (command === "list_pages") {
+  let unreadable = false;
+  try { await readFile(process.env.FAKE_CHROME_STATE + ".unreadable"); unreadable = true; } catch {}
+  if (unreadable) { console.log(JSON.stringify([{ type: "text", text: "Final page state unavailable" }])); process.exit(0); }
   if (pages.some((page) => page.selected)) console.log(JSON.stringify({ pages }));
   else console.log(JSON.stringify([{ type: "text", text: "The selected page has been closed. Call list_pages to see open pages." }]));
 } else if (command === "new_page") {
   pages = pages.map((page) => ({ ...page, selected: false }));
   pages.push({ id: 2, url: args[1], title: "How to build with TypeSafe", selected: true });
   await writeFile(process.env.FAKE_CHROME_STATE, JSON.stringify(pages));
+  if (process.env.FAKE_CHROME_FAIL_CREATION === "1") { console.error("lost page creation response"); process.exit(7); }
   console.log(JSON.stringify({ pages }));
 } else if (command === "close_page") {
   await new Promise((resolve) => setTimeout(resolve, 25));
@@ -84,6 +88,7 @@ if (command === "list_pages") {
   await writeFile(process.env.FAKE_CHROME_STATE, JSON.stringify(pages));
   console.log(JSON.stringify({ pages }));
 } else if (command === "select_page") {
+  if (process.env.FAKE_CHROME_FAIL_FINAL_LIST === "1") await writeFile(process.env.FAKE_CHROME_STATE + ".unreadable", "yes");
   pages = pages.map((page) => ({ ...page, selected: page.id === Number(args[1]) }));
   await writeFile(process.env.FAKE_CHROME_STATE, JSON.stringify(pages));
   console.log(JSON.stringify({ pages }));
@@ -278,4 +283,98 @@ console.log(JSON.stringify({ type: "message_end", message: { role: "assistant", 
   assert.deepEqual(JSON.parse(await readFile(chromeState, "utf8")), [
     { id: 1, url: "about:blank", title: "", selected: true },
   ]);
+
+  async function runRegression(name, env) {
+    const output = path.join(temporaryDirectory, name);
+    const result = await runNode(
+      "run-research-trial.mjs",
+      [
+        "--condition",
+        "cold",
+        "--output",
+        output,
+        "--pi-bin",
+        piBin,
+        "--chrome-bin",
+        chromeBin,
+        "--ledger",
+        ledgerPath,
+        "--provider",
+        "test-provider",
+        "--model",
+        "test-model",
+        "--thinking",
+        "low",
+      ],
+      {
+        env: {
+          TYPESAFE_API_KEY: "test-only-key",
+          FAKE_CHROME_STATE: chromeState,
+          ...env,
+        },
+      },
+    );
+    return { output, result };
+  }
+
+  await t.test(
+    "unreadable final page state is unknown, not successful cleanup",
+    async () => {
+      const { output, result } = await runRegression("unreadable-cleanup", {
+        FAKE_CHROME_FAIL_FINAL_LIST: "1",
+      });
+      assert.equal(result.code, 0, result.stderr);
+      const metrics = JSON.parse(
+        await readFile(path.join(output, "metrics.json"), "utf8"),
+      );
+      assert.equal(metrics.retained.taskPageClosed, null);
+      assert.equal(metrics.retained.preExistingPagesPreserved, null);
+      assert.ok(metrics.retained.errors.length > 0);
+    },
+  );
+
+  await t.test(
+    "uncertain page creation does not claim the unidentified task page was closed",
+    async () => {
+      const { output, result } = await runRegression(
+        "uncertain-page-creation",
+        {
+          FAKE_CHROME_STATE: path.join(
+            temporaryDirectory,
+            "uncertain-creation-state.json",
+          ),
+          FAKE_CHROME_FAIL_CREATION: "1",
+        },
+      );
+      assert.equal(result.code, 1);
+      const failure = JSON.parse(
+        await readFile(path.join(output, "failure.json"), "utf8"),
+      );
+      assert.equal(failure.failedStage, "page_preparation");
+      assert.equal(failure.cleanup.taskPageClosed, null);
+      assert.deepEqual(
+        failure.cleanup.pagesAfterCleanup.map((page) => page.id),
+        [1, 2],
+      );
+      assert.deepEqual(failure.completedPhases, []);
+    },
+  );
+
+  await t.test(
+    "workspace creation failure retains a failure artifact without browser work",
+    async () => {
+      const { output, result } = await runRegression("workspace-failure", {
+        TMPDIR: path.join(temporaryDirectory, "nonexistent-parent"),
+      });
+      assert.equal(result.code, 1);
+      const failure = JSON.parse(
+        await readFile(path.join(output, "failure.json"), "utf8"),
+      );
+      assert.equal(failure.failedStage, "workspace_preparation");
+      assert.match(failure.error.message, /ENOENT/);
+      assert.equal(failure.cleanup.commands, 0);
+      assert.equal(failure.cleanup.taskPageClosed, null);
+      assert.deepEqual(failure.completedPhases, []);
+    },
+  );
 });

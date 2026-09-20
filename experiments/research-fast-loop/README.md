@@ -48,9 +48,11 @@ Before issue #6 sends any request:
 4. Source the host-owned credential without printing it, then run the child process in that shell.
 
 The research-trial command writes schema-v2 success metrics with separate measured-work, cleanup,
-and full-total timing. A failed invocation writes `failure.json` after its cleanup attempt, including
-the failed stage, measured failure/cleanup timing, final page state, and ledger-attempt count when
-available. Historical 2026-09-20 totals remain unknown where those timestamps were not retained.
+and full-total timing. After argument checks and creation of a writable output directory, a failed
+invocation writes `failure.json` after its cleanup attempt, including the failed stage, measured
+failure/cleanup timing, final page state, and ledger-attempt count when available. Failed final-page
+inspection or unidentified page creation leaves closure unverified (`null`), not successful.
+Historical 2026-09-20 totals remain unknown where those timestamps were not retained.
 
 The model page currently documents a 64k shared request context and a 32k limit for state plus the
 longest question, while the primitives page describes the request budget as around 32k. The adapter
