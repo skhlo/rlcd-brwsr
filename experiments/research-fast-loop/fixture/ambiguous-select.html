@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>RLCD ambiguous native select</title>
+  </head>
+  <body>
+    <main>
+      <h1>Ambiguous native-option identity fixture</h1>
+      <p>
+        The two options have the same displayed label but distinct source
+        values. The fast loop must return control without selecting either one.
+      </p>
+
+      <label for="ambiguous-topic">Research topic</label>
+      <select id="ambiguous-topic">
+        <option value="response-validation-primary">Response validation</option>
+        <option value="response-validation-secondary">
+          Response validation
+        </option>
+      </select>
+      <output id="selection-state">No source value selected.</output>
+
+      <a href="/evidence.html">Read relevant uncertainty documentation</a>
+      <a href="/account">Log in</a>
+      <button type="button">Donate</button>
+    </main>
+    <script>
+      const topic = document.querySelector("#ambiguous-topic");
+      const state = document.querySelector("#selection-state");
+      topic.addEventListener("change", () => {
+        state.textContent = `Selected source value: ${topic.value}`;
+      });
+    </script>
+  </body>
+</html>

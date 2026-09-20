@@ -1,0 +1,173 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-09-20",
+  "scope": "Secondary browser-only comparison; does not substitute for primary research benchmark.",
+  "goal": "Navigate from the RLCD research start page to the uncertainty evidence page, then independently verify the destination title and completion-warning text.",
+  "fixture": {
+    "origin": "http://127.0.0.1:43113",
+    "serverSetupIncludedInJourneyWallTime": false,
+    "serverSetupNote": "One shared loopback fixture server was started before both conditions through Paseo CLI.",
+    "tailscaleAvailable": false
+  },
+  "environment": {
+    "pi": "0.85.1",
+    "mainModel": "openai-codex/gpt-5.6-sol",
+    "thinking": "xhigh",
+    "chromeDevtoolsCli": "1.7.0",
+    "jevModel": "jev-1.13.0"
+  },
+  "conditions": [
+    {
+      "mode": "ordinary",
+      "startedAt": "2026-09-20T00:54:13.506Z",
+      "endedAt": "2026-09-20T00:54:33.581Z",
+      "wallTimeMs": 20073,
+      "measurementCoverage": {
+        "wallTimeMsMeaning": "Recorded journey subtotal through independent verification; shared server setup and page cleanup are excluded.",
+        "cleanupWallTimeMs": null,
+        "fullEndToEndWallTimeMs": null
+      },
+      "phaseWallTimeMs": {
+        "pagePreparation": 736,
+        "piExecutionAndVerification": 19337
+      },
+      "verifiedOutcome": "PASS",
+      "independentAssertion": {
+        "url": "http://127.0.0.1:43113/evidence.html",
+        "title": "RLCD uncertainty evidence",
+        "completionWarningObserved": true
+      },
+      "mainModel": {
+        "provider": "openai-codex",
+        "model": "gpt-5.6-sol",
+        "thinking": "xhigh",
+        "turns": 4,
+        "tokens": {
+          "input": 7627,
+          "output": 342,
+          "cacheRead": 19456,
+          "cacheWrite": 0,
+          "total": 27425
+        }
+      },
+      "browserCommands": {
+        "pagePreparation": 3,
+        "ordinaryOrIndependentCommandsObservedInPi": 3,
+        "fastLoop": 0,
+        "finalIndependentAssertion": 1,
+        "total": 7
+      },
+      "fastLoop": null,
+      "jev": {
+        "requests": 0,
+        "outcomes": {},
+        "inputTokens": 0,
+        "outputTokens": 0,
+        "actualUsd": 0,
+        "unknownBillingReservedUsd": 0,
+        "committedUsd": 0
+      },
+      "cleanup": {
+        "taskPageClosed": true,
+        "preExistingPagesPreserved": true,
+        "pagesAfter": [
+          {
+            "id": 1,
+            "url": "about:blank",
+            "title": "",
+            "selected": true
+          }
+        ]
+      },
+      "failedToolCalls": {}
+    },
+    {
+      "mode": "fastloop",
+      "startedAt": "2026-09-20T00:54:34.559Z",
+      "endedAt": "2026-09-20T00:54:52.091Z",
+      "wallTimeMs": 17532,
+      "measurementCoverage": {
+        "wallTimeMsMeaning": "Recorded journey subtotal through independent verification; shared server setup and page cleanup are excluded.",
+        "cleanupWallTimeMs": null,
+        "fullEndToEndWallTimeMs": null
+      },
+      "phaseWallTimeMs": {
+        "pagePreparation": 661,
+        "piExecutionAndVerification": 16871
+      },
+      "verifiedOutcome": "PASS",
+      "independentAssertion": {
+        "url": "http://127.0.0.1:43113/evidence.html",
+        "title": "RLCD uncertainty evidence",
+        "completionWarningObserved": true
+      },
+      "mainModel": {
+        "provider": "openai-codex",
+        "model": "gpt-5.6-sol",
+        "thinking": "xhigh",
+        "turns": 3,
+        "tokens": {
+          "input": 7871,
+          "output": 286,
+          "cacheRead": 13440,
+          "cacheWrite": 0,
+          "total": 21597
+        }
+      },
+      "browserCommands": {
+        "pagePreparation": 3,
+        "ordinaryOrIndependentCommandsObservedInPi": 1,
+        "fastLoop": 2,
+        "finalIndependentAssertion": 1,
+        "total": 7
+      },
+      "fastLoop": {
+        "stopReason": "step_budget",
+        "classifierCalls": 1,
+        "modelInputTokens": 799,
+        "modelOutputTokens": 97
+      },
+      "jev": {
+        "requests": 1,
+        "outcomes": {
+          "success": 1
+        },
+        "inputTokens": 799,
+        "outputTokens": 97,
+        "actualUsd": 0.000033558,
+        "unknownBillingReservedUsd": 0,
+        "committedUsd": 0.000033558
+      },
+      "cleanup": {
+        "taskPageClosed": true,
+        "preExistingPagesPreserved": true,
+        "pagesAfter": [
+          {
+            "id": 1,
+            "url": "about:blank",
+            "title": "",
+            "selected": true
+          }
+        ]
+      },
+      "failedToolCalls": {}
+    }
+  ],
+  "comparison": {
+    "bothOutcomesIndependentlyPass": true,
+    "wallTimeDeltaMs": -2541,
+    "wallTimeDeltaMeaning": "Difference between recorded pre-cleanup journey subtotals, not full end-to-end totals.",
+    "fullEndToEndWallTimeDeltaMs": null,
+    "mainModelTotalTokenDelta": -5828,
+    "browserCommandDelta": 0,
+    "finding": "Observed execution comparison only; n=1 per condition, incomplete timing coverage, and no significance or precise end-to-end speed claim."
+  },
+  "cumulativeBudgetAfter": {
+    "attemptedRequests": 9,
+    "actualUsd": 0.00026061000000000004,
+    "unknownBillingReservedUsd": 0.002688,
+    "committedUsd": 0.00294861,
+    "remainingRequests": 91,
+    "remainingUsd": 4.99705139
+  }
+}

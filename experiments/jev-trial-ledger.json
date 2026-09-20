@@ -1,0 +1,115 @@
+{
+  "schemaVersion": 1,
+  "scope": "TypeSafe Jev trials for GitHub issues #5 and #6",
+  "budget": {
+    "maxRequests": 100,
+    "maxUsd": 5,
+    "model": "jev-1.13.0",
+    "inputUsdPerMillionTokens": 0.042,
+    "reservationInputTokensPerAttempt": 64000,
+    "reservationUsdPerAttempt": 0.002688
+  },
+  "pricing": {
+    "source": "https://docs.typesafe.ai/models",
+    "retrievedAt": "2026-09-20",
+    "note": "Input tokens are billed; output tokens are free. Unknown outcomes retain the full reservation."
+  },
+  "attempts": [
+    {
+      "id": 1,
+      "issue": 5,
+      "purpose": "fixture uncertainty calibration",
+      "startedAt": "2026-09-20T00:15:24.406Z",
+      "outcome": "success",
+      "reservedUsd": 0.002688,
+      "inputTokens": 864,
+      "outputTokens": 106,
+      "actualUsd": 0.000036288
+    },
+    {
+      "id": 2,
+      "issue": 5,
+      "purpose": "fixture uncertainty calibration",
+      "startedAt": "2026-09-20T00:15:24.959Z",
+      "outcome": "success",
+      "reservedUsd": 0.002688,
+      "inputTokens": 659,
+      "outputTokens": 56,
+      "actualUsd": 0.000027678
+    },
+    {
+      "id": 3,
+      "issue": 5,
+      "purpose": "fixture uncertainty calibration",
+      "startedAt": "2026-09-20T00:15:25.176Z",
+      "outcome": "success",
+      "reservedUsd": 0.002688,
+      "inputTokens": 863,
+      "outputTokens": 106,
+      "actualUsd": 0.000036246000000000005
+    },
+    {
+      "id": 4,
+      "issue": 5,
+      "purpose": "fixture uncertainty calibration",
+      "startedAt": "2026-09-20T00:15:25.389Z",
+      "outcome": "success",
+      "reservedUsd": 0.002688,
+      "inputTokens": 790,
+      "outputTokens": 98,
+      "actualUsd": 0.000033180000000000004
+    },
+    {
+      "id": 5,
+      "issue": 5,
+      "purpose": "rlcd_brwsr_run",
+      "startedAt": "2026-09-20T00:16:40.341Z",
+      "outcome": "success",
+      "reservedUsd": 0.002688,
+      "inputTokens": 791,
+      "outputTokens": 97,
+      "actualUsd": 0.000033222
+    },
+    {
+      "id": 6,
+      "issue": 5,
+      "purpose": "rlcd_brwsr_run",
+      "startedAt": "2026-09-20T00:16:41.409Z",
+      "outcome": "success",
+      "reservedUsd": 0.002688,
+      "inputTokens": 772,
+      "outputTokens": 57,
+      "actualUsd": 0.000032424
+    },
+    {
+      "id": 7,
+      "issue": 5,
+      "purpose": "rlcd_brwsr_run",
+      "startedAt": "2026-09-20T00:17:20.690Z",
+      "outcome": "success",
+      "reservedUsd": 0.002688,
+      "inputTokens": 667,
+      "outputTokens": 57,
+      "actualUsd": 0.000028014
+    },
+    {
+      "id": 8,
+      "issue": 5,
+      "purpose": "rlcd_brwsr_run",
+      "startedAt": "2026-09-20T00:18:21.981Z",
+      "outcome": "cancelled",
+      "reservedUsd": 0.002688
+    },
+    {
+      "id": 9,
+      "issue": 6,
+      "purpose": "secondary browser journey",
+      "startedAt": "2026-09-20T00:54:40.073Z",
+      "outcome": "success",
+      "reservedUsd": 0.002688,
+      "inputTokens": 799,
+      "outputTokens": 97,
+      "actualUsd": 0.000033558
+    }
+  ]
+}

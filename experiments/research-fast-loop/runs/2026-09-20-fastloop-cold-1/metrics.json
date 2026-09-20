@@ -1,0 +1,197 @@
+{
+  "schemaVersion": 1,
+  "trialKind": "fast-loop-research",
+  "condition": "cold",
+  "protocolCommit": "3477edce4ccfae6310231a9c8152b3867d39787e",
+  "startedAt": "2026-09-20T00:35:35.731Z",
+  "endedAt": "2026-09-20T00:42:06.348Z",
+  "wallTimeMs": 390615,
+  "measurementCoverage": {
+    "wallTimeMsMeaning": "Recorded runner subtotal from invocation start through research and independent evaluation; the timer ended before cleanup.",
+    "cleanupWallTimeMs": null,
+    "failedLaunchOrRecoveryWallTimeMs": null,
+    "fullEndToEndWallTimeMs": null,
+    "reason": "Cleanup timestamps were not retained. No zero duration or reconstructed full total is inferred."
+  },
+  "verifiedOutcome": "FAIL",
+  "mainModel": {
+    "provider": "openai-codex",
+    "model": "gpt-5.6-sol",
+    "thinking": "xhigh",
+    "turns": 13,
+    "tokens": {
+      "input": 115975,
+      "output": 19402,
+      "cacheRead": 243968,
+      "cacheWrite": 0,
+      "total": 379345
+    },
+    "phaseTurns": {
+      "research": 8,
+      "evaluation": 5
+    },
+    "phaseTokens": {
+      "research": {
+        "input": 51700,
+        "output": 7422,
+        "cacheRead": 129408,
+        "cacheWrite": 0,
+        "total": 188530
+      },
+      "evaluation": {
+        "input": 64275,
+        "output": 11980,
+        "cacheRead": 114560,
+        "cacheWrite": 0,
+        "total": 190815
+      }
+    }
+  },
+  "cacheConditions": {
+    "freshPiContextPerPhase": true,
+    "sessionPersistence": "disabled with --no-session",
+    "priorAnswerAvailableToResearcher": false,
+    "priorSourcePacketAvailableToResearcher": false,
+    "piCacheRetention": "unset",
+    "providerReportedCacheReadTokens": 243968,
+    "providerReportedCacheWriteTokens": 0,
+    "documentationCaches": "DNS, TLS, CDN, browser, provider and Chrome daemon caches are not controlled; cold and warm are operational labels"
+  },
+  "phaseWallTimeMs": {
+    "browserPreparation": 3021,
+    "researchEvidenceAndSynthesis": 154813,
+    "independentVerification": 232735
+  },
+  "pagePreparation": {
+    "includedInWallTime": true,
+    "startedAt": "2026-09-20T00:35:35.757Z",
+    "endedAt": "2026-09-20T00:35:38.778Z",
+    "wallTimeMs": 3021,
+    "startUrl": "https://docs.typesafe.ai/concepts/how-to-build-with-system-one",
+    "commands": 3,
+    "preparedPageId": 9
+  },
+  "fastLoop": {
+    "calls": 1,
+    "completedCalls": 1,
+    "resultDetailsAvailable": 1,
+    "stopReasons": ["classifier_state_budget"],
+    "completionClaims": 0,
+    "staleDecisions": 0,
+    "consequentialActionStops": 0,
+    "browserCommands": 1,
+    "classifierCalls": 0,
+    "modelInputTokens": 0,
+    "modelOutputTokens": 0,
+    "waits": 0,
+    "budgetOverrunMs": 0
+  },
+  "toolCalls": {
+    "read": 15,
+    "rlcd_brwsr_run": 1,
+    "bash": 27
+  },
+  "failedToolCalls": {
+    "bash": 1
+  },
+  "browserCommands": {
+    "exactMeasuredTotal": 4,
+    "pagePreparation": 3,
+    "fastLoop": 1,
+    "observedExternalResearchToolCalls": 0,
+    "total": 4,
+    "cleanupCommandsExcludedFromRecordedSubtotal": 2
+  },
+  "directHttpRequests": {
+    "total": null,
+    "instrumentedFetchDocAttempts": 9,
+    "instrumentedByPhase": {
+      "research": 9,
+      "evaluation": 0
+    },
+    "method": "fetch-doc.mjs retains each instrumented response or failed attempt; unrestricted normal direct-HTTP paths remained allowed and are not fully observable"
+  },
+  "jev": {
+    "model": "jev-1.13.0",
+    "uncertaintyPolicy": "Stop only when the applicable operation or selected target has zero confidence or no unique probability leader outside the 0.001 validation tolerance; this floor remains uncalibrated.",
+    "requests": 0,
+    "outcomes": {},
+    "inputTokens": 0,
+    "outputTokens": 0,
+    "actualUsd": 0,
+    "unknownBillingReservedUsd": 0,
+    "committedUsd": 0,
+    "classifierCallsReportedByTool": 0,
+    "ledgerAndToolCallCountsAgree": true
+  },
+  "verification": {
+    "method": "fresh independent Pi context applying the unchanged fixed checklist and re-fetching cited official sources; TYPESAFE_API_KEY removed",
+    "wallTimeMs": 232735,
+    "mainModelTurns": 5,
+    "mainModelTokens": {
+      "input": 64275,
+      "output": 11980,
+      "cacheRead": 114560,
+      "cacheWrite": 0,
+      "total": 190815
+    },
+    "directHttpRequests": null,
+    "instrumentedFetchDocAttempts": 0
+  },
+  "recoveryWork": {
+    "value": null,
+    "observableFailedToolCalls": 1,
+    "instrumentedResearchFollowUpRequests": 9,
+    "reason": "event summaries do not distinguish recovery reasoning from ordinary source completion and synthesis"
+  },
+  "retained": {
+    "taskPageClosed": true,
+    "preExistingPagesPreserved": false,
+    "pagesAfterCleanup": [],
+    "errors": ["Chrome CLI page list did not contain pages"]
+  },
+  "environment": {
+    "piVersion": "0.85.1",
+    "chromeDevtoolsCliVersion": "1.7.0",
+    "nodeVersion": "v26.6.0",
+    "platform": "darwin-arm64",
+    "resourceDiscovery": "normal Pi extension, skill and prompt-template discovery remained enabled; the issue #6 real-Jev extension was added explicitly",
+    "tailscaleServe": "unavailable on this host; no package was installed"
+  },
+  "frozenContext": {
+    "commit": "6d7aa3f294e8da64aaa2b2ae5958c846e18472e3",
+    "method": "shared context files materialized directly from the same Git object as the accepted normal baseline"
+  },
+  "comparisonPolicy": {
+    "fixedTaskAndChecklist": true,
+    "normalBaselineRuns": "2026-09-19-normal-cold-1 and 2026-09-19-normal-warm-1; constrained pilots excluded",
+    "normalBaselineOutcomesRemain": "cold FAIL 19/20 at 417.316 s; warm FAIL 15/20 at 456.307 s",
+    "fastLoopDirectFollowUpAllowed": true,
+    "forcedBrowserOnlyRestriction": false,
+    "sampleSize": "n=1 per condition"
+  },
+  "inputSha256": {
+    "task.md": "fd98a922fb03507db8acbba806b79085204d8b2f73047cfe093327515b3d51a2",
+    "fetch-doc.mjs": "6d58d059058837121b5283387fe6eeed1d07f518fcbf4cb4d4ca328921d96f4f",
+    "CONTEXT.md": "2a59cbda4357a6c82e410b6a3483045b481888a66feb6674e75df180ba72edd0",
+    "RLCD-BRWSR.md": "ed68ed32da4a5823e7c95560b7108ffb36fa0bea68b19fb2e395ee538031d84a",
+    "0001-classifier-over-existing-browser-executor.md": "d3f0cfae6984afb7eff9cf28d15770ae34d36da646c250cd7da79ddc3d5dd9aa",
+    "prompts/research.md": "77c8d6eb13ba34b35aec0d842c74ea36cc042efcc19a046e8972cbc989cde3bf",
+    "prompts/evaluate.md": "c73d526a931f6d8bc3564e7b0fc12f258b25821199cd9d8ab758b7f1f6437a71",
+    "evaluation-checklist.md": "4545ef417e604155e5c204df99a18dbde70dce3cc953e532e540544d686adf42",
+    "real-jev-issue-6-extension.ts": "6aa593dc375ec69940dceed0f168f4307caff4dc1db7f0f263b420fd2e43f0ce"
+  },
+  "budgetAfterTrial": {
+    "attemptedRequests": 8,
+    "actualUsd": 0.00022705200000000005,
+    "unknownBillingReservedUsd": 0.002688,
+    "committedUsd": 0.002915052,
+    "remainingRequests": 92,
+    "remainingUsd": 4.997084948
+  },
+  "unavailableMeasurements": [
+    "total direct HTTP requests across unrestricted normal follow-up paths",
+    "exact browser-command count for researcher-issued shell loops",
+    "recovery reasoning distinct from ordinary research and synthesis"
+  ]
+}

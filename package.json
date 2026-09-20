@@ -1,0 +1,31 @@
+{
+  "name": "rlcd-brwsr",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A bounded browser fast loop for Pi",
+  "scripts": {
+    "check": "pnpm format:check && pnpm typecheck && pnpm test",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "node --test test/**/*.test.ts experiments/**/*.test.ts experiments/**/*.test.mjs",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "devEngines": {
+    "packageManager": {
+      "name": "pnpm",
+      "version": "^11.8.0",
+      "onFail": "download"
+    }
+  },
+  "type": "module",
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "0.85.1",
+    "@types/node": "24.13.6",
+    "prettier": "3.9.8",
+    "typebox": "1.3.7",
+    "typescript": "5.9.3"
+  }
+}

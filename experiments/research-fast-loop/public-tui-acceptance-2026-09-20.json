@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-09-20",
+  "surface": "actual Pi TUI controlled through Paseo CLI",
+  "environment": {
+    "pi": "0.85.1",
+    "mainModel": "openai-codex/gpt-5.6-sol",
+    "thinking": "xhigh",
+    "chromeDevtoolsCli": "1.7.0",
+    "jevModel": "jev-1.13.0"
+  },
+  "pagePreparation": {
+    "url": "https://docs.typesafe.ai/concepts/how-to-build-with-system-one",
+    "includedInPrimaryBenchmark": false,
+    "reason": "Separate post-benchmark visible-surface acceptance; primary trials retained their own timed page preparation."
+  },
+  "visibleToolCall": {
+    "name": "rlcd_brwsr_run",
+    "maxSteps": 6,
+    "maxSeconds": 120,
+    "stopReason": "classifier_state_budget",
+    "status": "stopped",
+    "completionClaimed": false,
+    "sourceCoverageComplete": false,
+    "reportedFinding": "The classifier state exceeded its configured bound before inference; source coverage was incomplete."
+  },
+  "jev": {
+    "requests": 0,
+    "inputTokens": 0,
+    "outputTokens": 0,
+    "costUsd": 0,
+    "reason": "The deterministic classifier-state bound stopped the run before the real HTTP adapter sent a request."
+  },
+  "acceptanceCoverage": {
+    "verifiedInActualTui": [
+      "registered public tool invocation",
+      "visible deterministic classifier_state_budget stop",
+      "no completion claim",
+      "zero Jev requests"
+    ],
+    "primaryNumericalResearchRunMode": "Pi JSON mode for retained instrumentation",
+    "fullResearchSynthesisAndVerificationPerformedInTui": false,
+    "literalIssue6TuiAcceptanceSatisfied": false,
+    "adjudication": "A second full TUI research repeat was not run after the same deterministic pre-inference stop; the missing literal acceptance check remains explicit."
+  },
+  "cleanup": {
+    "taskPageClosed": true,
+    "tuiTerminalStopped": true,
+    "ledgerLockPresent": false,
+    "fixtureListenerPresent": false,
+    "chromeProcessCountAfter": 9,
+    "retained": [
+      "pre-existing Chrome CLI daemon",
+      "selected about:blank page",
+      "unrelated Paseo Pi terminal"
+    ]
+  },
+  "privacy": "No raw TUI transcript, reasoning, credential value, or host-owned credential path is retained."
+}

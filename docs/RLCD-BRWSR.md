@@ -1,6 +1,6 @@
 # RLCD-brwsr v0.1 plan
 
-Status: approved direction; not implemented.
+Status: experimental operations and Jev HTTP inference are implemented; the initial research comparison is [NO-GO for rollout](../experiments/research-fast-loop/RESEARCH-COMPARISON.md). This is an implementation-viability result: public documentation exceeded the classifier-state limit before inference, so it is not a quality finding about Jev. Measurement and acceptance limitations are retained in the report.
 
 RLCD-brwsr is a minimal Pi extension that uses TypeSafe Jev as a fast
 classifier inside a bounded browser loop. Pi owns the goal, planning,
@@ -32,7 +32,7 @@ expires.
 The result reports:
 
 - completion status and stop reason;
-- final URL and bounded page state;
+- the last URL and bounded page state actually observed by the runner;
 - bounded source excerpts with URLs and titles from multiple observed pages;
 - compact action trace and Jev distributions;
 - command errors and timing/model usage;
@@ -80,8 +80,12 @@ One TypeSafe request asks speculative questions over that state:
 
 Every target question states the operation it assumes. Questions run
 independently; code consumes only the target head matching the selected
-operation. The extension validates that every returned choice and probability
-belongs to the offered set before constructing a command.
+operation. The extension requires exactly one structurally valid answer for every offered
+speculative question and validates every returned choice and probability before
+constructing a command. Malformed, missing, unoffered or extraneous answers stop
+the run even when they belong to an unselected branch. A structurally valid
+low-confidence answer on an unused branch remains recorded but does not apply the
+selected-branch uncertainty stop.
 
 Jev never supplies a selector, coordinate, URL, shell command, or executable
 JavaScript. The model selects only code-owned enum values and UIDs observed in
@@ -165,6 +169,14 @@ earlier sources to continue browsing. An individual excerpt may be truncated
 without ending the run. Pi may fetch sources again to verify or complete the
 brief; those follow-up requests count toward the end-to-end benchmark.
 
+The experimental slice separately caps classifier-request state at 8,000
+characters and final model-visible tool content at 12,000 characters. The tool
+content preserves the stop reason, verification requirement and bounded source
+evidence, but omits trace probability distributions and discloses omissions.
+The bounded structured `details` retain those distributions for inspection; the
+content limit must not be described as a limit on classifier state or vice
+versa.
+
 Chrome CLI 1.7.0 JSON snapshots contain a structured `snapshot` tree. Node `id`
 values are the action UIDs; the root normally carries the document name and
 URL. Accessibility text is not necessarily viewport-visible, complete page
@@ -181,10 +193,19 @@ account changes, consent grants, messages, posts, publication, deletion or
 installation remain with Pi.
 
 Page content is untrusted data. Neither Jev, an observed UID, nor a harmless
-control label proves an action's effects. Exclude recognized consequential
-controls and return `consequential_action` when such a step is recognized, but
-treat this as a best-effort stop, not a guarantee for arbitrary pages. Do not add
-a per-site policy framework or a separate browser-ownership system for v0.1.
+control label proves an action's effects. The v0.1 mapping records named links,
+buttons and tabs whose labels contain a case-insensitive whole-word match for
+`buy`, `checkout`, `donate`, `pay`, `purchase`, `book`, `reserve`, `upload`,
+`download`, `install`, `delete`, `remove`, `publish`, `post`, `send`, `submit`,
+`sign in`, `log in`, `consent`, `authorize` or `grant` as excluded candidates.
+It returns `consequential_action` before classification
+only when the current observation has at least one such excluded candidate and
+no offered low-consequence click candidate. A documentation page can therefore
+continue through an offered documentation link even when it also contains an
+unrelated Login or Donate control. This is a best-effort explanation for why no
+click action is available, not a semantic permission classifier or a guarantee
+for arbitrary pages. Do not add a per-site policy framework or a separate
+browser-ownership system for v0.1. `DONE` remains the only completion claim.
 
 Stop without another mutation when:
 
@@ -197,11 +218,24 @@ Stop without another mutation when:
 - the step or wall-clock budget expires; or
 - Pi cancels the tool.
 
-Never retry a browser mutation whose outcome is uncertain. Validating a UID
-against the decision snapshot does not make observation and execution atomic.
-The CLI can reject missing or detached targets, but a surviving element may
-have changed meaning. Concurrent use of the selected page remains an operating
-limitation; sequential tool execution is not an exclusive page lock.
+Never retry a browser mutation whose outcome is uncertain. The result names its
+bounded page field `lastObservedPage`: it is the last snapshot the runner
+successfully parsed, or `null` if the initial observation failed. It is not a
+claim about browser state after a dispatched uncertain mutation. Its URL and
+retained source URLs remain observation evidence. On
+cancellation or timeout, the runner aborts the active adapter and waits for that
+adapter to settle before returning; this keeps a cooperative `pi.exec` CLI child
+from outliving the tool result. Cleanup can take the run beyond its budget, which is
+reported as `budgetOverrunMs`. A non-cooperating external executor can leave the
+run pending indefinitely, so this is not a process-cleanup guarantee for an
+arbitrary adapter. A cancelled or timed-out dispatched mutation remains
+`uncertain_execution` and is never retried.
+
+Validating a UID against the decision snapshot does not make observation and
+execution atomic. The CLI can reject missing or detached targets, but a
+surviving element may have changed meaning. Concurrent use of the selected page
+remains an operating limitation; sequential tool execution is not an exclusive
+page lock.
 
 ## Implementation sequence
 

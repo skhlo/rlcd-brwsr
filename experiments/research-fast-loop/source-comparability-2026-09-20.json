@@ -1,0 +1,236 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": {
+    "startedAt": "2026-09-20T00:34:12.627Z",
+    "completedAt": "2026-09-20T00:34:16.652Z"
+  },
+  "baseline": {
+    "kind": "accepted normal warm run, not constrained pilot",
+    "path": "experiments/typesafe-research-baseline/runs/2026-09-19-normal-warm-1/retrievals.jsonl"
+  },
+  "comparison": {
+    "sourcesChecked": 12,
+    "coverage": "Only the 12 instrumented sources retained by the accepted normal warm research phase were checked.",
+    "allCheckedHashesMatch": true,
+    "materialDriftObservedAmongCheckedSources": false,
+    "materialDriftAcrossAllHistoricalSources": null,
+    "decision": "No baseline rerun was performed. A rerun could not retrospectively establish hashes that were not recorded during the historical cold or evaluator phases."
+  },
+  "historicalCoverageAudit": {
+    "acceptedNormalCold": {
+      "instrumentedFetchDocAttempts": 0,
+      "sourceUrlsNamedInBrief": 11,
+      "historicalResponseHashesRecorded": 0,
+      "evaluatorRetrievalsInstrumented": 0,
+      "evaluatorResponseHashesRecorded": 0,
+      "unknownColdResearchAndEvaluatorResponseHashUrls": [
+        "https://docs.typesafe.ai/api.md",
+        "https://docs.typesafe.ai/concepts/how-to-build-with-system-one.md",
+        "https://docs.typesafe.ai/concepts/state.md",
+        "https://docs.typesafe.ai/concepts/system-one.md",
+        "https://docs.typesafe.ai/confidence.md",
+        "https://docs.typesafe.ai/model-jaggedness/jev-1.13.md",
+        "https://docs.typesafe.ai/models.md",
+        "https://docs.typesafe.ai/patterns/fan-out.md",
+        "https://docs.typesafe.ai/primitives.md",
+        "https://docs.typesafe.ai/primitives/advanced.md",
+        "https://docs.typesafe.ai/primitives/choice.md"
+      ]
+    },
+    "acceptedNormalWarm": {
+      "instrumentedFetchDocAttempts": 12,
+      "historicalResponseHashesRecorded": 12,
+      "historicalHashesRechecked": 12,
+      "evaluatorRetrievalsInstrumented": 0,
+      "evaluatorResponseHashesRecorded": 0,
+      "unknownEvaluatorResponseHashUrls": [
+        "https://docs.typesafe.ai/api.md",
+        "https://docs.typesafe.ai/concepts/how-to-build-with-system-one.md",
+        "https://docs.typesafe.ai/concepts/state.md",
+        "https://docs.typesafe.ai/concepts/system-one.md",
+        "https://docs.typesafe.ai/confidence.md",
+        "https://docs.typesafe.ai/model-jaggedness/jev-1.13.md",
+        "https://docs.typesafe.ai/models.md",
+        "https://docs.typesafe.ai/patterns/fan-out.md",
+        "https://docs.typesafe.ai/primitives.md",
+        "https://docs.typesafe.ai/primitives/advanced.md",
+        "https://docs.typesafe.ai/primitives/choice.md",
+        "https://docs.typesafe.ai/primitives/noul.md"
+      ],
+      "evaluatorOnlyUrlsWithoutAnyAcceptedWarmRunHash": [
+        "https://docs.typesafe.ai/concepts/system-one.md",
+        "https://docs.typesafe.ai/primitives/noul.md"
+      ],
+      "note": "Ten evaluator-cited URLs also have a research-phase hash, but no hash was retained for the evaluator's own response to any URL."
+    },
+    "conclusion": "The checked warm research sources showed no drift. Full source matching across the accepted cold and evaluator inputs is unproved and historically unrecoverable."
+  },
+  "pricingRecheck": {
+    "source": "https://docs.typesafe.ai/models.md",
+    "model": "jev-1.13.0",
+    "inputUsdPerMillionTokens": 0.042,
+    "outputTokensFree": true,
+    "contextTokensPerRequest": 64000,
+    "statePlusLongestQuestionTokens": 32000,
+    "reservationInputTokensPerAttempt": 64000,
+    "reservationUsdPerAttempt": 0.002688
+  },
+  "sources": [
+    {
+      "url": "https://docs.typesafe.ai/llms.txt",
+      "fetchStartedAt": "2026-09-20T00:34:12.628Z",
+      "fetchCompletedAt": "2026-09-20T00:34:12.775Z",
+      "status": 200,
+      "bytes": 16360,
+      "sha256": "abbf7382d4b4941689686cab53389055ceca4d8226e2663233416eaa81fe5d68",
+      "baselineRetrievedAt": "2026-09-19T15:58:34.048Z",
+      "baselineStatus": 200,
+      "baselineBytes": 16360,
+      "baselineSha256": "abbf7382d4b4941689686cab53389055ceca4d8226e2663233416eaa81fe5d68",
+      "matchesAcceptedWarmBaseline": true
+    },
+    {
+      "url": "https://docs.typesafe.ai/confidence.md",
+      "fetchStartedAt": "2026-09-20T00:34:12.775Z",
+      "fetchCompletedAt": "2026-09-20T00:34:13.228Z",
+      "status": 200,
+      "bytes": 4892,
+      "sha256": "c553ccda01913b9962e33b9f3948afeb7496482ab8bfe5352ff0e451f97514ef",
+      "baselineRetrievedAt": "2026-09-19T15:58:43.594Z",
+      "baselineStatus": 200,
+      "baselineBytes": 4892,
+      "baselineSha256": "c553ccda01913b9962e33b9f3948afeb7496482ab8bfe5352ff0e451f97514ef",
+      "matchesAcceptedWarmBaseline": true
+    },
+    {
+      "url": "https://docs.typesafe.ai/concepts/state.md",
+      "fetchStartedAt": "2026-09-20T00:34:13.228Z",
+      "fetchCompletedAt": "2026-09-20T00:34:13.635Z",
+      "status": 200,
+      "bytes": 3853,
+      "sha256": "b83169672788220e04e702586823f02cea962dbb01bba3c09d3229c0711305eb",
+      "baselineRetrievedAt": "2026-09-19T15:58:43.652Z",
+      "baselineStatus": 200,
+      "baselineBytes": 3853,
+      "baselineSha256": "b83169672788220e04e702586823f02cea962dbb01bba3c09d3229c0711305eb",
+      "matchesAcceptedWarmBaseline": true
+    },
+    {
+      "url": "https://docs.typesafe.ai/model-jaggedness/jev-1.13.md",
+      "fetchStartedAt": "2026-09-20T00:34:13.635Z",
+      "fetchCompletedAt": "2026-09-20T00:34:13.906Z",
+      "status": 200,
+      "bytes": 11588,
+      "sha256": "e69329bd32e91ac08f0bd2681ceb4aacc34923b9190e29c15c8f75d8e22950e2",
+      "baselineRetrievedAt": "2026-09-19T15:58:43.768Z",
+      "baselineStatus": 200,
+      "baselineBytes": 11588,
+      "baselineSha256": "e69329bd32e91ac08f0bd2681ceb4aacc34923b9190e29c15c8f75d8e22950e2",
+      "matchesAcceptedWarmBaseline": true
+    },
+    {
+      "url": "https://docs.typesafe.ai/patterns/fan-out.md",
+      "fetchStartedAt": "2026-09-20T00:34:13.906Z",
+      "fetchCompletedAt": "2026-09-20T00:34:14.306Z",
+      "status": 200,
+      "bytes": 12862,
+      "sha256": "f1f0789b2c2e7badbf645614892b38f43f3a956906c20430ce7d5b22242ec621",
+      "baselineRetrievedAt": "2026-09-19T15:58:43.891Z",
+      "baselineStatus": 200,
+      "baselineBytes": 12862,
+      "baselineSha256": "f1f0789b2c2e7badbf645614892b38f43f3a956906c20430ce7d5b22242ec621",
+      "matchesAcceptedWarmBaseline": true
+    },
+    {
+      "url": "https://docs.typesafe.ai/primitives/choice.md",
+      "fetchStartedAt": "2026-09-20T00:34:14.306Z",
+      "fetchCompletedAt": "2026-09-20T00:34:14.709Z",
+      "status": 200,
+      "bytes": 26662,
+      "sha256": "5ba42269e9a07ac5b1220ee6b6c69f060f57b6a7ff619cfedcb916acfb6c92c5",
+      "baselineRetrievedAt": "2026-09-19T15:58:43.902Z",
+      "baselineStatus": 200,
+      "baselineBytes": 26662,
+      "baselineSha256": "5ba42269e9a07ac5b1220ee6b6c69f060f57b6a7ff619cfedcb916acfb6c92c5",
+      "matchesAcceptedWarmBaseline": true
+    },
+    {
+      "url": "https://docs.typesafe.ai/api.md",
+      "fetchStartedAt": "2026-09-20T00:34:14.709Z",
+      "fetchCompletedAt": "2026-09-20T00:34:15.183Z",
+      "status": 200,
+      "bytes": 10322,
+      "sha256": "b9b205096ac164e26f7797a52551c72f2bb3d270dffd923dc7180af3b1a21ae8",
+      "baselineRetrievedAt": "2026-09-19T15:58:43.902Z",
+      "baselineStatus": 200,
+      "baselineBytes": 10322,
+      "baselineSha256": "b9b205096ac164e26f7797a52551c72f2bb3d270dffd923dc7180af3b1a21ae8",
+      "matchesAcceptedWarmBaseline": true
+    },
+    {
+      "url": "https://docs.typesafe.ai/models.md",
+      "fetchStartedAt": "2026-09-20T00:34:15.183Z",
+      "fetchCompletedAt": "2026-09-20T00:34:15.574Z",
+      "status": 200,
+      "bytes": 7245,
+      "sha256": "9d20bb3c90a0147532d0b20ddc4c64579391be7842e965543b27bad684eeb4d6",
+      "baselineRetrievedAt": "2026-09-19T15:58:43.929Z",
+      "baselineStatus": 200,
+      "baselineBytes": 7245,
+      "baselineSha256": "9d20bb3c90a0147532d0b20ddc4c64579391be7842e965543b27bad684eeb4d6",
+      "matchesAcceptedWarmBaseline": true
+    },
+    {
+      "url": "https://docs.typesafe.ai/primitives.md",
+      "fetchStartedAt": "2026-09-20T00:34:15.574Z",
+      "fetchCompletedAt": "2026-09-20T00:34:15.850Z",
+      "status": 200,
+      "bytes": 24727,
+      "sha256": "6cbe8960e23863cf2a1c8c6892d2fa4a0c0b42c9a4f034b6cec0727f2ec8c728",
+      "baselineRetrievedAt": "2026-09-19T15:59:12.331Z",
+      "baselineStatus": 200,
+      "baselineBytes": 24727,
+      "baselineSha256": "6cbe8960e23863cf2a1c8c6892d2fa4a0c0b42c9a4f034b6cec0727f2ec8c728",
+      "matchesAcceptedWarmBaseline": true
+    },
+    {
+      "url": "https://docs.typesafe.ai/concepts/how-to-build-with-system-one.md",
+      "fetchStartedAt": "2026-09-20T00:34:15.851Z",
+      "fetchCompletedAt": "2026-09-20T00:34:16.129Z",
+      "status": 200,
+      "bytes": 38344,
+      "sha256": "4f4dca16ba79da8a8f371814f53afa17666be7922f3c9b704eaddc16c7722663",
+      "baselineRetrievedAt": "2026-09-19T15:59:12.342Z",
+      "baselineStatus": 200,
+      "baselineBytes": 38344,
+      "baselineSha256": "4f4dca16ba79da8a8f371814f53afa17666be7922f3c9b704eaddc16c7722663",
+      "matchesAcceptedWarmBaseline": true
+    },
+    {
+      "url": "https://docs.typesafe.ai/primitives/advanced.md",
+      "fetchStartedAt": "2026-09-20T00:34:16.129Z",
+      "fetchCompletedAt": "2026-09-20T00:34:16.392Z",
+      "status": 200,
+      "bytes": 19060,
+      "sha256": "73eeedee0c3ff68e5964c914ba006e4f59522fa8222e43bd960418febd13ea7f",
+      "baselineRetrievedAt": "2026-09-19T15:59:12.343Z",
+      "baselineStatus": 200,
+      "baselineBytes": 19060,
+      "baselineSha256": "73eeedee0c3ff68e5964c914ba006e4f59522fa8222e43bd960418febd13ea7f",
+      "matchesAcceptedWarmBaseline": true
+    },
+    {
+      "url": "https://docs.typesafe.ai/patterns/confidence-routing.md",
+      "fetchStartedAt": "2026-09-20T00:34:16.392Z",
+      "fetchCompletedAt": "2026-09-20T00:34:16.652Z",
+      "status": 200,
+      "bytes": 11299,
+      "sha256": "5f1f8e0af76cb291d1583d8791f543a911f4ebebe1077ccd85e0178f2211b566",
+      "baselineRetrievedAt": "2026-09-19T15:59:12.348Z",
+      "baselineStatus": 200,
+      "baselineBytes": 11299,
+      "baselineSha256": "5f1f8e0af76cb291d1583d8791f543a911f4ebebe1077ccd85e0178f2211b566",
+      "matchesAcceptedWarmBaseline": true
+    }
+  ]
+}

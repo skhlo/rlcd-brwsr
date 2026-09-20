@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "scope": {
+    "issues": [5, 6],
+    "approvedWork": [
+      "minimal development dependencies",
+      "TypeSafe Jev trial requests"
+    ]
+  },
+  "cumulativeCaps": {
+    "maxRequests": 100,
+    "maxUsd": 5
+  },
+  "provenance": {
+    "kind": "interactive owner approval",
+    "occurredBeforeFirstPaidCall": true,
+    "exactTimestamp": null,
+    "timestampNote": "The exact approval timestamp was not retained."
+  },
+  "privacy": "This receipt records scope and limits only; it is not a transcript or signed proof and contains no credential or host-secret path."
+}

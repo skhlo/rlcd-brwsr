@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-09-20",
+  "productionCodeComparedToStartSha": {
+    "startSha": "2ed5d8f9ea966218bafe54fbb9ddd6eb58d959d0",
+    "extensionUnchanged": true,
+    "fixtureAndFakeIntegrationUnchanged": true
+  },
+  "checksBeforePublicTrials": {
+    "command": "pnpm check",
+    "format": "pass",
+    "typecheck": "pass",
+    "tests": {
+      "passed": 84,
+      "failed": 0
+    }
+  },
+  "lifecycleEvidence": {
+    "success": "Primary registered-tool calls returned classifier_state_budget without a task-owned process; secondary real-Jev navigation passed and cleanup completed.",
+    "failure": "Deterministic command, malformed-response, stale-target, uncertain-mutation, and service-failure checks passed in the 84-test combined suite.",
+    "cancellation": "Reused issue #5 actual Pi TUI evidence because the production runner and Chrome/HTTP adapters are byte-unchanged from the task start SHA. It observed the tracked CLI child gone before the visible cancelled result while retaining unknown billing.",
+    "timeout": "Reused issue #5 actual registered-tool TUI evidence on the byte-unchanged production integration. It observed uncertain_execution, bounded overrun, and no retained RLCD-brwsr-owned CLI child.",
+    "limitation": "Stopping a CLI client does not prove rollback of a mutation already dispatched to the existing daemon."
+  },
+  "ownedResourcesAfterWork": {
+    "fixtureListenerPresent": false,
+    "ledgerLockPresent": false,
+    "taskDocumentationPagesPresent": false,
+    "taskFixturePagesPresent": false,
+    "taskPaseoTerminalsPresent": false,
+    "rlcdBrwsrOwnedProcessesObserved": 0
+  },
+  "retainedPreExistingResources": {
+    "chromeProcessCountBefore": 9,
+    "chromeProcessCountAfter": 9,
+    "chromeDaemonRetained": true,
+    "selectedPage": "about:blank",
+    "unrelatedPaseoPiTerminalRetained": true
+  },
+  "networkExposure": {
+    "fixtureBoundTo": "127.0.0.1:43113",
+    "tailscaleAvailable": false,
+    "tailscaleInstalledOrChanged": false
+  },
+  "approval": {
+    "receipt": "../jev-trial-approval.json",
+    "scope": "issues #5 and #6 under cumulative 100-request and US$5 caps",
+    "interactiveOwnerApprovalBeforeFirstPaidCall": true,
+    "exactApprovalTimestampRetained": false
+  },
+  "measurementCoverage": {
+    "completedPrimaryWallTimesAreRecordedSubtotals": true,
+    "cleanupTimingRetained": false,
+    "firstWarmFailedLaunchAndRecoveryTimingRetained": false,
+    "fullPrimaryEndToEndTotals": null
+  },
+  "tuiCoverage": {
+    "realToolFailuresAndCancellationVerifiedInActualTui": true,
+    "primaryNumericalResearchRunsUsedPiJsonMode": true,
+    "completeResearchSynthesisAndVerificationWorkflowRepeatedInTui": false,
+    "issue6LiteralTuiAcceptanceSatisfied": false
+  },
+  "notes": [
+    "The first warm launch failed before page preparation because the just-closed cold page still appeared selected to Chrome CLI. It is retained as an incomplete launch and consumed no Jev request; its duration and recovery command cost are unknown.",
+    "The cold cleanup observation is corrected by its adjacent note; the measured brief, evaluation, recorded timing subtotal, and failed outcome remain unchanged."
+  ]
+}
