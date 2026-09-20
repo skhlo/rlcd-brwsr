@@ -273,10 +273,6 @@ function fastLoopSummary(events) {
   const metrics = details
     .map((detail) => detail.metrics)
     .filter((value) => value && typeof value === "object");
-  const trace = details.flatMap((detail) =>
-    Array.isArray(detail.trace) ? detail.trace : [],
-  );
-
   return {
     calls: starts.length,
     completedCalls: ends.length,
@@ -284,9 +280,12 @@ function fastLoopSummary(events) {
     stopReasons,
     completionClaims: stopReasons.filter((reason) => reason === "done_claim")
       .length,
-    staleDecisions:
-      stopReasons.filter((reason) => reason === "stale_target").length +
-      trace.filter((entry) => entry?.outcome === "stale_target").length,
+    staleDecisions: details.filter(
+      (detail) =>
+        detail.stopReason === "stale_target" ||
+        (Array.isArray(detail.trace) &&
+          detail.trace.some((entry) => entry?.outcome === "stale_target")),
+    ).length,
     consequentialActionStops: stopReasons.filter(
       (reason) => reason === "consequential_action",
     ).length,
@@ -822,7 +821,7 @@ export async function runTrial(options) {
       ...new Set([
         ...phases.flatMap((phase) => phase.unavailableMeasurements),
         "total direct HTTP requests across unrestricted normal follow-up paths",
-        "exact browser-command count for researcher-issued shell loops",
+        "exact browser-command count for externally issued shell loops in research or verification",
         "recovery reasoning distinct from ordinary research and synthesis",
         ...(verdict === null ? ["independent evaluation verdict"] : []),
       ]),
@@ -831,7 +830,7 @@ export async function runTrial(options) {
     const fullEndToEndWallTimeMs = Math.round(performance.now() - trialStarted);
 
     const metrics = {
-      schemaVersion: 2,
+      schemaVersion: 3,
       trialKind: "fast-loop-research",
       condition: options.condition,
       protocolCommit,
@@ -892,17 +891,24 @@ export async function runTrial(options) {
       toolCalls: sumToolCalls(phases),
       failedToolCalls: sumFailedToolCalls(phases),
       browserCommands: {
-        measuredWorkSubtotal: 3 + research.fastLoop.browserCommands,
-        pagePreparation: 3,
-        fastLoop: research.fastLoop.browserCommands,
-        cleanup: cleanup.commands,
-        exactRunnerTotal:
-          3 + research.fastLoop.browserCommands + cleanup.commands,
-        observedExternalResearchToolCalls: research.browserCommands.observed,
-        total:
-          research.browserCommands.observed === 0
-            ? 3 + research.fastLoop.browserCommands + cleanup.commands
-            : null,
+        exactRunnerCommands: {
+          measuredWorkSubtotal: 3 + research.fastLoop.browserCommands,
+          pagePreparation: 3,
+          fastLoop: research.fastLoop.browserCommands,
+          cleanup: cleanup.commands,
+          throughCleanup:
+            3 + research.fastLoop.browserCommands + cleanup.commands,
+        },
+        observedExternalToolCalls: {
+          research: research.browserCommands.observed,
+          verification: evaluation.browserCommands.observed,
+          total:
+            research.browserCommands.observed +
+            evaluation.browserCommands.observed,
+        },
+        overallTotal: null,
+        method:
+          "Exact runner commands cover page preparation, fast-loop-reported Chrome calls, and cleanup. Literal Chrome tool or executable matches in Pi events are reported separately for research and verification; shell loops may issue multiple commands, so the overall total remains unknown.",
       },
       directHttpRequests: {
         total: null,

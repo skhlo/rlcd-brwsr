@@ -124,7 +124,11 @@ if (phase === "research") {
   await writeFile(ledgerPath, JSON.stringify(trialLedger, null, 2) + "\\n");
   await appendFile(process.env.BASELINE_HTTP_LOG, JSON.stringify({ phase, url: "https://docs.typesafe.ai/api.md", startedAt: "2026-09-20T01:00:00.000Z", completedAt: "2026-09-20T01:00:00.010Z", status: 200, bytes: 10, sha256: "a".repeat(64), location: null }) + "\\n");
   console.log(JSON.stringify({ type: "tool_execution_start", toolCallId: "tool-1", toolName: "rlcd_brwsr_run", args: { goal: "fixed" } }));
-  console.log(JSON.stringify({ type: "tool_execution_end", toolCallId: "tool-1", toolName: "rlcd_brwsr_run", isError: false, result: { details: { stopReason: "done_claim", trace: [{ outcome: "observed" }], metrics: { elapsedMs: 120, budgetOverrunMs: 0, classifierCalls: 1, browserCommands: 2, waits: 0, modelInputTokens: 111, modelOutputTokens: 22 } } } }));
+  console.log(JSON.stringify({ type: "tool_execution_end", toolCallId: "tool-1", toolName: "rlcd_brwsr_run", isError: false, result: { details: { stopReason: "stale_target", trace: [{ outcome: "stale_target" }], metrics: { elapsedMs: 120, budgetOverrunMs: 0, classifierCalls: 1, browserCommands: 2, waits: 0, modelInputTokens: 111, modelOutputTokens: 22 } } } }));
+}
+if (phase === "evaluation") {
+  console.log(JSON.stringify({ type: "tool_execution_start", toolCallId: "verify-browser", toolName: "chrome-devtools", args: { command: "take_snapshot" } }));
+  console.log(JSON.stringify({ type: "tool_execution_end", toolCallId: "verify-browser", toolName: "chrome-devtools", isError: false, result: "verified" }));
 }
 const finalAnswer = phase === "research" ? "# Fake brief\\n\\nMeasured research." : "# Evaluation\\n\\nVERDICT: PASS";
 console.log(JSON.stringify({ type: "message_end", message: { role: "assistant", provider: "test-provider", model: "test-model", stopReason: "stop", content: [{ type: "text", text: finalAnswer }], usage: { ...usage, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } } }));
@@ -165,6 +169,7 @@ console.log(JSON.stringify({ type: "message_end", message: { role: "assistant", 
   const metrics = JSON.parse(
     await readFile(path.join(outputDirectory, "metrics.json"), "utf8"),
   );
+  assert.equal(metrics.schemaVersion, 3);
   assert.equal(metrics.trialKind, "fast-loop-research");
   assert.equal(metrics.condition, "cold");
   assert.equal(metrics.verifiedOutcome, "PASS");
@@ -192,12 +197,25 @@ console.log(JSON.stringify({ type: "message_end", message: { role: "assistant", 
     "https://docs.typesafe.ai/concepts/how-to-build-with-system-one",
   );
   assert.equal(metrics.fastLoop.calls, 1);
-  assert.deepEqual(metrics.fastLoop.stopReasons, ["done_claim"]);
-  assert.equal(metrics.browserCommands.measuredWorkSubtotal, 5);
-  assert.equal(metrics.browserCommands.pagePreparation, 3);
-  assert.equal(metrics.browserCommands.fastLoop, 2);
-  assert.equal(metrics.browserCommands.cleanup, 3);
-  assert.equal(metrics.browserCommands.exactRunnerTotal, 8);
+  assert.deepEqual(metrics.fastLoop.stopReasons, ["stale_target"]);
+  assert.equal(metrics.fastLoop.staleDecisions, 1);
+  assert.deepEqual(metrics.browserCommands.exactRunnerCommands, {
+    measuredWorkSubtotal: 5,
+    pagePreparation: 3,
+    fastLoop: 2,
+    cleanup: 3,
+    throughCleanup: 8,
+  });
+  assert.deepEqual(metrics.browserCommands.observedExternalToolCalls, {
+    research: 0,
+    verification: 1,
+    total: 1,
+  });
+  assert.equal(metrics.browserCommands.overallTotal, null);
+  assert.match(
+    metrics.browserCommands.method,
+    /overall total remains unknown/i,
+  );
   assert.equal(metrics.jev.requests, 1);
   assert.equal(metrics.jev.inputTokens, 111);
   assert.equal(metrics.jev.outputTokens, 22);
