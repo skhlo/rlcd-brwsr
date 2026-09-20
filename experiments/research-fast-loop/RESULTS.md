@@ -203,3 +203,56 @@ exported production runner instead of copying its prompts and candidate construc
 No credential recovery or paid request was attempted during this pass. Real Jev calibration,
 navigation and cancellation acceptance remain pending; the repository trial ledger remains at zero
 attempts.
+
+## Issue #5 live acceptance
+
+Date: 2026-09-20
+
+The owed live-acceptance work started from
+`ac6a35ae1e2f0e1a71b8786d244c0e922356a062`. The public model page was read again immediately before
+trials. It still listed `jev-1.13.0`, US$0.042 per million input tokens, free output tokens, a 64k
+shared request context and a 32k state-plus-longest-question limit. The conservative 64k reservation
+therefore remained US$0.002688 per attempt. Tailscale was still unavailable and was not installed.
+
+The production-runner calibration script made four sequential requests. Its labels were defined in
+code before the requests, and the raw responses and complete choice distributions are retained in
+`jev-calibration-2026-09-20.json`. All four operation labels were correct: two CLICK, one DONE and
+one BLOCKED. Both applicable click-target labels were also correct. The selected-operation
+confidences were 0.98, 0.64, 0.87 and 0.83; their probability leaders and runners-up were 0.99/0.01,
+0.72/0.17, 0.90/0.09 and 0.86/0.11 respectively. The target choices each had probability 1.00.
+
+This is only four operation examples and two target examples. It contains no incorrect or
+near-boundary calibration answer and cannot establish error rates or a broader confidence threshold.
+It shows only that the existing maximum-uncertainty floor would not have stopped these correctly
+labeled examples. That floor remains explicitly uncalibrated.
+
+The separate evaluation used Pi 0.85.1's actual TUI, the production extension, real Jev and the real
+Chrome DevTools CLI. The credential was sourced in the TUI's own terminal shell before Pi started;
+its value and owning path are not recorded here. A two-step call correctly selected and clicked
+`Continue to uncertainty evidence`, reached `evidence.html`, retained both fixture sources, and then
+incorrectly selected PAGE_DOWN instead of the independently labeled DONE. It returned `step_budget`
+rather than a completion claim. A separate one-step call from the destination selected PAGE_DOWN
+again and also returned `step_budget`. These failed destination labels were retained without policy
+or prompt retuning.
+
+A separate Chrome CLI snapshot independently observed the destination URL, title and completion
+warning after the navigation. Normalized direct HTTP reads independently matched both fixture source
+statements. Thus the navigation and retained source evidence passed, but real Jev did not make the
+expected completion choice on the actual destination in either evaluation call.
+
+Cancellation was exercised while a real classifier request was active. The visible TUI result
+returned `cancelled`, with one cancelled classifier diagnostic, no trace entry, one non-mutating
+snapshot command and the source page unchanged. The ledger records that request as `cancelled` with
+unknown billing, so its full US$0.002688 reservation remains charged to the local budget.
+
+Across calibration, evaluation and cancellation, issue #5 attempted 8 requests: 7 valid responses
+reported 5,406 input and 577 output tokens for US$0.000227052 actual cost, and 1 cancelled request
+retains US$0.002688 unknown-billing reserve. Total committed cost is US$0.002915052. The shared issue
+#5/#6 budget has 92 requests and US$4.997084948 remaining. Structured TUI metrics, independent checks,
+sample limitations and exact accounting are retained in `jev-live-acceptance-2026-09-20.json`. This
+was local fixture acceptance only; issue #6's public research benchmark was not run.
+
+The task fixture page, server and live-acceptance TUI terminal were closed. The fixture listener and
+ledger lock were absent afterward, and the Chrome process count returned from 10 with the task page
+to the pre-run count of 9. The pre-existing Chrome daemon, selected `about:blank` page and unrelated
+Paseo Pi terminal were retained.

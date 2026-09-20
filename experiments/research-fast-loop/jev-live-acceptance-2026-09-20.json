@@ -1,0 +1,167 @@
+{
+  "date": "2026-09-20",
+  "issue": 5,
+  "startSha": "ac6a35ae1e2f0e1a71b8786d244c0e922356a062",
+  "environment": {
+    "node": "26.6.0",
+    "pnpm": "11.27.0",
+    "pi": "0.85.1",
+    "chromeDevtoolsCli": "1.7.0",
+    "tailscaleAvailable": false
+  },
+  "pricingRecheck": {
+    "source": "https://docs.typesafe.ai/models",
+    "retrievedAt": "2026-09-20",
+    "model": "jev-1.13.0",
+    "inputUsdPerMillionTokens": 0.042,
+    "outputTokensFree": true,
+    "contextTokensPerRequest": 64000,
+    "statePlusLongestQuestionTokens": 32000,
+    "reservationUsdPerAttempt": 0.002688
+  },
+  "calibration": {
+    "rawArtifact": "jev-calibration-2026-09-20.json",
+    "cases": 4,
+    "operationLabelsCorrect": 4,
+    "operationLabelsTotal": 4,
+    "targetLabelsCorrect": 2,
+    "targetLabelsTotal": 2,
+    "independentLabelsDefinedBeforeRequests": true,
+    "sampleLimits": [
+      "One example each covered DONE and BLOCKED, and two covered CLICK.",
+      "Only two target selections were labeled.",
+      "No calibration answer was incorrect or near the maximally-uncertain floor, so this sample cannot calibrate a broader confidence threshold."
+    ]
+  },
+  "actualTuiRuns": [
+    {
+      "name": "two-step-navigation",
+      "startUrl": "http://127.0.0.1:43113/index.html",
+      "goal": "Open the uncertainty evidence page and inspect its completion warning.",
+      "maxSteps": 2,
+      "maxSeconds": 30,
+      "stopReason": "step_budget",
+      "operations": [
+        {
+          "step": 1,
+          "independentLabel": "CLICK / Continue to uncertainty evidence",
+          "actual": "CLICK / Continue to uncertainty evidence",
+          "outcome": "observed"
+        },
+        {
+          "step": 2,
+          "independentLabel": "DONE",
+          "actual": "PAGE_DOWN",
+          "outcome": "observed"
+        }
+      ],
+      "classifierDiagnostics": [
+        {
+          "call": 1,
+          "durationMs": 664,
+          "model": "jev-1.13.0",
+          "inputTokens": 791,
+          "outputTokens": 97
+        },
+        {
+          "call": 2,
+          "durationMs": 304,
+          "model": "jev-1.13.0",
+          "inputTokens": 772,
+          "outputTokens": 57
+        }
+      ],
+      "elapsedMs": 2089,
+      "browserCommands": 3,
+      "finalUrl": "http://127.0.0.1:43113/evidence.html",
+      "retainedSourceUrls": [
+        "http://127.0.0.1:43113/index.html",
+        "http://127.0.0.1:43113/evidence.html"
+      ],
+      "independentCheck": "A separate Chrome CLI snapshot observed the destination URL, title, and warning text; normalized direct HTTP reads matched both fixture source statements."
+    },
+    {
+      "name": "destination-follow-up",
+      "startUrl": "http://127.0.0.1:43113/evidence.html",
+      "goal": "Open the uncertainty evidence page and inspect its completion warning.",
+      "maxSteps": 1,
+      "maxSeconds": 30,
+      "stopReason": "step_budget",
+      "operations": [
+        {
+          "step": 1,
+          "independentLabel": "DONE",
+          "actual": "PAGE_DOWN",
+          "outcome": "observed"
+        }
+      ],
+      "classifierDiagnostics": [
+        {
+          "call": 1,
+          "durationMs": 523,
+          "model": "jev-1.13.0",
+          "inputTokens": 667,
+          "outputTokens": 57
+        }
+      ],
+      "elapsedMs": 1234,
+      "browserCommands": 2,
+      "finalUrl": "http://127.0.0.1:43113/evidence.html"
+    },
+    {
+      "name": "active-classifier-cancellation",
+      "startUrl": "http://127.0.0.1:43113/index.html",
+      "goal": "Open the uncertainty evidence page and inspect its completion warning.",
+      "maxSteps": 2,
+      "maxSeconds": 30,
+      "stopReason": "cancelled",
+      "classifierDiagnostics": [
+        {
+          "call": 1,
+          "durationMs": 491,
+          "outcome": "cancelled"
+        }
+      ],
+      "elapsedMs": 735,
+      "browserCommands": 1,
+      "traceEntries": 0,
+      "finalUrl": "http://127.0.0.1:43113/index.html",
+      "ledgerOutcome": "cancelled",
+      "billingKnown": false,
+      "reservedUsd": 0.002688,
+      "independentCheck": "A separate Chrome CLI snapshot showed the unchanged source page after cancellation."
+    }
+  ],
+  "uncertaintyPolicy": {
+    "policy": "Stop only when the applicable operation or selected target has zero confidence or no unique probability leader outside the 0.001 validation tolerance.",
+    "calibrated": false,
+    "finding": "All four calibration operations and both applicable targets passed the floor, but the actual destination was mislabeled as PAGE_DOWN twice. The tiny sample does not justify a broader threshold or calibrate the existing floor."
+  },
+  "budgetAfterRuns": {
+    "attemptedRequests": 8,
+    "successfulResponsesWithUsage": 7,
+    "unknownBillingAttempts": 1,
+    "reportedInputTokens": 5406,
+    "reportedOutputTokens": 577,
+    "actualUsd": 0.00022705200000000005,
+    "unknownBillingReservedUsd": 0.002688,
+    "committedUsd": 0.002915052,
+    "remainingRequests": 92,
+    "remainingUsd": 4.997084948
+  },
+  "cleanup": {
+    "taskPageClosed": true,
+    "fixtureServerStopped": true,
+    "liveTuiTerminalStopped": true,
+    "ledgerLockPresent": false,
+    "chromeProcessCountBefore": 9,
+    "chromeProcessCountWithTaskPage": 10,
+    "chromeProcessCountAfter": 9,
+    "retained": [
+      "pre-existing Chrome daemon",
+      "selected about:blank page",
+      "unrelated Paseo Pi terminal"
+    ]
+  },
+  "scope": "Local fixture calibration and actual Pi TUI acceptance only; no issue #6 public research benchmark was run."
+}
