@@ -52,22 +52,20 @@ function ledger() {
   };
 }
 
-test("research trial public command includes page preparation and retains measured evidence", async (t) => {
+test("research trial public command times cleanup and retains success and failure artifacts", async (t) => {
   const temporaryDirectory = await mkdtemp(
     path.join(os.tmpdir(), "rlcd-fast-loop-trial-test-"),
   );
   t.after(() => rm(temporaryDirectory, { recursive: true }));
 
   const chromeState = path.join(temporaryDirectory, "chrome-state.json");
-  const chromeLog = path.join(temporaryDirectory, "chrome.log");
   const chromeBin = path.join(temporaryDirectory, "fake-chrome.mjs");
   await writeFile(
     chromeBin,
     `#!/usr/bin/env node
-import { appendFile, readFile, writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 const args = process.argv.slice(2);
 if (args.includes("--version")) { console.log("1.7.0"); process.exit(0); }
-await appendFile(process.env.FAKE_CHROME_LOG, args.join(" ") + "\\n");
 let pages = [{ id: 1, url: "about:blank", title: "", selected: true }];
 try { pages = JSON.parse(await readFile(process.env.FAKE_CHROME_STATE, "utf8")); } catch {}
 const command = args[0];
@@ -80,6 +78,7 @@ if (command === "list_pages") {
   await writeFile(process.env.FAKE_CHROME_STATE, JSON.stringify(pages));
   console.log(JSON.stringify({ pages }));
 } else if (command === "close_page") {
+  await new Promise((resolve) => setTimeout(resolve, 25));
   pages = pages.filter((page) => page.id !== Number(args[1]));
   pages = pages.map((page) => ({ ...page, selected: false }));
   await writeFile(process.env.FAKE_CHROME_STATE, JSON.stringify(pages));
@@ -105,6 +104,10 @@ if (command === "list_pages") {
 import { appendFile, readFile, writeFile } from "node:fs/promises";
 if (process.argv.includes("--version")) { console.log("0.85.1"); process.exit(0); }
 const phase = process.env.FAST_LOOP_PHASE;
+if (phase === "research" && process.env.FAKE_PI_FAIL_RESEARCH === "1") {
+  console.error("injected research failure");
+  process.exit(7);
+}
 const usage = phase === "research"
   ? { input: 10, output: 2, cacheRead: 3, cacheWrite: 0, totalTokens: 15 }
   : { input: 20, output: 4, cacheRead: 5, cacheWrite: 0, totalTokens: 29 };
@@ -149,7 +152,6 @@ console.log(JSON.stringify({ type: "message_end", message: { role: "assistant", 
       env: {
         TYPESAFE_API_KEY: "test-only-key",
         FAKE_CHROME_STATE: chromeState,
-        FAKE_CHROME_LOG: chromeLog,
       },
     },
   );
@@ -172,16 +174,25 @@ console.log(JSON.stringify({ type: "message_end", message: { role: "assistant", 
     cacheWrite: 0,
     total: 44,
   });
-  assert.equal(metrics.pagePreparation.includedInWallTime, true);
+  assert.equal(metrics.pagePreparation.includedInMeasuredWorkSubtotal, true);
+  assert.ok(metrics.timing.cleanupWallTimeMs >= 20);
+  assert.ok(
+    metrics.timing.fullEndToEndWallTimeMs >=
+      metrics.timing.measuredWorkSubtotalWallTimeMs +
+        metrics.timing.cleanupWallTimeMs -
+        1,
+  );
   assert.equal(
     metrics.pagePreparation.startUrl,
     "https://docs.typesafe.ai/concepts/how-to-build-with-system-one",
   );
   assert.equal(metrics.fastLoop.calls, 1);
   assert.deepEqual(metrics.fastLoop.stopReasons, ["done_claim"]);
-  assert.equal(metrics.browserCommands.exactMeasuredTotal, 5);
+  assert.equal(metrics.browserCommands.measuredWorkSubtotal, 5);
   assert.equal(metrics.browserCommands.pagePreparation, 3);
   assert.equal(metrics.browserCommands.fastLoop, 2);
+  assert.equal(metrics.browserCommands.cleanup, 3);
+  assert.equal(metrics.browserCommands.exactRunnerTotal, 8);
   assert.equal(metrics.jev.requests, 1);
   assert.equal(metrics.jev.inputTokens, 111);
   assert.equal(metrics.jev.outputTokens, 22);
@@ -211,16 +222,60 @@ console.log(JSON.stringify({ type: "message_end", message: { role: "assistant", 
     `${JSON.stringify({ phase: "research", url: "https://docs.typesafe.ai/api.md", startedAt: "2026-09-20T01:00:00.000Z", completedAt: "2026-09-20T01:00:00.010Z", status: 200, bytes: 10, sha256: "a".repeat(64), location: null })}\n`,
   );
 
-  const chromeCommands = (await readFile(chromeLog, "utf8")).trim().split("\n");
-  assert.deepEqual(
-    chromeCommands.map((line) => line.split(" ")[0]),
+  assert.deepEqual(JSON.parse(await readFile(chromeState, "utf8")), [
+    { id: 1, url: "about:blank", title: "", selected: true },
+  ]);
+
+  const failedOutputDirectory = path.join(temporaryDirectory, "failed-trial");
+  const failedResult = await runNode(
+    "run-research-trial.mjs",
     [
-      "list_pages",
-      "new_page",
-      "list_pages",
-      "close_page",
-      "select_page",
-      "list_pages",
+      "--condition",
+      "warm",
+      "--output",
+      failedOutputDirectory,
+      "--pi-bin",
+      piBin,
+      "--chrome-bin",
+      chromeBin,
+      "--ledger",
+      ledgerPath,
+      "--provider",
+      "test-provider",
+      "--model",
+      "test-model",
+      "--thinking",
+      "low",
     ],
+    {
+      env: {
+        TYPESAFE_API_KEY: "test-only-key",
+        FAKE_CHROME_STATE: chromeState,
+        FAKE_PI_FAIL_RESEARCH: "1",
+      },
+    },
   );
+  assert.equal(failedResult.code, 1);
+  assert.match(failedResult.stderr, /injected research failure/);
+
+  const failure = JSON.parse(
+    await readFile(path.join(failedOutputDirectory, "failure.json"), "utf8"),
+  );
+  assert.equal(failure.outcome, "incomplete");
+  assert.equal(failure.failedStage, "research");
+  assert.match(failure.error.message, /injected research failure/);
+  assert.ok(failure.timing.cleanupWallTimeMs >= 20);
+  assert.ok(
+    failure.timing.fullEndToEndWallTimeMs >= failure.timing.cleanupWallTimeMs,
+  );
+  assert.equal(failure.ledgerAccounting.attemptsDuringInvocation, 0);
+  assert.equal(failure.cleanup.taskPageClosed, true);
+  assert.equal(failure.cleanup.preExistingPagesPreserved, true);
+  assert.equal(failure.cleanup.commands, 3);
+  assert.deepEqual(failure.cleanup.pagesAfterCleanup, [
+    { id: 1, url: "about:blank", title: "", selected: true },
+  ]);
+  assert.deepEqual(JSON.parse(await readFile(chromeState, "utf8")), [
+    { id: 1, url: "about:blank", title: "", selected: true },
+  ]);
 });

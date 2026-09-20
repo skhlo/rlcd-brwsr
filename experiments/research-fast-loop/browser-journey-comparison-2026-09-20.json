@@ -22,6 +22,11 @@
       "startedAt": "2026-09-20T00:54:13.506Z",
       "endedAt": "2026-09-20T00:54:33.581Z",
       "wallTimeMs": 20073,
+      "measurementCoverage": {
+        "wallTimeMsMeaning": "Recorded journey subtotal through independent verification; shared server setup and page cleanup are excluded.",
+        "cleanupWallTimeMs": null,
+        "fullEndToEndWallTimeMs": null
+      },
       "phaseWallTimeMs": {
         "pagePreparation": 736,
         "piExecutionAndVerification": 19337
@@ -81,6 +86,11 @@
       "startedAt": "2026-09-20T00:54:34.559Z",
       "endedAt": "2026-09-20T00:54:52.091Z",
       "wallTimeMs": 17532,
+      "measurementCoverage": {
+        "wallTimeMsMeaning": "Recorded journey subtotal through independent verification; shared server setup and page cleanup are excluded.",
+        "cleanupWallTimeMs": null,
+        "fullEndToEndWallTimeMs": null
+      },
       "phaseWallTimeMs": {
         "pagePreparation": 661,
         "piExecutionAndVerification": 16871
@@ -146,9 +156,11 @@
   "comparison": {
     "bothOutcomesIndependentlyPass": true,
     "wallTimeDeltaMs": -2541,
+    "wallTimeDeltaMeaning": "Difference between recorded pre-cleanup journey subtotals, not full end-to-end totals.",
+    "fullEndToEndWallTimeDeltaMs": null,
     "mainModelTotalTokenDelta": -5828,
     "browserCommandDelta": 0,
-    "finding": "Observed execution comparison only; n=1 per condition and no significance claim."
+    "finding": "Observed execution comparison only; n=1 per condition, incomplete timing coverage, and no significance or precise end-to-end speed claim."
   },
   "cumulativeBudgetAfter": {
     "attemptedRequests": 9,

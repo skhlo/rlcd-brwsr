@@ -15,9 +15,11 @@ workflow. It does not assume that the fast loop wins.
 - Main model is `openai-codex/gpt-5.6-sol` at `xhigh` under Pi `0.85.1`.
 - The accepted baseline is only `2026-09-19-normal-cold-1` and
   `2026-09-19-normal-warm-1`. The constrained pilots remain excluded.
-- The baseline outcomes remain honest failures: cold was 19/20 in 417.316 s;
-  warm was 15/20 in 456.307 s. The pooled two-run wall-time median was
-  436.812 s, but failed outcomes are not converted to successes.
+- The baseline outcomes remain honest failures: cold was 19/20 with a
+  417.316 s runner-recorded subtotal; warm was 15/20 with a 456.307 s
+  runner-recorded subtotal. Their pooled subtotal median was 436.812 s, but
+  failed outcomes are not converted to successes. Full end-to-end totals were
+  not retained.
 - One cold and one immediately subsequent warm fast-loop observation are
   sufficient. Each condition has `n=1`; no statistical-significance claim is
   permitted.
@@ -32,8 +34,10 @@ checklist, and has `TYPESAFE_API_KEY` removed.
 
 The runner times creation and selection of a new Chrome page at
 `https://docs.typesafe.ai/concepts/how-to-build-with-system-one`. This page
-preparation is included in whole-task wall time and in browser-command counts.
-The researcher then makes exactly one registered `rlcd_brwsr_run` call with the
+preparation is included in the recorded work subtotal and in browser-command
+counts. The retained 2026-09-20 runner ended that subtotal before cleanup; the
+future runner now separately records work, cleanup, and the full total. The
+researcher then makes exactly one registered `rlcd_brwsr_run` call with the
 goal and budgets frozen in [`prompts/research.md`](prompts/research.md): six
 steps and 120 seconds.
 
@@ -53,22 +57,25 @@ not a new fast-loop capability. Instrumented helper requests are exact; total
 HTTP requests remain unknown when Pi chooses another normal path.
 
 The evaluator applies all 20 checklist items and retrieves sources again. Its
-wall time and main-model tokens are part of the whole-task result. The event
-summary cannot reliably separate evidence gathering, synthesis, and recovery
-reasoning, so the research phase is reported as a combined evidence-and-
-synthesis time and unobserved recovery work remains unknown.
+wall time and main-model tokens are part of the recorded work subtotal. The
+event summary cannot reliably separate evidence gathering, synthesis, and
+recovery reasoning, so the research phase is reported as a combined evidence-
+and-synthesis time and unobserved recovery work remains unknown.
 
 ## Comparability and source drift
 
 [`source-comparability-2026-09-20.json`](source-comparability-2026-09-20.json)
-re-fetched all 12 URLs retained by the accepted normal warm run. Status, byte
-length, and SHA-256 matched for every source. The model page still documented
-`jev-1.13.0`, US$0.042 per million input tokens, free output, 64k shared request
-context, and a 32k state-plus-longest-question limit. The fixed task, checklist,
-and context hashes also match the accepted baseline. No material drift was
-observed, so no normal condition is rerun. If any of those facts changes before
-a measured call, the affected normal condition must be rerun rather than
-presented as paired.
+re-fetched the 12 instrumented URLs retained by the accepted normal warm
+research phase. Status, byte length, and SHA-256 matched for those 12 sources.
+The accepted cold research and both evaluator phases used uninstrumented source
+paths, so their historical response hashes are unknown; this includes
+`concepts/system-one.md` and `primitives/noul.md`, which have no accepted-warm
+run hash. A rerun cannot retrospectively establish those old bytes. The model
+page still documented `jev-1.13.0`, US$0.042 per million input tokens, free
+output, 64k shared request context, and a 32k state-plus-longest-question limit.
+The fixed task, checklist, and context hashes match the accepted baseline. The
+checked warm subset showed no drift, but full historical source matching is not
+proved and no normal condition was rerun.
 
 ## Paid budget
 
@@ -84,10 +91,12 @@ reservation.
 ## Primary outcome and recommendation rule
 
 For each trial retain the brief, independent evaluation, retrieval records, and
-metrics. Report verified outcome, whole-task and phase wall times, main-model
-turns/tokens, Jev attempts/tokens/cost, browser commands, instrumented direct
-HTTP attempts, stop reasons, stale decisions, observable failures, recovery
-limits, page cleanup, and cumulative budget.
+metrics. Report verified outcome, measured work subtotal, cleanup time and full
+total where genuinely retained, phase wall times, main-model turns/tokens, Jev
+attempts/tokens/cost, browser commands, instrumented direct HTTP attempts, stop
+reasons, stale decisions, observable failures, recovery limits, page cleanup,
+and cumulative budget. Unknown timing is reported as unknown, never reconstructed
+as zero.
 
 Recommend **GO** only if the fast-loop briefs meet the same all-items-must-pass
 checklist and the cold/warm median improves either whole-task wall time or

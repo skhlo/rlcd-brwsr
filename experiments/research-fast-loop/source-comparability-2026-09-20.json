@@ -10,9 +10,60 @@
   },
   "comparison": {
     "sourcesChecked": 12,
-    "allHashesMatch": true,
-    "materialDriftObserved": false,
-    "decision": "No affected normal condition requires a rerun."
+    "coverage": "Only the 12 instrumented sources retained by the accepted normal warm research phase were checked.",
+    "allCheckedHashesMatch": true,
+    "materialDriftObservedAmongCheckedSources": false,
+    "materialDriftAcrossAllHistoricalSources": null,
+    "decision": "No baseline rerun was performed. A rerun could not retrospectively establish hashes that were not recorded during the historical cold or evaluator phases."
+  },
+  "historicalCoverageAudit": {
+    "acceptedNormalCold": {
+      "instrumentedFetchDocAttempts": 0,
+      "sourceUrlsNamedInBrief": 11,
+      "historicalResponseHashesRecorded": 0,
+      "evaluatorRetrievalsInstrumented": 0,
+      "evaluatorResponseHashesRecorded": 0,
+      "unknownColdResearchAndEvaluatorResponseHashUrls": [
+        "https://docs.typesafe.ai/api.md",
+        "https://docs.typesafe.ai/concepts/how-to-build-with-system-one.md",
+        "https://docs.typesafe.ai/concepts/state.md",
+        "https://docs.typesafe.ai/concepts/system-one.md",
+        "https://docs.typesafe.ai/confidence.md",
+        "https://docs.typesafe.ai/model-jaggedness/jev-1.13.md",
+        "https://docs.typesafe.ai/models.md",
+        "https://docs.typesafe.ai/patterns/fan-out.md",
+        "https://docs.typesafe.ai/primitives.md",
+        "https://docs.typesafe.ai/primitives/advanced.md",
+        "https://docs.typesafe.ai/primitives/choice.md"
+      ]
+    },
+    "acceptedNormalWarm": {
+      "instrumentedFetchDocAttempts": 12,
+      "historicalResponseHashesRecorded": 12,
+      "historicalHashesRechecked": 12,
+      "evaluatorRetrievalsInstrumented": 0,
+      "evaluatorResponseHashesRecorded": 0,
+      "unknownEvaluatorResponseHashUrls": [
+        "https://docs.typesafe.ai/api.md",
+        "https://docs.typesafe.ai/concepts/how-to-build-with-system-one.md",
+        "https://docs.typesafe.ai/concepts/state.md",
+        "https://docs.typesafe.ai/concepts/system-one.md",
+        "https://docs.typesafe.ai/confidence.md",
+        "https://docs.typesafe.ai/model-jaggedness/jev-1.13.md",
+        "https://docs.typesafe.ai/models.md",
+        "https://docs.typesafe.ai/patterns/fan-out.md",
+        "https://docs.typesafe.ai/primitives.md",
+        "https://docs.typesafe.ai/primitives/advanced.md",
+        "https://docs.typesafe.ai/primitives/choice.md",
+        "https://docs.typesafe.ai/primitives/noul.md"
+      ],
+      "evaluatorOnlyUrlsWithoutAnyAcceptedWarmRunHash": [
+        "https://docs.typesafe.ai/concepts/system-one.md",
+        "https://docs.typesafe.ai/primitives/noul.md"
+      ],
+      "note": "Ten evaluator-cited URLs also have a research-phase hash, but no hash was retained for the evaluator's own response to any URL."
+    },
+    "conclusion": "The checked warm research sources showed no drift. Full source matching across the accepted cold and evaluator inputs is unproved and historically unrecoverable."
   },
   "pricingRecheck": {
     "source": "https://docs.typesafe.ai/models.md",

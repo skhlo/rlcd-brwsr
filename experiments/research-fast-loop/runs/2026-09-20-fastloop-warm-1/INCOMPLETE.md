@@ -7,10 +7,13 @@ a text error form instead of a page list.
 
 No new page was prepared, no Pi research or evaluation context started, and no
 Jev request or ledger reservation occurred. This is not a measured warm
-observation. It is retained rather than deleted or presented as a trial.
+observation. Its launch, cleanup attempt, and manual recovery timestamps and
+command log were not retained, so their duration and command cost are unknown,
+not zero. It is retained rather than deleted or presented as a trial.
 
 After the original `about:blank` page was explicitly selected and the cleanup
 regression was fixed in `010cb3c39de775a5b16747fbea52b14631a66434`, the first
 completed warm observation was retained in
 `../2026-09-20-fastloop-warm-1-retry/`. The correction changed only cleanup
-after the benchmark wall-time boundary; it did not tune the research policy.
+after the retry's recorded timing boundary; it did not tune the research policy.
+The retry subtotal does not include this failed launch or recovery.

@@ -31,6 +31,18 @@
     "costUsd": 0,
     "reason": "The deterministic classifier-state bound stopped the run before the real HTTP adapter sent a request."
   },
+  "acceptanceCoverage": {
+    "verifiedInActualTui": [
+      "registered public tool invocation",
+      "visible deterministic classifier_state_budget stop",
+      "no completion claim",
+      "zero Jev requests"
+    ],
+    "primaryNumericalResearchRunMode": "Pi JSON mode for retained instrumentation",
+    "fullResearchSynthesisAndVerificationPerformedInTui": false,
+    "literalIssue6TuiAcceptanceSatisfied": false,
+    "adjudication": "A second full TUI research repeat was not run after the same deterministic pre-inference stop; the missing literal acceptance check remains explicit."
+  },
   "cleanup": {
     "taskPageClosed": true,
     "tuiTerminalStopped": true,

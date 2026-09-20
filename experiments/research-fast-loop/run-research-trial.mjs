@@ -616,16 +616,26 @@ export async function runTrial(options) {
   let pagesBefore = [];
   let preparedPage;
   let cleanupComplete = false;
-  let cleanup = {
+  let failedStage = "workspace_preparation";
+  const completedPhases = [];
+  let ledgerBefore;
+  const cleanup = {
     taskPageClosed: false,
     preExistingPagesPreserved: false,
     pagesAfterCleanup: [],
+    commands: 0,
     errors: [],
+  };
+  const cleanupTiming = {
+    startedAt: null,
+    endedAt: null,
+    wallTimeMs: null,
   };
   const cleanupPreparedPage = async () => {
     if (cleanupComplete) return cleanup;
     cleanupComplete = true;
     if (preparedPage) {
+      cleanup.commands += 1;
       const closed = await captureProcess(
         chromeBin,
         ["close_page", String(preparedPage.id), "--output-format=json"],
@@ -639,6 +649,7 @@ export async function runTrial(options) {
       const pageToRestore =
         pagesBefore.find((page) => page.selected) ?? pagesBefore[0];
       if (pageToRestore) {
+        cleanup.commands += 1;
         const selected = await captureProcess(
           chromeBin,
           ["select_page", String(pageToRestore.id), "--output-format=json"],
@@ -652,6 +663,7 @@ export async function runTrial(options) {
       }
     }
     try {
+      cleanup.commands += 1;
       cleanup.pagesAfterCleanup = await listPages(chromeBin, process.env);
     } catch (error) {
       cleanup.errors.push(
@@ -669,12 +681,23 @@ export async function runTrial(options) {
     );
     return cleanup;
   };
+  const finalizeCleanup = async () => {
+    if (cleanupTiming.endedAt !== null) return cleanup;
+    cleanupTiming.startedAt = new Date().toISOString();
+    const started = performance.now();
+    await cleanupPreparedPage();
+    cleanupTiming.endedAt = new Date().toISOString();
+    cleanupTiming.wallTimeMs = Math.round(performance.now() - started);
+    return cleanup;
+  };
 
   try {
     const inputSha256 = await prepareWorkspace(workspace);
-    const ledgerBefore = await readLedger(ledgerPath);
+    failedStage = "ledger_snapshot";
+    ledgerBefore = await readLedger(ledgerPath);
     const protocolCommit = await currentCommit();
 
+    failedStage = "page_preparation";
     const pagePreparationStartedAt = new Date().toISOString();
     const pagePreparationStarted = performance.now();
     pagesBefore = await listPages(chromeBin, process.env);
@@ -703,6 +726,7 @@ export async function runTrial(options) {
       path.join(experimentDirectory, "prompts", "research.md"),
       "utf8",
     );
+    failedStage = "research";
     const research = await runPiPhase({
       phase: "research",
       prompt: researchPrompt,
@@ -716,6 +740,7 @@ export async function runTrial(options) {
       ledgerPath,
       trialPurpose,
     });
+    completedPhases.push("research");
     await writeFile(
       path.join(output, "brief.md"),
       `${research.finalAnswer.trim()}\n`,
@@ -733,6 +758,7 @@ export async function runTrial(options) {
       path.join(baselineDirectory, "prompts", "evaluate.md"),
       "utf8",
     );
+    failedStage = "evaluation";
     const evaluation = await runPiPhase({
       phase: "evaluation",
       prompt: evaluationPrompt,
@@ -746,19 +772,34 @@ export async function runTrial(options) {
       ledgerPath,
       trialPurpose,
     });
+    completedPhases.push("evaluation");
     await writeFile(
       path.join(output, "evaluation.md"),
       `${evaluation.finalAnswer.trim()}\n`,
     );
 
-    const trialEndedAt = new Date().toISOString();
-    const wallTimeMs = Math.round(performance.now() - trialStarted);
+    const measuredWorkSubtotalEndedAt = new Date().toISOString();
+    const measuredWorkSubtotalWallTimeMs = Math.round(
+      performance.now() - trialStarted,
+    );
+    failedStage = "artifact_finalization";
     const ledgerAfter = await readLedger(ledgerPath);
     const jev = ledgerDelta(ledgerBefore, ledgerAfter, trialPurpose);
     const budgetAfterTrial = cumulativeBudget(ledgerAfter);
     const retrievals = await readRetrievals(retrievalLog);
     await writeFile(path.join(output, "retrievals.jsonl"), retrievals.contents);
-    await cleanupPreparedPage();
+    failedStage = "cleanup";
+    await finalizeCleanup();
+    failedStage = "post_cleanup_measurement";
+    const environment = {
+      piVersion: await version(piBin),
+      chromeDevtoolsCliVersion: await version(chromeBin),
+      nodeVersion: process.version,
+      platform: `${process.platform}-${process.arch}`,
+      resourceDiscovery:
+        "normal Pi extension, skill and prompt-template discovery remained enabled; the issue #6 real-Jev extension was added explicitly",
+      tailscaleServe: "unavailable on this host; no package was installed",
+    };
 
     const phases = [research, evaluation];
     const verdict = extractVerdict(evaluation.finalAnswer);
@@ -778,15 +819,26 @@ export async function runTrial(options) {
         ...(verdict === null ? ["independent evaluation verdict"] : []),
       ]),
     ];
+    const trialEndedAt = new Date().toISOString();
+    const fullEndToEndWallTimeMs = Math.round(performance.now() - trialStarted);
 
     const metrics = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       trialKind: "fast-loop-research",
       condition: options.condition,
       protocolCommit,
       startedAt: trialStartedAt,
       endedAt: trialEndedAt,
-      wallTimeMs,
+      timing: {
+        measuredWorkSubtotalEndedAt,
+        measuredWorkSubtotalWallTimeMs,
+        cleanupStartedAt: cleanupTiming.startedAt,
+        cleanupEndedAt: cleanupTiming.endedAt,
+        cleanupWallTimeMs: cleanupTiming.wallTimeMs,
+        fullEndToEndWallTimeMs,
+        coverage:
+          "Full total runs from public-command trial start through page cleanup and post-cleanup version capture; final metrics serialization is necessarily outside its own recorded timestamp.",
+      },
       verifiedOutcome: verdict ?? "unavailable",
       mainModel: {
         provider,
@@ -820,7 +872,7 @@ export async function runTrial(options) {
         independentVerification: evaluation.wallTimeMs,
       },
       pagePreparation: {
-        includedInWallTime: true,
+        includedInMeasuredWorkSubtotal: true,
         startedAt: pagePreparationStartedAt,
         endedAt: pagePreparationEndedAt,
         wallTimeMs: pagePreparationWallTimeMs,
@@ -832,15 +884,17 @@ export async function runTrial(options) {
       toolCalls: sumToolCalls(phases),
       failedToolCalls: sumFailedToolCalls(phases),
       browserCommands: {
-        exactMeasuredTotal: 3 + research.fastLoop.browserCommands,
+        measuredWorkSubtotal: 3 + research.fastLoop.browserCommands,
         pagePreparation: 3,
         fastLoop: research.fastLoop.browserCommands,
+        cleanup: cleanup.commands,
+        exactRunnerTotal:
+          3 + research.fastLoop.browserCommands + cleanup.commands,
         observedExternalResearchToolCalls: research.browserCommands.observed,
         total:
           research.browserCommands.observed === 0
-            ? 3 + research.fastLoop.browserCommands
+            ? 3 + research.fastLoop.browserCommands + cleanup.commands
             : null,
-        cleanupCommandsExcludedFromBenchmark: preparedPage ? 3 : 1,
       },
       directHttpRequests: {
         total: null,
@@ -877,15 +931,7 @@ export async function runTrial(options) {
           "event summaries do not distinguish recovery reasoning from ordinary source completion and synthesis",
       },
       retained: cleanup,
-      environment: {
-        piVersion: await version(piBin),
-        chromeDevtoolsCliVersion: await version(chromeBin),
-        nodeVersion: process.version,
-        platform: `${process.platform}-${process.arch}`,
-        resourceDiscovery:
-          "normal Pi extension, skill and prompt-template discovery remained enabled; the issue #6 real-Jev extension was added explicitly",
-        tailscaleServe: "unavailable on this host; no package was installed",
-      },
+      environment,
       frozenContext: {
         commit: startingCommit,
         method:
@@ -910,8 +956,65 @@ export async function runTrial(options) {
       `${JSON.stringify(metrics, null, 2)}\n`,
     );
     return metrics;
+  } catch (error) {
+    const failedAttemptSubtotalEndedAt = new Date().toISOString();
+    const failedAttemptSubtotalWallTimeMs = Math.round(
+      performance.now() - trialStarted,
+    );
+    await finalizeCleanup();
+    const attemptsBefore = ledgerBefore?.attempts.length ?? null;
+    let attemptsAfter = null;
+    try {
+      attemptsAfter = (await readLedger(ledgerPath)).attempts.length;
+    } catch {
+      // The failure artifact reports unavailable accounting rather than guessing.
+    }
+    const failureEndedAt = new Date().toISOString();
+    const fullEndToEndWallTimeMs = Math.round(performance.now() - trialStarted);
+    await writeFile(
+      path.join(output, "failure.json"),
+      `${JSON.stringify(
+        {
+          schemaVersion: 1,
+          trialKind: "fast-loop-research",
+          condition: options.condition,
+          outcome: "incomplete",
+          failedStage,
+          startedAt: trialStartedAt,
+          endedAt: failureEndedAt,
+          completedPhases,
+          preparedPageId: preparedPage?.id ?? null,
+          error: {
+            name: error instanceof Error ? error.name : "Error",
+            message: error instanceof Error ? error.message : String(error),
+          },
+          timing: {
+            failedAttemptSubtotalEndedAt,
+            failedAttemptSubtotalWallTimeMs,
+            cleanupStartedAt: cleanupTiming.startedAt,
+            cleanupEndedAt: cleanupTiming.endedAt,
+            cleanupWallTimeMs: cleanupTiming.wallTimeMs,
+            fullEndToEndWallTimeMs,
+            coverage:
+              "Full total runs from public-command trial start through the cleanup attempt and post-cleanup ledger count; failure artifact serialization is necessarily outside its own recorded timestamp.",
+          },
+          ledgerAccounting: {
+            attemptsBefore,
+            attemptsAfter,
+            attemptsDuringInvocation:
+              attemptsBefore === null || attemptsAfter === null
+                ? null
+                : attemptsAfter - attemptsBefore,
+          },
+          cleanup,
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    throw error;
   } finally {
-    await cleanupPreparedPage();
+    await finalizeCleanup();
     await rm(temporaryRoot, { recursive: true });
   }
 }
@@ -938,7 +1041,7 @@ async function main() {
     `${JSON.stringify({
       condition: metrics.condition,
       verifiedOutcome: metrics.verifiedOutcome,
-      wallTimeMs: metrics.wallTimeMs,
+      fullEndToEndWallTimeMs: metrics.timing.fullEndToEndWallTimeMs,
       output: path.resolve(parsed.output),
     })}\n`,
   );

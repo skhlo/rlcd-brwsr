@@ -6,6 +6,13 @@
   "startedAt": "2026-09-20T00:35:35.731Z",
   "endedAt": "2026-09-20T00:42:06.348Z",
   "wallTimeMs": 390615,
+  "measurementCoverage": {
+    "wallTimeMsMeaning": "Recorded runner subtotal from invocation start through research and independent evaluation; the timer ended before cleanup.",
+    "cleanupWallTimeMs": null,
+    "failedLaunchOrRecoveryWallTimeMs": null,
+    "fullEndToEndWallTimeMs": null,
+    "reason": "Cleanup timestamps were not retained. No zero duration or reconstructed full total is inferred."
+  },
   "verifiedOutcome": "FAIL",
   "mainModel": {
     "provider": "openai-codex",
@@ -93,7 +100,7 @@
     "fastLoop": 1,
     "observedExternalResearchToolCalls": 0,
     "total": 4,
-    "cleanupCommandsExcludedFromBenchmark": 2
+    "cleanupCommandsExcludedFromRecordedSubtotal": 2
   },
   "directHttpRequests": {
     "total": null,

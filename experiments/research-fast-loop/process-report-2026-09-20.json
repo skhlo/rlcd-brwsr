@@ -42,8 +42,26 @@
     "tailscaleAvailable": false,
     "tailscaleInstalledOrChanged": false
   },
+  "approval": {
+    "receipt": "../jev-trial-approval.json",
+    "scope": "issues #5 and #6 under cumulative 100-request and US$5 caps",
+    "interactiveOwnerApprovalBeforeFirstPaidCall": true,
+    "exactApprovalTimestampRetained": false
+  },
+  "measurementCoverage": {
+    "completedPrimaryWallTimesAreRecordedSubtotals": true,
+    "cleanupTimingRetained": false,
+    "firstWarmFailedLaunchAndRecoveryTimingRetained": false,
+    "fullPrimaryEndToEndTotals": null
+  },
+  "tuiCoverage": {
+    "realToolFailuresAndCancellationVerifiedInActualTui": true,
+    "primaryNumericalResearchRunsUsedPiJsonMode": true,
+    "completeResearchSynthesisAndVerificationWorkflowRepeatedInTui": false,
+    "issue6LiteralTuiAcceptanceSatisfied": false
+  },
   "notes": [
-    "The first warm launch failed before page preparation because the just-closed cold page still appeared selected to Chrome CLI. It is retained as an incomplete launch and consumed no Jev request.",
-    "The cold cleanup metric is corrected by its adjacent note; the measured brief, evaluation, wall time, and failed outcome remain unchanged."
+    "The first warm launch failed before page preparation because the just-closed cold page still appeared selected to Chrome CLI. It is retained as an incomplete launch and consumed no Jev request; its duration and recovery command cost are unknown.",
+    "The cold cleanup observation is corrected by its adjacent note; the measured brief, evaluation, recorded timing subtotal, and failed outcome remain unchanged."
   ]
 }

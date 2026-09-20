@@ -28,8 +28,10 @@ script feeds labeled accessibility snapshots through the exported production run
 construction, state and question wording come from the extension rather than a copied request.
 
 Every real request for issues #5 and #6 must use the repository ledger at
-`../jev-trial-ledger.json`. The adapter reserves one 64k-input-token worst-case request before calling
-TypeSafe, records reported usage after a valid response, and retains the full reservation when
+`../jev-trial-ledger.json`. The corresponding non-secret owner-approval scope and cumulative caps are
+retained in [`../jev-trial-approval.json`](../jev-trial-approval.json). The adapter reserves one
+64k-input-token worst-case request before calling TypeSafe, records reported usage after a valid
+response, and retains the full reservation when
 billing is unknown after an error or cancellation. Never set `ledgerPath: false` outside offline
 contract tests. Do not run trials concurrently; the adjacent `.lock` directory blocks overlapping
 writers and a surviving lock after a crash requires checking that no trial process remains before
@@ -44,6 +46,11 @@ Before issue #6 sends any request:
 3. Keep the existing 100-request / US$5 cumulative caps and use `trialIssue: 6` with a short
    non-sensitive purpose. Do not replace or reset the ledger.
 4. Source the host-owned credential without printing it, then run the child process in that shell.
+
+The research-trial command writes schema-v2 success metrics with separate measured-work, cleanup,
+and full-total timing. A failed invocation writes `failure.json` after its cleanup attempt, including
+the failed stage, measured failure/cleanup timing, final page state, and ledger-attempt count when
+available. Historical 2026-09-20 totals remain unknown where those timestamps were not retained.
 
 The model page currently documents a 64k shared request context and a 32k limit for state plus the
 longest question, while the primitives page describes the request budget as around 32k. The adapter

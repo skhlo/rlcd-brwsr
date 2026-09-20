@@ -262,28 +262,38 @@ Paseo Pi terminal were retained.
 Date: 2026-09-20
 
 The fixed cold and warm fast-loop research observations both failed the unchanged checklist. Their
-whole-task times were 390.615 seconds and 496.233 seconds, and their provider-reported total
-main-model use was 379,345 and 780,308 tokens. Both actual registered-tool calls stopped at
-`classifier_state_budget` after one Chrome snapshot and before TypeSafe inference, so the primary
-trials made zero Jev requests and supplied no multi-page fast-loop evidence. Pi completed each brief
-through allowed direct official-document follow-ups; those fallbacks remained inside the measured
-research phase. The briefs passed 13/20 and 15/20 items respectively and were not repaired.
+recorded subtotals through independent verification were 390.615 seconds and 496.233 seconds, and
+their provider-reported total main-model use was 379,345 and 780,308 tokens. Cleanup was outside both
+timers; the first failed warm launch and recovery were also unmeasured. Full end-to-end totals are
+therefore unknown. Both actual registered-tool calls stopped at `classifier_state_budget` after one
+Chrome snapshot and before TypeSafe inference, so the primary trials made zero Jev requests and
+supplied no multi-page fast-loop evidence. Pi completed each brief through allowed direct
+official-document follow-ups; those fallbacks remained inside the measured research phase. The
+briefs passed 13/20 and 15/20 items respectively and were not repaired.
 
-Compared with the accepted normal observations, the fast-loop pooled median was 443.424 seconds
-versus 436.812 seconds and 579,826.5 total tokens versus 561,805. Both paths had 0/2 verified passes.
-The result is therefore **NO-GO** for the full research-workflow hypothesis. No starting page, prompt,
-step budget or uncertainty threshold was retuned after the public-page failure.
+Compared with the accepted normal observations, the fast-loop recorded-subtotal median was 443.424
+seconds versus 436.812 seconds and 579,826.5 total tokens versus 561,805. Both paths had 0/2 verified
+passes. Partial historical source-hash coverage and incomplete timing prevent a precise end-to-end
+speed comparison. The result is therefore **NO-GO for the tested implementation**, independently of
+that missing speed total, because neither primary brief passed and the fast loop made zero primary
+inferences. No starting page, prompt, step budget or uncertainty threshold was retuned after the
+public-page failure; public-document navigation quality from Jev decisions remains untested.
 
-The separate loopback browser journey passed independently on both paths. The fast-loop observation
-was 17.532 seconds and 21,597 main-model tokens versus ordinary Pi Chrome CLI at 20.073 seconds and
-27,425 tokens. Browser commands were seven on both paths. The fast loop used one successful Jev
+The separate loopback browser journey passed independently on both paths. Its recorded pre-cleanup
+subtotal was 17.532 seconds and 21,597 main-model tokens for the fast loop versus 20.073 seconds and
+27,425 tokens for ordinary Pi Chrome CLI. Cleanup timing is unknown, so this is not a precise
+end-to-end speedup. Browser commands were seven on both paths. The fast loop used one successful Jev
 request with 799 input and 97 output tokens at US$0.000033558 and returned the expected one-step
 `step_budget` after the correct click. This is a narrow browser-only observation with `n=1`, not a
 substitute for the primary result.
 
-A post-benchmark actual Pi TUI check, controlled through Paseo CLI, visibly reproduced the public
-`classifier_state_budget` stop and made no Jev request. The combined 84-test check passed before
-public trials. All task pages, fixture/TUI terminals, the fixture listener and ledger lock were absent
-after cleanup. The pre-existing Chrome daemon, selected `about:blank` page and unrelated Pi terminal
-were retained. Full metrics, source comparability, budget accounting, correction notes, limitations
-and artifact links are in [`RESEARCH-COMPARISON.md`](RESEARCH-COMPARISON.md).
+The primary numerical runs used Pi JSON mode for instrumentation. A post-benchmark actual Pi TUI
+check, controlled through Paseo CLI, visibly reproduced only the registered tool's public
+`classifier_state_budget` stop and made no Jev request. Real-tool TUI failure/cancellation behavior
+was also verified, but the complete issue #6 research, synthesis, and verification workflow was not
+repeated in the TUI; that literal acceptance item remains unmet. The combined 84-test check passed
+before public trials. All task pages, fixture/TUI terminals, the fixture listener and ledger lock
+were absent after cleanup. The pre-existing Chrome daemon, selected `about:blank` page and unrelated
+Pi terminal were retained. The approval receipt, source-coverage audit, timing corrections, ML1
+original-rubric adjudication, metrics, and limitations are in
+[`RESEARCH-COMPARISON.md`](RESEARCH-COMPARISON.md).

@@ -6,6 +6,14 @@
   "startedAt": "2026-09-20T00:43:39.622Z",
   "endedAt": "2026-09-20T00:51:55.858Z",
   "wallTimeMs": 496233,
+  "measurementCoverage": {
+    "wallTimeMsMeaning": "Recorded runner subtotal from this retry's invocation start through research and independent evaluation; the timer ended before cleanup.",
+    "cleanupWallTimeMs": null,
+    "priorFailedLaunchAndRecoveryWallTimeMs": null,
+    "priorFailedLaunchIncludedInWallTimeMs": false,
+    "fullEndToEndWallTimeMs": null,
+    "reason": "Cleanup and the first failed warm launch/recovery timestamps were not retained. No zero durations or reconstructed full total are inferred."
+  },
   "verifiedOutcome": "FAIL",
   "mainModel": {
     "provider": "openai-codex",
@@ -91,7 +99,7 @@
     "fastLoop": 1,
     "observedExternalResearchToolCalls": 0,
     "total": 4,
-    "cleanupCommandsExcludedFromBenchmark": 3
+    "cleanupCommandsExcludedFromRecordedSubtotal": 3
   },
   "directHttpRequests": {
     "total": null,
