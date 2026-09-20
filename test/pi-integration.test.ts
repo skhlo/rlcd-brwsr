@@ -240,6 +240,84 @@ describe("Pi registration", () => {
     assert.equal(details.metrics.browserCommands, 1);
   });
 
+  test("enforces complete speculative-answer validation at the registered tool seam", async (t) => {
+    const cases = [
+      {
+        name: "rejects a malformed unused head",
+        valid: false,
+      },
+      {
+        name: "ignores low confidence on a structurally valid unused head",
+        valid: true,
+      },
+    ];
+
+    for (const testCase of cases) {
+      await t.test(testCase.name, async () => {
+        let execCalls = 0;
+        const registered = registerWithExternalFakes({
+          classifier: async (request) => {
+            const clickOptions = Object.keys(
+              request.questions.click_target!.options,
+            );
+            const typeOptions = Object.keys(
+              request.questions.type_text_pair!.options,
+            );
+            return {
+              answers: {
+                operation: choice("CLICK", request.candidates.operations),
+                click_target: choice(clickOptions[0]!, clickOptions),
+                type_text_pair: testCase.valid
+                  ? {
+                      type: "choice",
+                      choice: typeOptions[0],
+                      confidence: 0,
+                      probabilities: Object.fromEntries(
+                        typeOptions.map((option) => [
+                          option,
+                          1 / typeOptions.length,
+                        ]),
+                      ),
+                    }
+                  : {
+                      type: "choice",
+                      choice: "malformed-unused-speculative-branch",
+                    },
+              },
+            };
+          },
+          exec: async () => {
+            execCalls += 1;
+            return processResult(
+              snapshot([
+                { id: "1_1", role: "link", name: "Open evidence" },
+                { id: "1_2", role: "textbox", name: "Unused search" },
+              ]),
+            );
+          },
+        });
+
+        const toolResult = await registered.execute(
+          `all-heads-${String(testCase.valid)}`,
+          {
+            goal: 'Open evidence without using "unused text"',
+            maxSteps: 1,
+            maxSeconds: 10,
+          },
+          new AbortController().signal,
+        );
+        const details = toolResult.details as RlcdRunResult;
+
+        assert.equal(
+          details.stopReason,
+          testCase.valid ? "step_budget" : "invalid_classifier_response",
+        );
+        assert.equal(execCalls, testCase.valid ? 2 : 1);
+        assert.equal(details.trace.length, testCase.valid ? 1 : 0);
+      });
+    }
+  });
+
   test("keeps the API credential out of external diagnostics, tool output, and the trial ledger", async (t) => {
     const credential = "fake-secret-that-must-not-escape";
     const directory = await mkdtemp(join(tmpdir(), "rlcd-redaction-"));
@@ -369,13 +447,17 @@ describe("Pi registration", () => {
       controller.signal,
     );
     const details = toolResult.details as RlcdRunResult;
-    const content = JSON.parse(toolResult.content[0]!.text) as Record<
-      string,
-      unknown
-    >;
+    const content = JSON.parse(toolResult.content[0]!.text) as {
+      stopReason: string;
+      lastObservedPage: { url: string } | null;
+      finalPage?: unknown;
+    };
 
     assert.equal(details.stopReason, "blocked");
     assert.equal(content.stopReason, "blocked");
+    assert.equal(details.lastObservedPage?.url, "http://127.0.0.1/registered");
+    assert.equal(content.lastObservedPage?.url, "http://127.0.0.1/registered");
+    assert.equal(content.finalPage, undefined);
     assert.equal(classifierSignal instanceof AbortSignal, true);
     assert.equal(execCalls[0]!.command, "chrome-devtools");
     assert.deepEqual(execCalls[0]!.args, [

@@ -106,10 +106,10 @@ describe("rlcd_brwsr runner", () => {
             ...targetIds,
             "NO_MATCH",
           ]);
-          answers.type_text_pair = {
-            type: "choice",
-            choice: "malformed-unused-speculative-branch",
-          };
+          const typeTextOptions = Object.keys(
+            request.questions.type_text_pair!.options,
+          );
+          answers.type_text_pair = choice("NO_MATCH", typeTextOptions);
         }
         return {
           model: "fake-jev-1.13.0",
@@ -167,7 +167,7 @@ describe("rlcd_brwsr runner", () => {
       result.evidence.excludedConsequentialControls.map(({ label }) => label),
       ["Log in", "Donate"],
     );
-    assert.equal(result.finalPage.url, destinationUrl);
+    assert.equal(result.lastObservedPage?.url, destinationUrl);
     assert.equal(result.completionClaim.claimed, true);
     assert.equal(result.completionClaim.requiresIndependentVerification, true);
     assert.equal(result.completionClaim.sourceCoverageComplete, false);
@@ -175,6 +175,94 @@ describe("rlcd_brwsr runner", () => {
       result.trace.map(({ operation }) => operation),
       ["CLICK", "DONE"],
     );
+  });
+
+  test("rejects every malformed or unexpected speculative answer before mutation", async (t) => {
+    const cases: Array<{
+      name: string;
+      alter(answers: Record<string, unknown>, typeOptions: string[]): void;
+    }> = [
+      {
+        name: "malformed unused head",
+        alter(answers) {
+          answers.type_text_pair = {
+            type: "choice",
+            choice: "malformed-unused-speculative-branch",
+          };
+        },
+      },
+      {
+        name: "unoffered choice on unused head",
+        alter(answers, typeOptions) {
+          answers.type_text_pair = {
+            ...choice(typeOptions[0]!, typeOptions),
+            choice: "UNOFFERED_UNUSED_PAIR",
+          };
+        },
+      },
+      {
+        name: "missing unused head",
+        alter(answers) {
+          delete answers.type_text_pair;
+        },
+      },
+      {
+        name: "extraneous answer head",
+        alter(answers, typeOptions) {
+          answers.type_text_pair = choice("NO_MATCH", typeOptions);
+          answers.unoffered_speculative_head = choice("NO_MATCH", ["NO_MATCH"]);
+        },
+      },
+    ];
+
+    for (const testCase of cases) {
+      await t.test(testCase.name, async () => {
+        let cliCalls = 0;
+        const result = await createRlcdBrwsrRunner({
+          classifier: async (request) => {
+            const clickOptions = Object.keys(
+              request.questions.click_target!.options,
+            );
+            const typeOptions = Object.keys(
+              request.questions.type_text_pair!.options,
+            );
+            const answers: Record<string, unknown> = {
+              operation: choice("CLICK", request.candidates.operations),
+              click_target: choice(clickOptions[0]!, clickOptions),
+              type_text_pair: choice("NO_MATCH", typeOptions),
+            };
+            testCase.alter(answers, typeOptions);
+            return { answers };
+          },
+          cli: async () => {
+            cliCalls += 1;
+            return processResult(
+              snapshot(
+                "1_0",
+                "http://127.0.0.1/validate-all-heads",
+                "Validate all heads fixture",
+                [
+                  { id: "1_1", role: "link", name: "Open evidence" },
+                  { id: "1_2", role: "textbox", name: "Unused search" },
+                ],
+              ),
+            );
+          },
+          clock: { now: () => 1_000 },
+          wait: async () => {
+            await new Promise(() => {});
+          },
+        })({
+          goal: 'Open evidence without using "unused text"',
+          maxSteps: 1,
+          maxSeconds: 10,
+        });
+
+        assert.equal(result.stopReason, "invalid_classifier_response");
+        assert.equal(cliCalls, 1);
+        assert.equal(result.trace.length, 0);
+      });
+    }
   });
 
   test("retains independent judgments and ignores uncertainty on an unused target branch", async () => {
@@ -1337,7 +1425,11 @@ describe("rlcd_brwsr runner", () => {
 
     assert.equal(result.stopReason, "uncertain_execution");
     assert.equal(cliArgv.length, 2);
-    assert.equal(result.evidence.sources.length, 1);
+    assert.deepEqual(
+      result.evidence.sources.map(({ url }) => url),
+      ["http://127.0.0.1/start"],
+    );
+    assert.equal(result.lastObservedPage?.url, "http://127.0.0.1/start");
     assert.equal(result.trace[0]!.outcome, "uncertain_execution");
   });
 
@@ -1462,6 +1554,56 @@ describe("rlcd_brwsr runner", () => {
 
     assert.equal(result.stopReason, "uncertain_execution");
     assert.equal(cliArgv.length, 2);
+    assert.deepEqual(
+      result.evidence.sources.map(({ url }) => url),
+      ["http://127.0.0.1/error"],
+    );
+    assert.equal(result.lastObservedPage?.url, "http://127.0.0.1/error");
+    assert.equal(result.trace[0]!.outcome, "uncertain_execution");
+  });
+
+  test("keeps the previous observation when a dispatched action returns an invalid snapshot", async () => {
+    const startUrl = "http://127.0.0.1/invalid-action-snapshot";
+    let cliCalls = 0;
+    const result = await createRlcdBrwsrRunner({
+      classifier: async (request) => ({
+        answers: {
+          operation: choice("PAGE_DOWN", request.candidates.operations),
+        },
+      }),
+      cli: async () => {
+        cliCalls += 1;
+        if (cliCalls === 1) {
+          return processResult(
+            snapshot("1_0", startUrl, "Observed before action", [
+              {
+                id: "1_1",
+                role: "StaticText",
+                name: "Source evidence from the observed URL",
+              },
+            ]),
+          );
+        }
+        return processResult({ unexpected: "no snapshot" });
+      },
+      clock: { now: () => 1_000 },
+      wait: async () => {
+        await new Promise(() => {});
+      },
+    })({
+      goal: "Retain only observed source truth",
+      maxSteps: 1,
+      maxSeconds: 10,
+    });
+
+    assert.equal(result.stopReason, "uncertain_execution");
+    assert.equal(cliCalls, 2);
+    assert.deepEqual(
+      result.evidence.sources.map(({ url, title }) => ({ url, title })),
+      [{ url: startUrl, title: "Observed before action" }],
+    );
+    assert.equal(result.lastObservedPage?.url, startUrl);
+    assert.match(result.lastObservedPage?.excerpt ?? "", /observed URL/);
     assert.equal(result.trace[0]!.outcome, "uncertain_execution");
   });
 
@@ -1486,6 +1628,8 @@ describe("rlcd_brwsr runner", () => {
     })({ goal: "Parse CLI errors", maxSteps: 1, maxSeconds: 10 });
 
     assert.equal(result.stopReason, "command_failed");
+    assert.equal(result.lastObservedPage, null);
+    assert.equal(result.evidence.sources.length, 0);
     assert.equal(classifierCalled, false);
     assert.match(result.errors[0]!, /not found/);
   });
@@ -1640,7 +1784,7 @@ describe("rlcd_brwsr runner", () => {
     assert.equal(result.evidence.sources.length, 4);
     assert.equal(result.evidence.omittedCaptures, 1);
     assert.equal(result.evidence.truncated, true);
-    assert.equal(result.finalPage.url, "http://127.0.0.1/page-5");
+    assert.equal(result.lastObservedPage?.url, "http://127.0.0.1/page-5");
   });
 
   test("stops after three non-WAIT operations show no observed progress", async () => {
@@ -1659,15 +1803,13 @@ describe("rlcd_brwsr runner", () => {
         const answers: Record<string, unknown> = {
           operation: choice(operation, request.candidates.operations),
         };
-        if (operation === "CLICK") {
-          const targetIds = request.candidates.clickTargets.map(
-            (target) => target.id,
-          );
-          answers.click_target = choice(targetIds[0]!, [
-            ...targetIds,
-            "NO_MATCH",
-          ]);
-        }
+        const targetIds = request.candidates.clickTargets.map(
+          (target) => target.id,
+        );
+        answers.click_target = choice(
+          operation === "CLICK" ? targetIds[0]! : "NO_MATCH",
+          [...targetIds, "NO_MATCH"],
+        );
         return { answers };
       },
       cli: async () => {
@@ -1726,5 +1868,6 @@ describe("rlcd_brwsr runner", () => {
     assert.equal(result.stopReason, "time_budget");
     assert.deepEqual(cliArgv, [["take_snapshot", "--output-format=json"]]);
     assert.equal(result.evidence.sources.length, 1);
+    assert.equal(result.lastObservedPage?.url, "http://127.0.0.1/start");
   });
 });

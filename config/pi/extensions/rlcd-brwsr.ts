@@ -425,12 +425,12 @@ export interface RlcdRunResult {
     requiresIndependentVerification: true;
     sourceCoverageComplete: false;
   };
-  finalPage: {
+  lastObservedPage: {
     url: string;
     title: string;
     excerpt: string;
     excerptTruncated: boolean;
-  };
+  } | null;
   evidence: {
     sources: EvidenceSource[];
     totalExcerptChars: number;
@@ -1172,6 +1172,38 @@ function isMaximallyUncertain(answer: ChoiceAnswer): boolean {
   );
 }
 
+function validateClassifierAnswers(
+  value: unknown,
+  request: ClassifierRequest,
+): Record<string, ChoiceAnswer> | undefined {
+  if (!isRecord(value)) return undefined;
+  const expectedQuestions = Object.entries(request.questions).filter(
+    (entry): entry is [string, ClassifierChoiceQuestion] =>
+      entry[1] !== undefined,
+  );
+  const expectedAnswerIds = expectedQuestions.map(([questionId]) => questionId);
+  const returnedAnswerIds = Object.keys(value);
+  if (
+    returnedAnswerIds.length !== expectedAnswerIds.length ||
+    returnedAnswerIds.some(
+      (questionId) => !expectedAnswerIds.includes(questionId),
+    )
+  ) {
+    return undefined;
+  }
+
+  const judgments: Record<string, ChoiceAnswer> = {};
+  for (const [questionId, question] of expectedQuestions) {
+    const answer = validateChoice(
+      value[questionId],
+      Object.keys(question.options),
+    );
+    if (!answer) return undefined;
+    judgments[questionId] = answer;
+  }
+  return judgments;
+}
+
 function validateTypeSafeResponse(
   value: unknown,
   request: ClassifierRequest,
@@ -1179,35 +1211,10 @@ function validateTypeSafeResponse(
   if (
     !isRecord(value) ||
     value.model !== TYPESAFE_MODEL ||
-    !isRecord(value.answers) ||
+    !validateClassifierAnswers(value.answers, request) ||
     !isRecord(value.usage)
   ) {
     return false;
-  }
-
-  const expectedAnswerIds = Object.keys(request.questions).filter(
-    (questionId) =>
-      request.questions[questionId as keyof ClassifierRequest["questions"]] !==
-      undefined,
-  );
-  const returnedAnswerIds = Object.keys(value.answers);
-  if (
-    returnedAnswerIds.length !== expectedAnswerIds.length ||
-    returnedAnswerIds.some(
-      (questionId) => !expectedAnswerIds.includes(questionId),
-    )
-  ) {
-    return false;
-  }
-  for (const questionId of expectedAnswerIds) {
-    const question =
-      request.questions[questionId as keyof ClassifierRequest["questions"]];
-    if (
-      !question ||
-      !validateChoice(value.answers[questionId], Object.keys(question.options))
-    ) {
-      return false;
-    }
   }
 
   const inputTokens = value.usage.input_tokens;
@@ -1227,22 +1234,10 @@ function validateDecision(
   value: unknown,
   request: ClassifierRequest,
 ): ValidDecision | undefined {
-  if (!isRecord(value) || !isRecord(value.answers)) return undefined;
-  const operation = validateChoice(
-    value.answers.operation,
-    request.candidates.operations,
-  );
-  if (!operation) return undefined;
-
-  const judgments: Record<string, ChoiceAnswer> = { operation };
-  for (const [questionId, question] of Object.entries(request.questions)) {
-    if (!question || questionId === "operation") continue;
-    const answer = validateChoice(
-      value.answers[questionId],
-      Object.keys(question.options),
-    );
-    if (answer) judgments[questionId] = answer;
-  }
+  if (!isRecord(value)) return undefined;
+  const judgments = validateClassifierAnswers(value.answers, request);
+  const operation = judgments?.operation;
+  if (!judgments || !operation) return undefined;
 
   let target: ChoiceAnswer | undefined;
   if (operation.choice === "CLICK") {
@@ -1581,14 +1576,17 @@ function modelVisibleResultText(result: RlcdRunResult): string {
     status: result.status,
     stopReason: result.stopReason,
     completionClaim: result.completionClaim,
-    finalPage: {
-      url: contentText(result.finalPage.url, 512),
-      title: contentText(result.finalPage.title, 160),
-      excerpt: contentText(result.finalPage.excerpt, 800),
-      excerptTruncated:
-        result.finalPage.excerptTruncated ||
-        result.finalPage.excerpt.length > 800,
-    },
+    lastObservedPage:
+      result.lastObservedPage === null
+        ? null
+        : {
+            url: contentText(result.lastObservedPage.url, 512),
+            title: contentText(result.lastObservedPage.title, 160),
+            excerpt: contentText(result.lastObservedPage.excerpt, 800),
+            excerptTruncated:
+              result.lastObservedPage.excerptTruncated ||
+              result.lastObservedPage.excerpt.length > 800,
+          },
     evidence: compactEvidence,
     trace: compactTrace,
     classifierDiagnostics: result.classifierDiagnostics.map((diagnostic) => ({
@@ -1631,14 +1629,17 @@ function modelVisibleResultText(result: RlcdRunResult): string {
     status: result.status,
     stopReason: result.stopReason,
     completionClaim: result.completionClaim,
-    finalPage: {
-      url: boundedText(result.finalPage.url, 256),
-      title: boundedText(result.finalPage.title, 80),
-      excerpt: boundedText(result.finalPage.excerpt, 300),
-      excerptTruncated:
-        result.finalPage.excerptTruncated ||
-        result.finalPage.excerpt.length > 300,
-    },
+    lastObservedPage:
+      result.lastObservedPage === null
+        ? null
+        : {
+            url: boundedText(result.lastObservedPage.url, 256),
+            title: boundedText(result.lastObservedPage.title, 80),
+            excerpt: boundedText(result.lastObservedPage.excerpt, 300),
+            excerptTruncated:
+              result.lastObservedPage.excerptTruncated ||
+              result.lastObservedPage.excerpt.length > 300,
+          },
     evidence: {
       sources: result.evidence.sources.map((source) => ({
         url: boundedText(source.url, 256),
@@ -1696,12 +1697,15 @@ function modelVisibleResultText(result: RlcdRunResult): string {
         status: result.status,
         stopReason: result.stopReason,
         completionClaim: result.completionClaim,
-        finalPage: {
-          url: boundedText(result.finalPage.url, 256),
-          title: boundedText(result.finalPage.title, 80),
-          excerpt: boundedText(result.finalPage.excerpt, 300),
-          excerptTruncated: true,
-        },
+        lastObservedPage:
+          result.lastObservedPage === null
+            ? null
+            : {
+                url: boundedText(result.lastObservedPage.url, 256),
+                title: boundedText(result.lastObservedPage.title, 80),
+                excerpt: boundedText(result.lastObservedPage.excerpt, 300),
+                excerptTruncated: true,
+              },
         evidence: {
           sources: result.evidence.sources.slice(0, 1).map((source) => ({
             url: boundedText(source.url, 256),
@@ -1780,12 +1784,15 @@ export function createRlcdBrwsrRunner(dependencies: RlcdDependencies) {
           requiresIndependentVerification: true,
           sourceCoverageComplete: false,
         },
-        finalPage: {
-          url: observation.url,
-          title: observation.title,
-          excerpt: observation.text,
-          excerptTruncated: observation.textTruncated,
-        },
+        lastObservedPage:
+          observation.captureSignature === ""
+            ? null
+            : {
+                url: observation.url,
+                title: observation.title,
+                excerpt: observation.text,
+                excerptTruncated: observation.textTruncated,
+              },
         evidence: {
           sources: evidence.sources,
           totalExcerptChars: evidence.totalExcerptChars,
