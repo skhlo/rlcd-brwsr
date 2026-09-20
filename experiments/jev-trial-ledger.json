@@ -99,6 +99,17 @@
       "startedAt": "2026-09-20T00:18:21.981Z",
       "outcome": "cancelled",
       "reservedUsd": 0.002688
+    },
+    {
+      "id": 9,
+      "issue": 6,
+      "purpose": "secondary browser journey",
+      "startedAt": "2026-09-20T00:54:40.073Z",
+      "outcome": "success",
+      "reservedUsd": 0.002688,
+      "inputTokens": 799,
+      "outputTokens": 97,
+      "actualUsd": 0.000033558
     }
   ]
 }

@@ -256,3 +256,34 @@ The task fixture page, server and live-acceptance TUI terminal were closed. The 
 ledger lock were absent afterward, and the Chrome process count returned from 10 with the task page
 to the pre-run count of 9. The pre-existing Chrome daemon, selected `about:blank` page and unrelated
 Paseo Pi terminal were retained.
+
+## Issue #6 full research-workflow result
+
+Date: 2026-09-20
+
+The fixed cold and warm fast-loop research observations both failed the unchanged checklist. Their
+whole-task times were 390.615 seconds and 496.233 seconds, and their provider-reported total
+main-model use was 379,345 and 780,308 tokens. Both actual registered-tool calls stopped at
+`classifier_state_budget` after one Chrome snapshot and before TypeSafe inference, so the primary
+trials made zero Jev requests and supplied no multi-page fast-loop evidence. Pi completed each brief
+through allowed direct official-document follow-ups; those fallbacks remained inside the measured
+research phase. The briefs passed 13/20 and 15/20 items respectively and were not repaired.
+
+Compared with the accepted normal observations, the fast-loop pooled median was 443.424 seconds
+versus 436.812 seconds and 579,826.5 total tokens versus 561,805. Both paths had 0/2 verified passes.
+The result is therefore **NO-GO** for the full research-workflow hypothesis. No starting page, prompt,
+step budget or uncertainty threshold was retuned after the public-page failure.
+
+The separate loopback browser journey passed independently on both paths. The fast-loop observation
+was 17.532 seconds and 21,597 main-model tokens versus ordinary Pi Chrome CLI at 20.073 seconds and
+27,425 tokens. Browser commands were seven on both paths. The fast loop used one successful Jev
+request with 799 input and 97 output tokens at US$0.000033558 and returned the expected one-step
+`step_budget` after the correct click. This is a narrow browser-only observation with `n=1`, not a
+substitute for the primary result.
+
+A post-benchmark actual Pi TUI check, controlled through Paseo CLI, visibly reproduced the public
+`classifier_state_budget` stop and made no Jev request. The combined 84-test check passed before
+public trials. All task pages, fixture/TUI terminals, the fixture listener and ledger lock were absent
+after cleanup. The pre-existing Chrome daemon, selected `about:blank` page and unrelated Pi terminal
+were retained. Full metrics, source comparability, budget accounting, correction notes, limitations
+and artifact links are in [`RESEARCH-COMPARISON.md`](RESEARCH-COMPARISON.md).
