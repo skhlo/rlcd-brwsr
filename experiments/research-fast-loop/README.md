@@ -1,6 +1,6 @@
 # Research fast-loop fixtures
 
-These fixtures demonstrate issues #3 and #4 without a TypeSafe API key or paid inference.
+These fixtures demonstrate issues #3 and #4 without a TypeSafe API key or paid inference. The frozen issue #6 end-to-end comparison is in [`RESEARCH-PROTOCOL.md`](RESEARCH-PROTOCOL.md); its public command is `run-research-trial.mjs`.
 
 1. Start `node experiments/research-fast-loop/serve-fixture.mjs`.
 2. Open and select either loopback fixture with Chrome DevTools CLI:
