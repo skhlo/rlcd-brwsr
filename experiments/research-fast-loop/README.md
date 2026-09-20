@@ -23,7 +23,9 @@ the offline host-check adapter and is not installed globally.
 The production extension now uses built-in `fetch` with the pinned `jev-1.13.0` model and the
 `TYPESAFE_API_KEY` environment variable. It sends one request containing the runner's generic map of
 operation and conditional target questions. Use `run-jev-calibration.ts` only for the four labeled
-calibration cases; those examples are separate from later TUI evaluation trials.
+calibration cases; those examples are separate from later TUI evaluation trials. The calibration
+script feeds labeled accessibility snapshots through the exported production runner, so candidate
+construction, state and question wording come from the extension rather than a copied request.
 
 Every real request for issues #5 and #6 must use the repository ledger at
 `../jev-trial-ledger.json`. The adapter reserves one 64k-input-token worst-case request before calling

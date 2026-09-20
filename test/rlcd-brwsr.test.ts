@@ -1089,6 +1089,85 @@ describe("rlcd_brwsr runner", () => {
     assert.equal(result.metrics.classifierCalls, 1);
   });
 
+  test("accounts a valid classifier response that settles after cancellation without acting on it", async () => {
+    const controller = new AbortController();
+    let markClassifierStarted!: () => void;
+    const classifierStarted = new Promise<void>((resolve) => {
+      markClassifierStarted = resolve;
+    });
+    let settleClassifier!: () => void;
+    const classifierCanSettle = new Promise<void>((resolve) => {
+      settleClassifier = resolve;
+    });
+    const cliArgv: string[][] = [];
+
+    const pendingResult = createRlcdBrwsrRunner({
+      classifier: async (request) => {
+        markClassifierStarted();
+        await classifierCanSettle;
+        return {
+          model: "jev-1.13.0",
+          answers: {
+            operation: choice("PAGE_DOWN", request.candidates.operations),
+          },
+          usage: { input_tokens: 321, output_tokens: 45 },
+        };
+      },
+      cli: async (args) => {
+        cliArgv.push([...args]);
+        return processResult(
+          snapshot(
+            "1_0",
+            "http://127.0.0.1/cancel-late",
+            "Late cancellation fixture",
+            [
+              {
+                id: "1_1",
+                role: "StaticText",
+                name: "Evidence retained before cancellation",
+              },
+            ],
+          ),
+        );
+      },
+      clock: { now: () => 1_000 },
+      wait: async () => {
+        await new Promise(() => {});
+      },
+    })(
+      {
+        goal: "Do not act on a response after cancellation",
+        maxSteps: 1,
+        maxSeconds: 10,
+      },
+      controller.signal,
+    );
+
+    await classifierStarted;
+    controller.abort(new Error("test cancellation"));
+    await new Promise((resolve) => setImmediate(resolve));
+    settleClassifier();
+    const result = await pendingResult;
+
+    assert.equal(result.stopReason, "cancelled");
+    assert.deepEqual(cliArgv, [["take_snapshot", "--output-format=json"]]);
+    assert.equal(result.metrics.modelInputTokens, 321);
+    assert.equal(result.metrics.modelOutputTokens, 45);
+    assert.deepEqual(result.classifierDiagnostics, [
+      {
+        call: 1,
+        step: 1,
+        outcome: "cancelled",
+        durationMs: 0,
+        model: "jev-1.13.0",
+        inputTokens: 321,
+        outputTokens: 45,
+      },
+    ]);
+    assert.equal(result.trace[0]!.operation, "PAGE_DOWN");
+    assert.equal(result.trace[0]!.outcome, "discarded_after_cancellation");
+  });
+
   test("waits for a cancelled CLI adapter to settle before returning", async () => {
     const controller = new AbortController();
     let markCliStarted!: () => void;

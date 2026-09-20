@@ -152,6 +152,10 @@ export interface TypeSafeClassifierOptions {
   trialPurpose?: string;
 }
 
+class InvalidClassifierResponseError extends Error {
+  override name = "InvalidClassifierResponseError";
+}
+
 interface JevTrialAttempt {
   id: number;
   issue: 5 | 6;
@@ -217,6 +221,7 @@ export function createTypeSafeClassifier(
         current_page: request.observation,
         retained_sources: request.retainedSources,
         recent_actions: request.recentActions,
+        candidates: request.candidates,
       },
       model: TYPESAFE_MODEL,
       questions,
@@ -304,9 +309,11 @@ export function createTypeSafeClassifier(
         ledgerOutcome = `http_${response.status}`;
         const diagnostic = responseText.trim() || "empty response body";
         const redacted = diagnostic.split(credential).join("[REDACTED]");
-        const status = `${response.status}${response.statusText ? ` ${response.statusText}` : ""}`;
         throw new Error(
-          boundedText(`TypeSafe HTTP ${status}: ${redacted}`, MAX_ERROR_CHARS),
+          boundedText(
+            `TypeSafe HTTP ${response.status}: ${redacted}`,
+            MAX_ERROR_CHARS,
+          ),
         );
       }
       let parsed: unknown;
@@ -314,11 +321,15 @@ export function createTypeSafeClassifier(
         parsed = JSON.parse(responseText) as unknown;
       } catch {
         ledgerOutcome = "malformed_json";
-        throw new Error("TypeSafe returned malformed JSON");
+        throw new InvalidClassifierResponseError(
+          "TypeSafe returned malformed JSON",
+        );
       }
       if (!validateTypeSafeResponse(parsed, request)) {
         ledgerOutcome = "invalid_response";
-        throw new Error("TypeSafe returned an invalid response");
+        throw new InvalidClassifierResponseError(
+          "TypeSafe returned an invalid response",
+        );
       }
 
       const parsedRecord = parsed as Record<string, unknown>;
@@ -510,21 +521,25 @@ interface BoundedSuccess<T> {
   value: T;
 }
 
-interface BoundedCancelled {
-  kind: "cancelled";
-}
-
-interface BoundedTimeout {
-  kind: "timeout";
-}
-
 interface BoundedError {
   kind: "error";
   error: unknown;
 }
 
+type BoundedSettled<T> = BoundedSuccess<T> | BoundedError;
+
+interface BoundedCancelled<T> {
+  kind: "cancelled";
+  settled?: BoundedSettled<T>;
+}
+
+interface BoundedTimeout<T> {
+  kind: "timeout";
+  settled?: BoundedSettled<T>;
+}
+
 type BoundedResult<T> =
-  BoundedSuccess<T> | BoundedCancelled | BoundedTimeout | BoundedError;
+  BoundedSettled<T> | BoundedCancelled<T> | BoundedTimeout<T>;
 
 interface EvidenceState {
   sources: EvidenceSource[];
@@ -797,7 +812,7 @@ async function runBounded<T>(
   };
   parentSignal?.addEventListener("abort", onParentAbort, { once: true });
 
-  const workPromise: Promise<BoundedResult<T>> = Promise.resolve()
+  const workPromise: Promise<BoundedSettled<T>> = Promise.resolve()
     .then(() => work(workController.signal))
     .then(
       (value) => ({ kind: "success", value }),
@@ -830,8 +845,8 @@ async function runBounded<T>(
   // The boundary decides the result, but the adapter still owns cleanup. Waiting
   // here prevents a cooperative CLI child from outliving the returned tool result.
   // A non-cooperating adapter can still keep the run pending indefinitely.
-  await workPromise;
-  return settled;
+  const settledWork = await workPromise;
+  return { ...settled, settled: settledWork };
 }
 
 function parseNode(value: unknown): SnapshotNode | undefined {
@@ -1895,36 +1910,59 @@ export function createRlcdBrwsrRunner(dependencies: RlcdDependencies) {
         step,
         durationMs: classifierDurationMs,
       };
-      if (classified.kind === "cancelled") {
-        classifierDiagnostics.push({
-          ...diagnosticBase,
-          outcome: "cancelled",
-        });
-        return finish("cancelled");
+      let boundedStop: "cancelled" | "timeout" | undefined;
+      let settledClassification: BoundedSettled<unknown>;
+      if (classified.kind === "cancelled" || classified.kind === "timeout") {
+        boundedStop = classified.kind;
+        if (!classified.settled) {
+          classifierDiagnostics.push({
+            ...diagnosticBase,
+            outcome: boundedStop,
+          });
+          return finish(
+            boundedStop === "cancelled" ? "cancelled" : "time_budget",
+          );
+        }
+        settledClassification = classified.settled;
+      } else {
+        settledClassification = classified;
       }
-      if (classified.kind === "timeout") {
-        classifierDiagnostics.push({ ...diagnosticBase, outcome: "timeout" });
-        return finish("time_budget");
-      }
-      if (classified.kind === "error") {
+      if (settledClassification.kind === "error") {
+        if (boundedStop) {
+          classifierDiagnostics.push({
+            ...diagnosticBase,
+            outcome: boundedStop,
+          });
+          return finish(
+            boundedStop === "cancelled" ? "cancelled" : "time_budget",
+          );
+        }
+        if (
+          settledClassification.error instanceof InvalidClassifierResponseError
+        ) {
+          classifierDiagnostics.push({
+            ...diagnosticBase,
+            outcome: "invalid_response",
+          });
+          addError(errorText(settledClassification.error));
+          return finish("invalid_classifier_response");
+        }
         classifierDiagnostics.push({ ...diagnosticBase, outcome: "error" });
-        addError(errorText(classified.error));
+        addError(errorText(settledClassification.error));
         return finish("classifier_failed");
       }
-      if (signal?.aborted) {
-        classifierDiagnostics.push({
-          ...diagnosticBase,
-          outcome: "cancelled",
-        });
-        return finish("cancelled");
-      }
-      if (remainingMs() <= 0) {
-        classifierDiagnostics.push({ ...diagnosticBase, outcome: "timeout" });
-        return finish("time_budget");
-      }
 
-      const decision = validateDecision(classified.value, request);
+      const decision = validateDecision(settledClassification.value, request);
       if (!decision) {
+        if (boundedStop) {
+          classifierDiagnostics.push({
+            ...diagnosticBase,
+            outcome: boundedStop,
+          });
+          return finish(
+            boundedStop === "cancelled" ? "cancelled" : "time_budget",
+          );
+        }
         classifierDiagnostics.push({
           ...diagnosticBase,
           outcome: "invalid_response",
@@ -1936,17 +1974,6 @@ export function createRlcdBrwsrRunner(dependencies: RlcdDependencies) {
         modelInputTokens += decision.usage.inputTokens;
         modelOutputTokens += decision.usage.outputTokens;
       }
-      classifierDiagnostics.push({
-        ...diagnosticBase,
-        outcome: "response",
-        ...(decision.model ? { model: decision.model } : {}),
-        ...(decision.usage
-          ? {
-              inputTokens: decision.usage.inputTokens,
-              outputTokens: decision.usage.outputTokens,
-            }
-          : {}),
-      });
 
       const baseTrace: ActionTraceEntry = {
         step,
@@ -1959,6 +1986,48 @@ export function createRlcdBrwsrRunner(dependencies: RlcdDependencies) {
           ? { targetProbabilities: decision.target.probabilities }
           : {}),
       };
+      const completedAfterBoundary =
+        boundedStop ??
+        (signal?.aborted
+          ? "cancelled"
+          : remainingMs() <= 0
+            ? "timeout"
+            : undefined);
+      if (completedAfterBoundary) {
+        classifierDiagnostics.push({
+          ...diagnosticBase,
+          outcome: completedAfterBoundary,
+          ...(decision.model ? { model: decision.model } : {}),
+          ...(decision.usage
+            ? {
+                inputTokens: decision.usage.inputTokens,
+                outputTokens: decision.usage.outputTokens,
+              }
+            : {}),
+        });
+        trace.push({
+          ...baseTrace,
+          outcome:
+            completedAfterBoundary === "cancelled"
+              ? "discarded_after_cancellation"
+              : "discarded_after_timeout",
+        });
+        return finish(
+          completedAfterBoundary === "cancelled" ? "cancelled" : "time_budget",
+        );
+      }
+
+      classifierDiagnostics.push({
+        ...diagnosticBase,
+        outcome: "response",
+        ...(decision.model ? { model: decision.model } : {}),
+        ...(decision.usage
+          ? {
+              inputTokens: decision.usage.inputTokens,
+              outputTokens: decision.usage.outputTokens,
+            }
+          : {}),
+      });
       const uncertainHead = isMaximallyUncertain(decision.operation)
         ? "operation"
         : decision.target && isMaximallyUncertain(decision.target)

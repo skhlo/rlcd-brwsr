@@ -188,3 +188,18 @@ future evaluation, and were not run because no request could be authenticated.
 The task-created fixture page, server and four Paseo terminals were closed. The pre-existing Chrome
 daemon, selected `about:blank` page and unrelated Paseo Pi terminal were retained. Tailscale CLI was
 absent and was not installed.
+
+## Issue #5 correction pass
+
+Date: 2026-09-20
+
+Offline corrections omit untrusted HTTP status text from diagnostics, include the bounded code-owned
+candidate inventory in TypeSafe state, account valid responses that settle after a deadline or
+cancellation without acting on their decisions, and classify malformed successful production
+responses as `invalid_classifier_response`. Late malformed and failed responses keep model usage and
+billing unknown. The calibration script now sends labeled accessibility snapshots through the
+exported production runner instead of copying its prompts and candidate construction.
+
+No credential recovery or paid request was attempted during this pass. Real Jev calibration,
+navigation and cancellation acceptance remain pending; the repository trial ledger remains at zero
+attempts.

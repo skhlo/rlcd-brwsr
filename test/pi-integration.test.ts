@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, test } from "node:test";
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -55,6 +58,27 @@ function choice(selected: string, offered: readonly string[]) {
     probabilities: Object.fromEntries(
       offered.map((candidate) => [candidate, candidate === selected ? 1 : 0]),
     ),
+  };
+}
+
+function emptyTrialLedger() {
+  return {
+    schemaVersion: 1,
+    scope: "TypeSafe Jev trials for GitHub issues #5 and #6",
+    budget: {
+      maxRequests: 100,
+      maxUsd: 5,
+      model: "jev-1.13.0",
+      inputUsdPerMillionTokens: 0.042,
+      reservationInputTokensPerAttempt: 64_000,
+      reservationUsdPerAttempt: 0.002688,
+    },
+    pricing: {
+      source: "https://docs.typesafe.ai/models",
+      retrievedAt: "2026-09-20",
+      note: "Input tokens are billed; output tokens are free.",
+    },
+    attempts: [],
   };
 }
 
@@ -162,6 +186,142 @@ describe("Pi registration", () => {
         outputTokens: 22,
       },
     ]);
+  });
+
+  test("reports a malformed successful production response as invalid rather than a service failure", async () => {
+    let registered: RegisteredTool | undefined;
+    const pi = {
+      registerTool(tool: RegisteredTool) {
+        registered = tool;
+      },
+      async exec() {
+        return processResult(
+          snapshot([
+            {
+              id: "1_1",
+              role: "StaticText",
+              name: "No browser mutation should follow malformed output.",
+            },
+          ]),
+        );
+      },
+    } as unknown as ExtensionAPI;
+
+    registerRlcdBrwsr(pi, {
+      typeSafe: {
+        apiKey: "local-test-key",
+        ledgerPath: false,
+        fetch: (async () =>
+          new Response(
+            JSON.stringify({
+              model: "jev-1.13.0",
+              answers: {},
+              usage: { input_tokens: 10, output_tokens: 2 },
+            }),
+            { status: 200 },
+          )) as typeof fetch,
+      },
+      clock: { now: () => 1_000 },
+      wait: async () => {
+        await new Promise(() => {});
+      },
+    });
+    assert.ok(registered);
+
+    const toolResult = await registered.execute(
+      "malformed-production-response",
+      { goal: "Reject malformed classifier output", maxSteps: 1 },
+      new AbortController().signal,
+    );
+    const details = toolResult.details as RlcdRunResult;
+
+    assert.equal(details.stopReason, "invalid_classifier_response");
+    assert.equal(details.classifierDiagnostics[0]!.outcome, "invalid_response");
+    assert.equal(details.metrics.browserCommands, 1);
+  });
+
+  test("keeps the API credential out of external diagnostics, tool output, and the trial ledger", async (t) => {
+    const credential = "fake-secret-that-must-not-escape";
+    const directory = await mkdtemp(join(tmpdir(), "rlcd-redaction-"));
+    t.after(() => rm(directory, { recursive: true }));
+    const ledgerPath = join(directory, "jev-trial-ledger.json");
+    await writeFile(
+      ledgerPath,
+      `${JSON.stringify(emptyTrialLedger(), null, 2)}\n`,
+      "utf8",
+    );
+
+    let registered: RegisteredTool | undefined;
+    let fetchCalls = 0;
+    const pi = {
+      registerTool(tool: RegisteredTool) {
+        registered = tool;
+      },
+      async exec() {
+        return processResult(
+          snapshot([
+            {
+              id: "1_1",
+              role: "StaticText",
+              name: "Evidence retained before classifier failure.",
+            },
+          ]),
+        );
+      },
+    } as unknown as ExtensionAPI;
+
+    registerRlcdBrwsr(pi, {
+      typeSafe: {
+        apiKey: credential,
+        ledgerPath,
+        fetch: (async (_input, init) => {
+          fetchCalls += 1;
+          assert.equal(
+            new Headers(init?.headers).get("authorization"),
+            `Bearer ${credential}`,
+          );
+          if (fetchCalls === 1) {
+            return new Response(`invalid bearer ${credential}`, {
+              status: 401,
+              statusText: `Unauthorized ${credential}`,
+              headers: { "x-external-debug": credential },
+            });
+          }
+          throw new Error(
+            `socket failed with authorization header Bearer ${credential}`,
+          );
+        }) as typeof fetch,
+      },
+      clock: { now: () => 1_000 },
+      wait: async () => {
+        await new Promise(() => {});
+      },
+    });
+    assert.ok(registered);
+
+    for (const toolCallId of ["http-diagnostic", "network-diagnostic"]) {
+      const toolResult = await registered.execute(
+        toolCallId,
+        {
+          goal: "Stop after the classifier diagnostic",
+          maxSteps: 1,
+          maxSeconds: 10,
+        },
+        new AbortController().signal,
+      );
+      const details = toolResult.details as RlcdRunResult;
+      assert.equal(details.stopReason, "classifier_failed");
+      assert.doesNotMatch(JSON.stringify(toolResult), new RegExp(credential));
+    }
+
+    const ledgerText = await readFile(ledgerPath, "utf8");
+    assert.doesNotMatch(ledgerText, new RegExp(credential));
+    assert.deepEqual(
+      (
+        JSON.parse(ledgerText) as { attempts: Array<{ outcome: string }> }
+      ).attempts.map(({ outcome }) => outcome),
+      ["http_401", "network_error"],
+    );
   });
 
   test("executes the real runner through registered schema, signal, and Pi CLI seams", async () => {
