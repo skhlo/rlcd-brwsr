@@ -108,6 +108,12 @@ synthesis, brief handoff, citation checking and evaluation. Phase times split
 research from verification. Main-model turns are completed assistant messages;
 tokens are sums of provider-reported fields.
 
+The accepted normal cold observation has no helper retrieval records. It therefore
+has no source-level retrieval timestamps or hashes, only trial and phase
+timestamps. This is a declared historical acceptance limit: do not infer those
+missing source facts from citations or rerun a later response as if it recovered
+the original observation.
+
 The event stream cannot distinguish recovery reasoning from ordinary work, so
 `recoveryWork` is unavailable and failed tool calls are reported separately.
 Awaiting the two direct Pi children does not prove that descendants are gone, so

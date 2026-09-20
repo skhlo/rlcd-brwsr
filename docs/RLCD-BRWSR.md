@@ -1,6 +1,6 @@
 # RLCD-brwsr v0.1 plan
 
-Status: experimental operations and Jev HTTP inference are implemented; the initial research comparison is [NO-GO for rollout](../experiments/research-fast-loop/RESEARCH-COMPARISON.md). Public documentation exceeded the classifier-state limit before inference. Measurement and acceptance limitations are retained in the report.
+Status: experimental operations and Jev HTTP inference are implemented; the initial research comparison is [NO-GO for rollout](../experiments/research-fast-loop/RESEARCH-COMPARISON.md). This is an implementation-viability result: public documentation exceeded the classifier-state limit before inference, so it is not a quality finding about Jev. Measurement and acceptance limitations are retained in the report.
 
 RLCD-brwsr is a minimal Pi extension that uses TypeSafe Jev as a fast
 classifier inside a bounded browser loop. Pi owns the goal, planning,
@@ -32,7 +32,7 @@ expires.
 The result reports:
 
 - completion status and stop reason;
-- final URL and bounded page state;
+- the last URL and bounded page state actually observed by the runner;
 - bounded source excerpts with URLs and titles from multiple observed pages;
 - compact action trace and Jev distributions;
 - command errors and timing/model usage;
@@ -80,8 +80,12 @@ One TypeSafe request asks speculative questions over that state:
 
 Every target question states the operation it assumes. Questions run
 independently; code consumes only the target head matching the selected
-operation. The extension validates that every returned choice and probability
-belongs to the offered set before constructing a command.
+operation. The extension requires exactly one structurally valid answer for every offered
+speculative question and validates every returned choice and probability before
+constructing a command. Malformed, missing, unoffered or extraneous answers stop
+the run even when they belong to an unselected branch. A structurally valid
+low-confidence answer on an unused branch remains recorded but does not apply the
+selected-branch uncertainty stop.
 
 Jev never supplies a selector, coordinate, URL, shell command, or executable
 JavaScript. The model selects only code-owned enum values and UIDs observed in
@@ -214,10 +218,14 @@ Stop without another mutation when:
 - the step or wall-clock budget expires; or
 - Pi cancels the tool.
 
-Never retry a browser mutation whose outcome is uncertain. On cancellation or
-timeout, the runner aborts the active adapter and waits for that adapter to
-settle before returning; this keeps a cooperative `pi.exec` CLI child from
-outliving the tool result. Cleanup can take the run beyond its budget, which is
+Never retry a browser mutation whose outcome is uncertain. The result names its
+bounded page field `lastObservedPage`: it is the last snapshot the runner
+successfully parsed, or `null` if the initial observation failed. It is not a
+claim about browser state after a dispatched uncertain mutation. Its URL and
+retained source URLs remain observation evidence. On
+cancellation or timeout, the runner aborts the active adapter and waits for that
+adapter to settle before returning; this keeps a cooperative `pi.exec` CLI child
+from outliving the tool result. Cleanup can take the run beyond its budget, which is
 reported as `budgetOverrunMs`. A non-cooperating external executor can leave the
 run pending indefinitely, so this is not a process-cleanup guarantee for an
 arbitrary adapter. A cancelled or timed-out dispatched mutation remains

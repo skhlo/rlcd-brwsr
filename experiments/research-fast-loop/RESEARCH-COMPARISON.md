@@ -5,7 +5,9 @@ Date: 2026-09-20
 ## Recommendation: NO-GO
 
 Do not roll out RLCD-brwsr for the full TypeSafe documentation research
-workflow from this experiment.
+workflow from this experiment. The NO-GO is an implementation-viability finding:
+the public-page state cap blocked the fast loop before Jev. It is not a quality
+finding about Jev.
 
 Both fast-loop briefs failed the same strict checklist as the accepted normal
 baseline. The public documentation page exceeded the runner's 8,000-character
@@ -40,9 +42,12 @@ The live comparability snapshot re-fetched the 12 instrumented sources retained
 by the accepted normal warm research phase. Every checked HTTP status, byte
 length, and SHA-256 matched. The model and price also remained `jev-1.13.0` at
 US$0.042 per million input tokens, with free output tokens. This does not cover
-the uninstrumented accepted cold or evaluator source responses. Their historical
-hashes are unknown, including evaluator checks of `concepts/system-one.md` and
-`primitives/noul.md`; rerunning now could not recover those old bytes. The task,
+the uninstrumented accepted cold or evaluator source responses. The accepted
+normal cold run has no source-level retrieval timestamps or hashes, only trial
+and phase timestamps. Other uninstrumented historical hashes are also unknown,
+including evaluator checks of `concepts/system-one.md` and
+`primitives/noul.md`; rerunning now could not recover those old bytes or their
+original retrieval times. The task,
 checklist, and frozen context match, but full source matching and a fully paired
 quantitative comparison are not proved. See the coverage audit in
 [`source-comparability-2026-09-20.json`](source-comparability-2026-09-20.json).
@@ -225,6 +230,15 @@ observed values remain unchanged; their adjacent correction records that the
 original `about:blank` page was present and was explicitly reselected before the
 warm retry.
 
+A post-review correction applies to future schema-v3 benchmark metrics without
+rewriting the retained schema-v2 observations. One stale-stopped tool call now
+counts as one stale decision rather than once from its stop reason and again from
+its trace. Browser accounting now separates exact runner-issued commands from
+browser-tool calls observed in both research and verification, while keeping the
+overall total unknown. The retained trials had zero stale decisions and zero
+observed verification browser calls, so their published numbers remain
+unchanged.
+
 After all work:
 
 - no fixture listener, ledger lock, task page, task Paseo terminal, or
@@ -244,11 +258,12 @@ See [`process-report-2026-09-20.json`](process-report-2026-09-20.json).
 - Historical cleanup time and first-warm-launch recovery time were not retained,
   so full primary and secondary end-to-end totals and speed deltas are unknown.
 - Only 12 instrumented accepted-warm research sources have matched historical
-  hashes. Accepted-cold and evaluator response hashes are incomplete, so source
-  comparability is partial.
-- The fast loop never reached Jev on the public page, so the primary result
-  evaluates integration viability and fallback workflow cost, not public-doc
-  navigation quality from model decisions.
+  hashes. The accepted normal cold run has no source-level retrieval timestamps
+  or hashes, only trial and phase timestamps; evaluator response hashes are also
+  incomplete. Source comparability is therefore partial.
+- The fast loop never reached Jev on the public page, so the NO-GO evaluates
+  implementation viability and fallback workflow cost, not Jev quality or
+  public-document navigation quality from model decisions.
 - The primary numerical runs used JSON mode. Actual-TUI checks covered the real
   tool's failure/cancellation surfaces and deterministic public stop, not the
   complete research, synthesis, and verification workflow required literally by

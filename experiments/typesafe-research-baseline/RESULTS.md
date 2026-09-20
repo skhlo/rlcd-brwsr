@@ -74,7 +74,10 @@ warm research phase. Other normal direct HTTP and Chrome paths were permitted.
 Because the event summary cannot fully count those unrestricted paths, total HTTP
 requests and browser commands are unknown rather than inferred from helper records
 or reported as zero. Source URLs remain in each brief and citation audit; exact
-helper timestamps and hashes are retained when the helper was used.
+helper timestamps and hashes are retained when the helper was used. The accepted
+cold observation did not use the helper and therefore has no source-level
+retrieval timestamps or hashes, only trial and phase timestamps. That historical
+acceptance limit is retained rather than reconstructed from later fetches.
 
 Recovery work beyond failed tool calls is unavailable because the summarized Pi
 events do not distinguish it from ordinary work. Retained descendants are

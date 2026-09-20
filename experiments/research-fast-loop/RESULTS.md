@@ -274,10 +274,11 @@ briefs passed 13/20 and 15/20 items respectively and were not repaired.
 Compared with the accepted normal observations, the fast-loop recorded-subtotal median was 443.424
 seconds versus 436.812 seconds and 579,826.5 total tokens versus 561,805. Both paths had 0/2 verified
 passes. Partial historical source-hash coverage and incomplete timing prevent a precise end-to-end
-speed comparison. The result is therefore **NO-GO for the tested implementation**, independently of
+speed comparison. The result is therefore **NO-GO for the tested implementation's viability**, independently of
 that missing speed total, because neither primary brief passed and the fast loop made zero primary
-inferences. No starting page, prompt, step budget or uncertainty threshold was retuned after the
-public-page failure; public-document navigation quality from Jev decisions remains untested.
+inferences. This is not a Jev quality finding. No starting page, prompt, step budget or uncertainty
+threshold was retuned after the public-page failure; public-document navigation quality from Jev
+decisions remains untested.
 
 The separate loopback browser journey passed independently on both paths. Its recorded pre-cleanup
 subtotal was 17.532 seconds and 21,597 main-model tokens for the fast loop versus 20.073 seconds and
@@ -297,3 +298,19 @@ were absent after cleanup. The pre-existing Chrome daemon, selected `about:blank
 Pi terminal were retained. The approval receipt, source-coverage audit, timing corrections, ML1
 original-rubric adjudication, metrics, and limitations are in
 [`RESEARCH-COMPARISON.md`](RESEARCH-COMPARISON.md).
+
+## PR #8 review-correction TUI label check
+
+Date: 2026-09-20
+
+Pi 0.85.1's actual TUI was controlled through Paseo CLI with the loopback `index.html` fixture and a
+deterministic fake classifier. A temporary test-only slash command invoked the exact `execute`
+function captured from the registered `rlcd_brwsr_run` tool and displayed its returned content as a
+TUI-only entry, avoiding both a main-model request and a Jev request. The visible JSON used
+`lastObservedPage`, showed the observed fixture URL and title, and did not contain `finalPage`. The
+TUI footer remained at US$0.000; the shared Jev ledger remained at 9 attempts and US$0.002948610
+committed.
+
+The task fixture page, loopback server, two task Paseo terminals and temporary extension were removed.
+The pre-existing Chrome daemon, selected `about:blank` page and unrelated Paseo Pi terminal were
+retained.

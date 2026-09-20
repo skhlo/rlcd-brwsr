@@ -47,12 +47,22 @@ Before issue #6 sends any request:
    non-sensitive purpose. Do not replace or reset the ledger.
 4. Source the host-owned credential without printing it, then run the child process in that shell.
 
-The research-trial command writes schema-v2 success metrics with separate measured-work, cleanup,
-and full-total timing. After argument checks and creation of a writable output directory, a failed
-invocation writes `failure.json` after its cleanup attempt, including the failed stage, measured
-failure/cleanup timing, final page state, and ledger-attempt count when available. Failed final-page
-inspection or unidentified page creation leaves closure unverified (`null`), not successful.
-Historical 2026-09-20 totals remain unknown where those timestamps were not retained.
+The research-trial command writes schema-v3 success metrics with separate measured-work, cleanup,
+and full-total timing. Schema v3 counts one stale decision per stopped tool call, reports exact
+runner-issued browser commands separately from browser-tool calls observed in both research and
+verification, and leaves the overall browser-command total unknown. Retained schema-v2 trial
+artifacts are historical captures and are not rewritten; their stale and verification-browser cases
+were zero, so the published observations do not change. After argument checks and creation of a
+writable output directory, a failed invocation writes `failure.json` after its cleanup attempt,
+including the failed stage, measured failure/cleanup timing, final browser-page inspection, and
+ledger-attempt count when available. Failed page inspection or unidentified page creation leaves
+closure unverified (`null`), not successful. Historical 2026-09-20 totals remain unknown where those
+timestamps were not retained.
+
+The live tool result now calls its bounded page field `lastObservedPage`. It records the last
+successfully parsed snapshot (or `null` when the initial observation failed) and does not imply that
+the browser remained there after an uncertain mutation. Earlier TUI and JSON captures keep their historical schema; they are not rewritten to add
+the new label.
 
 The model page currently documents a 64k shared request context and a 32k limit for state plus the
 longest question, while the primitives page describes the request budget as around 32k. The adapter

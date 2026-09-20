@@ -17,5 +17,6 @@ The fixtures, live Jev checks and research comparison are under
 The initial research evaluation is a
 [**NO-GO for rollout**](experiments/research-fast-loop/RESEARCH-COMPARISON.md):
 public TypeSafe documentation exceeded the classifier-state limit before
-inference. A small browser-only fixture worked, but does not establish a research
+inference. This is an implementation-viability result, not a Jev quality finding.
+A small browser-only fixture worked, but does not establish a research
 improvement. The report preserves failed runs and states the measurement limits.
