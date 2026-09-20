@@ -636,6 +636,20 @@ export async function runTrial(options) {
           `close_page exited ${String(closed.code ?? closed.signal)}`,
         );
       }
+      const pageToRestore =
+        pagesBefore.find((page) => page.selected) ?? pagesBefore[0];
+      if (pageToRestore) {
+        const selected = await captureProcess(
+          chromeBin,
+          ["select_page", String(pageToRestore.id), "--output-format=json"],
+          { cwd: repositoryRoot, env: process.env },
+        );
+        if (selected.code !== 0) {
+          cleanup.errors.push(
+            `select_page exited ${String(selected.code ?? selected.signal)}`,
+          );
+        }
+      }
     }
     try {
       cleanup.pagesAfterCleanup = await listPages(chromeBin, process.env);
@@ -826,7 +840,7 @@ export async function runTrial(options) {
           research.browserCommands.observed === 0
             ? 3 + research.fastLoop.browserCommands
             : null,
-        cleanupCommandsExcludedFromBenchmark: preparedPage ? 2 : 1,
+        cleanupCommandsExcludedFromBenchmark: preparedPage ? 3 : 1,
       },
       directHttpRequests: {
         total: null,

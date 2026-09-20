@@ -72,7 +72,8 @@ let pages = [{ id: 1, url: "about:blank", title: "", selected: true }];
 try { pages = JSON.parse(await readFile(process.env.FAKE_CHROME_STATE, "utf8")); } catch {}
 const command = args[0];
 if (command === "list_pages") {
-  console.log(JSON.stringify({ pages }));
+  if (pages.some((page) => page.selected)) console.log(JSON.stringify({ pages }));
+  else console.log(JSON.stringify([{ type: "text", text: "The selected page has been closed. Call list_pages to see open pages." }]));
 } else if (command === "new_page") {
   pages = pages.map((page) => ({ ...page, selected: false }));
   pages.push({ id: 2, url: args[1], title: "How to build with TypeSafe", selected: true });
@@ -80,7 +81,11 @@ if (command === "list_pages") {
   console.log(JSON.stringify({ pages }));
 } else if (command === "close_page") {
   pages = pages.filter((page) => page.id !== Number(args[1]));
-  pages = pages.map((page, index) => ({ ...page, selected: index === 0 }));
+  pages = pages.map((page) => ({ ...page, selected: false }));
+  await writeFile(process.env.FAKE_CHROME_STATE, JSON.stringify(pages));
+  console.log(JSON.stringify({ pages }));
+} else if (command === "select_page") {
+  pages = pages.map((page) => ({ ...page, selected: page.id === Number(args[1]) }));
   await writeFile(process.env.FAKE_CHROME_STATE, JSON.stringify(pages));
   console.log(JSON.stringify({ pages }));
 } else {
@@ -209,6 +214,13 @@ console.log(JSON.stringify({ type: "message_end", message: { role: "assistant", 
   const chromeCommands = (await readFile(chromeLog, "utf8")).trim().split("\n");
   assert.deepEqual(
     chromeCommands.map((line) => line.split(" ")[0]),
-    ["list_pages", "new_page", "list_pages", "close_page", "list_pages"],
+    [
+      "list_pages",
+      "new_page",
+      "list_pages",
+      "close_page",
+      "select_page",
+      "list_pages",
+    ],
   );
 });
