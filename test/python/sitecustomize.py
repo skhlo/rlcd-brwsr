@@ -321,6 +321,7 @@ def _choice(criteria, selected):
 
 
 def _post_json(url, key, body):
+    _mark_external_work("RLCD_TEST_MODEL_WORK_MARKER")
     if "messages" in body:
         _mark_external_work("RLCD_TEST_HELPER_REQUEST_MARKER")
         if url != "http://127.0.0.1:43115/v1/chat/completions":
@@ -370,6 +371,22 @@ def _post_json(url, key, body):
         "bridge_death_cleanup_unconfirmed",
     }:
         os._exit(23)
+    if _SCENARIO == "large_progress_malformed":
+        progress = {
+            "type": "progress",
+            "phase": "observation",
+            "observation": {
+                "url": "u" * 14_000,
+                "title": "synthetic" * 1_000 + "t" * 4_000 + '"' * 1_000,
+                "evidence": "bounded partial evidence",
+                "evidenceTruncated": False,
+            },
+            "executedActions": 0,
+        }
+        sys.stdout.write(json.dumps(progress, separators=(",", ":")) + "\n")
+        sys.stdout.write("not-json-from-bridge\n")
+        sys.stdout.flush()
+        time.sleep(30)
     if _SCENARIO == "malformed_protocol":
         sys.stdout.write("not-json-from-bridge\n")
         sys.stdout.flush()

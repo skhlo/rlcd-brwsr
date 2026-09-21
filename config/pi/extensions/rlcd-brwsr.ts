@@ -89,6 +89,54 @@ interface ModelMeasurement {
   usage: JsonValue;
 }
 
+type TextHelperConfiguration =
+  "absent" | "incomplete" | "invalid" | "configured";
+
+interface ReadyProtocolRecord {
+  type: "ready";
+  protocolVersion: 1;
+  daemon: string;
+  capabilities: {
+    textHelperConfigured: boolean;
+    textHelperConfiguration: TextHelperConfiguration;
+    textHelperConfiguredModel: string | null;
+  };
+}
+
+interface OwnershipProtocolRecord {
+  type: "ownership";
+  targetId: string | null;
+}
+
+interface ObservationProtocolRecord {
+  type: "progress";
+  phase: "observation";
+  observation: Observation | null;
+  executedActions: number;
+}
+
+interface PredictionProtocolRecord {
+  type: "progress";
+  phase: "prediction";
+  decision: TraceEntry;
+  measurement: ModelMeasurement;
+  executedActions: number;
+}
+
+interface ActionProtocolRecord {
+  type: "progress";
+  phase: "dispatch" | "action";
+  action: TraceEntry;
+  executedActions: number;
+}
+
+type NormalizedProgressRecord =
+  | ReadyProtocolRecord
+  | OwnershipProtocolRecord
+  | ObservationProtocolRecord
+  | PredictionProtocolRecord
+  | ActionProtocolRecord;
+
 interface Usage {
   jev: {
     configuredModel: string;
@@ -141,6 +189,7 @@ export interface RlcdRunResult {
   modelVisible?: {
     truncated: boolean;
     maxChars: number;
+    omissions: string[];
   };
 }
 
@@ -171,10 +220,6 @@ function loadRuntimeConfig(): { jevModel: string } {
     throw new Error("Runtime configuration must define a non-empty jevModel");
   }
   return { jevModel: value.jevModel };
-}
-
-function boundedText(value: string, maximum: number): string {
-  return value.length <= maximum ? value : value.slice(0, maximum);
 }
 
 function validateInput(value: RlcdRunInput): string | undefined {
@@ -506,6 +551,9 @@ function normalizedBridgeResult(
   }
   const observation = normalizedObservation(value.lastObservation, credentials);
   const usage = normalizedUsage(value.usage, credentials);
+  const cleanupElapsedMs = isRecord(value.timing)
+    ? normalizedMeasurement(value.timing.cleanupElapsedMs)
+    : undefined;
   if (
     typeof value.stopReason !== "string" ||
     !isRecord(value.completionClaim) ||
@@ -518,7 +566,7 @@ function normalizedBridgeResult(
     !isRecord(value.timing) ||
     !isNonnegativeFinite(value.timing.elapsedMs) ||
     !isNonnegativeFinite(value.timing.wallBudgetMs) ||
-    normalizedMeasurement(value.timing.cleanupElapsedMs) === undefined ||
+    cleanupElapsedMs === undefined ||
     !isNonnegativeFinite(value.timing.cleanupOverrunMs) ||
     !isRecord(value.ownership) ||
     (value.ownership.targetId !== null &&
@@ -532,9 +580,6 @@ function normalizedBridgeResult(
       value.mutationOutcome !== "unknown") ||
     (value.diagnostic !== null && typeof value.diagnostic !== "string") ||
     !isRecord(value.cleanup) ||
-    !["not_created", "closed", "retained", "unconfirmed"].includes(
-      String(value.cleanup.taskTab),
-    ) ||
     value.cleanup.sharedDaemon !== "retained"
   ) {
     return undefined;
@@ -568,7 +613,7 @@ function normalizedBridgeResult(
     timing: {
       elapsedMs: value.timing.elapsedMs,
       wallBudgetMs: value.timing.wallBudgetMs,
-      cleanupElapsedMs: value.timing.cleanupElapsedMs as Measurement,
+      cleanupElapsedMs,
       cleanupOverrunMs: value.timing.cleanupOverrunMs,
     },
     ownership: {
@@ -601,17 +646,19 @@ function normalizedBridgeResult(
 function normalizedProgressRecord(
   value: unknown,
   credentials: readonly string[],
-): { [key: string]: JsonValue } | undefined {
+): NormalizedProgressRecord | undefined {
   if (!isRecord(value) || typeof value.type !== "string") return undefined;
   if (value.type === "ready") {
+    if (!isRecord(value.capabilities)) return undefined;
+    const configuration = value.capabilities.textHelperConfiguration;
     if (
       value.protocolVersion !== 1 ||
       typeof value.daemon !== "string" ||
-      !isRecord(value.capabilities) ||
       typeof value.capabilities.textHelperConfigured !== "boolean" ||
-      !["absent", "incomplete", "invalid", "configured"].includes(
-        String(value.capabilities.textHelperConfiguration),
-      ) ||
+      (configuration !== "absent" &&
+        configuration !== "incomplete" &&
+        configuration !== "invalid" &&
+        configuration !== "configured") ||
       (value.capabilities.textHelperConfiguredModel !== null &&
         typeof value.capabilities.textHelperConfiguredModel !== "string")
     ) {
@@ -623,9 +670,7 @@ function normalizedProgressRecord(
       daemon: redactText(value.daemon, credentials),
       capabilities: {
         textHelperConfigured: value.capabilities.textHelperConfigured,
-        textHelperConfiguration: String(
-          value.capabilities.textHelperConfiguration,
-        ),
+        textHelperConfiguration: configuration,
         textHelperConfiguredModel:
           typeof value.capabilities.textHelperConfiguredModel === "string"
             ? redactText(
@@ -637,8 +682,9 @@ function normalizedProgressRecord(
     };
   }
   if (value.type === "ownership") {
-    if (value.targetId !== null && typeof value.targetId !== "string")
+    if (value.targetId !== null && typeof value.targetId !== "string") {
       return undefined;
+    }
     return {
       type: "ownership",
       targetId:
@@ -649,9 +695,6 @@ function normalizedProgressRecord(
   }
   if (value.type !== "progress") return undefined;
   if (
-    !["observation", "prediction", "dispatch", "action"].includes(
-      String(value.phase),
-    ) ||
     !Number.isInteger(value.executedActions) ||
     !isNonnegativeFinite(value.executedActions)
   ) {
@@ -663,93 +706,172 @@ function normalizedProgressRecord(
     return {
       type: "progress",
       phase: "observation",
-      observation:
-        observation === null
-          ? null
-          : {
-              url: observation.url,
-              title: observation.title,
-              evidence: observation.evidence,
-              evidenceTruncated: observation.evidenceTruncated,
-            },
+      observation,
       executedActions: value.executedActions,
     };
   }
-  const key = value.phase === "prediction" ? "decision" : "action";
-  const entry = normalizedTraceEntry(value[key], credentials);
-  if (!entry) return undefined;
-  const measurement =
-    value.phase === "prediction"
-      ? normalizedModelMeasurement(value.measurement, credentials)
-      : undefined;
-  if (value.phase === "prediction" && !measurement) return undefined;
-  return {
-    type: "progress",
-    phase: String(value.phase),
-    [key]: {
-      step: entry.step,
-      operation: entry.operation,
-      action: entry.action,
-      outcome: entry.outcome,
-      elapsedMs: entry.elapsedMs,
-      ...(entry.url === undefined ? {} : { url: entry.url }),
-    },
-    ...(measurement
-      ? {
-          measurement: {
-            reportedModel: measurement.reportedModel,
-            ...(measurement.field === undefined
-              ? {}
-              : { field: measurement.field }),
-            latencyMs: measurement.latencyMs,
-            usage: measurement.usage,
-          },
-        }
-      : {}),
-    executedActions: value.executedActions,
-  };
+  if (value.phase === "prediction") {
+    const decision = normalizedTraceEntry(value.decision, credentials);
+    const measurement = normalizedModelMeasurement(
+      value.measurement,
+      credentials,
+    );
+    if (!decision || !measurement) return undefined;
+    return {
+      type: "progress",
+      phase: "prediction",
+      decision,
+      measurement,
+      executedActions: value.executedActions,
+    };
+  }
+  if (value.phase === "dispatch" || value.phase === "action") {
+    const action = normalizedTraceEntry(value.action, credentials);
+    if (!action) return undefined;
+    return {
+      type: "progress",
+      phase: value.phase,
+      action,
+      executedActions: value.executedActions,
+    };
+  }
+  return undefined;
+}
+
+function boundedJsonText(
+  value: string,
+  maximumSerializedChars: number,
+): { text: string; truncated: boolean } {
+  if (JSON.stringify(value).length <= maximumSerializedChars) {
+    return { text: value, truncated: false };
+  }
+
+  let text = "";
+  let serializedChars = 2;
+  for (const character of value) {
+    const encodedCharacter = JSON.stringify(character).slice(1, -1);
+    if (serializedChars + encodedCharacter.length > maximumSerializedChars) {
+      break;
+    }
+    text += character;
+    serializedChars += encodedCharacter.length;
+  }
+  return { text, truncated: true };
 }
 
 function toolContent(result: RlcdRunResult): string {
-  let serialized = JSON.stringify(result, null, 2);
+  const serialized = JSON.stringify(result, null, 2);
   if (serialized.length <= MAX_TOOL_CONTENT_CHARS) return serialized;
 
-  const compact: RlcdRunResult = {
-    ...result,
-    lastObservation:
-      result.lastObservation === null
-        ? null
-        : {
-            ...result.lastObservation,
-            evidence: boundedText(result.lastObservation.evidence, 1_000),
-            evidenceTruncated: true,
-          },
-    trace: result.trace.slice(-8),
-    traceTruncated: true,
-    diagnostic:
-      result.diagnostic === null ? null : boundedText(result.diagnostic, 300),
-    modelVisible: { truncated: true, maxChars: MAX_TOOL_CONTENT_CHARS },
+  const omissions: string[] = ["usage"];
+  const clipped = (
+    path: string,
+    value: string,
+    maximumSerializedChars: number,
+  ): string => {
+    const bounded = boundedJsonText(value, maximumSerializedChars);
+    if (bounded.truncated) omissions.push(`${path} remainder`);
+    return bounded.text;
   };
-  serialized = JSON.stringify(compact, null, 2);
-  if (serialized.length <= MAX_TOOL_CONTENT_CHARS) return serialized;
-
-  return JSON.stringify(
-    {
-      status: compact.status,
-      stopReason: compact.stopReason,
-      completionClaim: compact.completionClaim,
-      lastObservation: compact.lastObservation,
-      trace: compact.trace.slice(-3),
-      timing: compact.timing,
-      ownership: compact.ownership,
-      mutationOutcome: compact.mutationOutcome,
-      diagnostic: compact.diagnostic,
-      cleanup: compact.cleanup,
-      modelVisible: compact.modelVisible,
+  const observationEvidence =
+    result.lastObservation === null
+      ? null
+      : boundedJsonText(result.lastObservation.evidence, 1_200);
+  if (observationEvidence?.truncated) {
+    omissions.push("lastObservation.evidence remainder");
+  }
+  const observation =
+    result.lastObservation === null || observationEvidence === null
+      ? null
+      : {
+          url: clipped("lastObservation.url", result.lastObservation.url, 800),
+          title: clipped(
+            "lastObservation.title",
+            result.lastObservation.title,
+            400,
+          ),
+          evidence: observationEvidence.text,
+          evidenceTruncated:
+            result.lastObservation.evidenceTruncated ||
+            observationEvidence.truncated,
+        };
+  const trace = result.trace.slice(-2).map((entry, index) => {
+    const path = `trace[${index}]`;
+    return {
+      step: entry.step,
+      operation: clipped(`${path}.operation`, entry.operation, 160),
+      action: clipped(`${path}.action`, entry.action, 400),
+      outcome: clipped(`${path}.outcome`, entry.outcome, 160),
+      elapsedMs: entry.elapsedMs,
+      ...(entry.url === undefined
+        ? {}
+        : { url: clipped(`${path}.url`, entry.url, 400) }),
+    };
+  });
+  if (result.traceTruncated || result.trace.length > trace.length) {
+    omissions.push("earlier trace entries");
+  }
+  const stopReason = clipped("stopReason", result.stopReason, 400);
+  const diagnostic =
+    result.diagnostic === null
+      ? null
+      : clipped("diagnostic", result.diagnostic, 600);
+  const targetId =
+    result.ownership.targetId === null
+      ? null
+      : clipped("ownership.targetId", result.ownership.targetId, 300);
+  const daemon =
+    result.ownership.daemon === null
+      ? null
+      : clipped("ownership.daemon", result.ownership.daemon, 300);
+  const compact = {
+    status: result.status,
+    stopReason,
+    completionClaim: result.completionClaim,
+    lastObservation: observation,
+    trace,
+    traceTruncated: result.traceTruncated || result.trace.length > trace.length,
+    timing: result.timing,
+    ownership: {
+      targetId,
+      bridgePid: result.ownership.bridgePid,
+      daemon,
     },
-    null,
-    2,
-  );
+    mutationOutcome: result.mutationOutcome,
+    diagnostic,
+    cleanup: result.cleanup,
+    modelVisible: {
+      truncated: true,
+      maxChars: MAX_TOOL_CONTENT_CHARS,
+      omissions,
+    },
+  };
+  const compactSerialized = JSON.stringify(compact, null, 2);
+  if (compactSerialized.length <= MAX_TOOL_CONTENT_CHARS) {
+    return compactSerialized;
+  }
+
+  const minimalStopReason = boundedJsonText(result.stopReason, 400);
+  return JSON.stringify({
+    status: result.status,
+    stopReason: minimalStopReason.text,
+    completionClaim: result.completionClaim,
+    modelVisible: {
+      truncated: true,
+      maxChars: MAX_TOOL_CONTENT_CHARS,
+      omissions: [
+        "lastObservation",
+        "trace",
+        "usage",
+        "timing",
+        "ownership",
+        "mutationOutcome",
+        "diagnostic",
+        "cleanup",
+        ...(minimalStopReason.truncated ? ["stopReason remainder"] : []),
+      ],
+    },
+  });
 }
 
 function asToolResult(result: RlcdRunResult): ToolResult {
@@ -847,77 +969,45 @@ function upsertTrace(state: PartialBridgeState, entry: TraceEntry): void {
 
 function applyProgressRecord(
   state: PartialBridgeState,
-  record: { [key: string]: JsonValue },
+  record: NormalizedProgressRecord,
 ): void {
   if (record.type === "ready") {
-    state.daemon = String(record.daemon);
-    const capabilities = record.capabilities;
-    if (isRecord(capabilities)) {
-      state.textHelperConfigured = Boolean(capabilities.textHelperConfigured);
-      state.textHelperConfiguredModel =
-        typeof capabilities.textHelperConfiguredModel === "string"
-          ? capabilities.textHelperConfiguredModel
-          : null;
-    }
+    state.daemon = record.daemon;
+    state.textHelperConfigured = record.capabilities.textHelperConfigured;
+    state.textHelperConfiguredModel =
+      record.capabilities.textHelperConfiguredModel;
     return;
   }
   if (record.type === "ownership") {
     state.ownershipReported = true;
-    state.targetId =
-      typeof record.targetId === "string" ? record.targetId : null;
+    state.targetId = record.targetId;
     return;
   }
-  if (record.type !== "progress") return;
+
   if (record.phase === "observation") {
-    if (isRecord(record.observation)) {
-      state.lastObservation = {
-        url: String(record.observation.url),
-        title: String(record.observation.title),
-        evidence: String(record.observation.evidence),
-        evidenceTruncated: Boolean(record.observation.evidenceTruncated),
-      };
+    if (record.observation !== null) {
+      state.lastObservation = record.observation;
       state.mutationOutcome = "not_in_flight";
     }
     return;
   }
-
-  const rawEntry =
-    record.phase === "prediction" ? record.decision : record.action;
-  if (isRecord(rawEntry)) {
-    const entry: TraceEntry = {
-      step: Number(rawEntry.step),
-      operation: String(rawEntry.operation),
-      action: String(rawEntry.action),
-      outcome: String(rawEntry.outcome),
-      elapsedMs: Number(rawEntry.elapsedMs),
-      ...(typeof rawEntry.url === "string" ? { url: rawEntry.url } : {}),
-    };
-    upsertTrace(state, entry);
-  }
-  if (record.phase === "prediction" && isRecord(record.measurement)) {
-    const measurement: ModelMeasurement = {
-      reportedModel: String(record.measurement.reportedModel),
-      ...(typeof record.measurement.field === "string"
-        ? { field: record.measurement.field }
-        : {}),
-      latencyMs:
-        record.measurement.latencyMs === "unavailable"
-          ? "unavailable"
-          : Number(record.measurement.latencyMs),
-      usage: record.measurement.usage as JsonValue,
-    };
+  if (record.phase === "prediction") {
+    upsertTrace(state, record.decision);
     if (state.decisions.length === 24) {
       state.decisions.shift();
       state.decisionsTruncated = true;
     }
-    state.decisions.push(measurement);
+    state.decisions.push(record.measurement);
+    return;
   }
-  if (record.phase === "dispatch") state.mutationOutcome = "unknown";
-  if (record.phase === "action") state.mutationOutcome = "not_in_flight";
+
+  upsertTrace(state, record.action);
+  state.mutationOutcome =
+    record.phase === "dispatch" ? "unknown" : "not_in_flight";
 }
 
 function progressToolResult(
-  record: { [key: string]: JsonValue },
+  record: NormalizedProgressRecord,
   state: PartialBridgeState,
   startedAt: number,
   maxSeconds: number,
@@ -928,7 +1018,7 @@ function progressToolResult(
       ? serialized
       : JSON.stringify({
           type: record.type,
-          phase: record.phase ?? null,
+          phase: record.type === "progress" ? record.phase : null,
           truncated: true,
           maxChars: 2_000,
         });
@@ -1102,6 +1192,7 @@ async function waitForBridge(
 
   const onAbort = () => requestStop("cancelled");
   signal?.addEventListener("abort", onAbort, { once: true });
+  if (signal?.aborted) requestStop("cancelled");
   const deadline = setTimeout(
     () => requestStop("time_budget"),
     input.maxSeconds * 1_000,
@@ -1173,6 +1264,11 @@ async function waitForBridge(
     stderr += chunk.slice(0, available);
     stderrOmitted += Math.max(0, chunk.length - available);
   });
+
+  if (!requestedStop) {
+    if (signal?.aborted) requestStop("cancelled");
+    else child.stdin.end(`${JSON.stringify(input)}\n`);
+  }
 
   const closed = await waitForClose(child);
   clearTimeout(deadline);
@@ -1294,6 +1390,17 @@ async function runRegisteredTool(
   const startedAt = Date.now();
   const maxSeconds = params.maxSeconds ?? DEFAULT_MAX_SECONDS;
   const daemon = null;
+  const cancelledBeforeBridge = () =>
+    asToolResult(
+      basicResult(
+        "cancelled",
+        "Pi cancelled before bridge startup",
+        Date.now() - startedAt,
+        maxSeconds,
+        daemon,
+        "stopped",
+      ),
+    );
   const inputError = validateInput(params);
   if (inputError) {
     return asToolResult(
@@ -1306,18 +1413,7 @@ async function runRegisteredTool(
       ),
     );
   }
-  if (signal?.aborted) {
-    return asToolResult(
-      basicResult(
-        "cancelled",
-        "Pi cancelled before bridge startup",
-        Date.now() - startedAt,
-        maxSeconds,
-        daemon,
-        "stopped",
-      ),
-    );
-  }
+  if (signal?.aborted) return cancelledBeforeBridge();
   if (!process.env.TYPESAFE_API_KEY?.trim()) {
     return asToolResult(
       basicResult(
@@ -1331,8 +1427,10 @@ async function runRegisteredTool(
   }
   try {
     await access(pythonExecutable, constants.X_OK);
+    if (signal?.aborted) return cancelledBeforeBridge();
     await access(bridgeExecutable, constants.R_OK);
   } catch {
+    if (signal?.aborted) return cancelledBeforeBridge();
     return asToolResult(
       basicResult(
         "setup_error",
@@ -1343,6 +1441,8 @@ async function runRegisteredTool(
       ),
     );
   }
+
+  if (signal?.aborted) return cancelledBeforeBridge();
 
   const input: Required<RlcdRunInput> = {
     url: params.url,
@@ -1361,7 +1461,6 @@ async function runRegisteredTool(
     shell: false,
     stdio: ["pipe", "pipe", "pipe"],
   });
-  child.stdin.end(`${JSON.stringify(input)}\n`);
   return asToolResult(
     await waitForBridge(
       child,

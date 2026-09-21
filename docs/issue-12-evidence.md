@@ -88,6 +88,84 @@ five task-owned Paseo terminals were stopped:
 Paseo terminal remained. Raw TUI sessions, captures, and censuses are ignored
 under `artifacts/issue-12/tui-acceptance-20260921T041528Z/`.
 
+## Initial-review correction
+
+The correction from frozen candidate
+`1bbd9ecf9c5f3daefd226a52822cb7e71bd5459b` closes all three initial-review
+findings. Cancellation is rechecked after each asynchronous executable preflight
+step, immediately after the child listener is registered, and before stdin
+request dispatch. An immediate registered-tool call followed by synchronous
+abort now returns `stopped`/`cancelled` with null ownership and no target,
+browser, or model marker; before the fix the same regression returned a
+completion claim. A child that did spawn still follows the existing bounded
+stop/reap and exact-target cleanup path.
+
+Model-visible serialization now checks the completed JSON and, when needed,
+builds a compact summary from serialization-aware string budgets. It always
+retains status, stop reason, the completion claim, and its independent
+verification requirement; every dropped or shortened field is named in
+`modelVisible.omissions`. A final minimal form makes the 12,000-character bound
+independent of URL/title size, JSON escaping, redaction expansion, and metadata.
+The regression sends a valid observation with 14,000-character URL and title
+fields, then malformed JSON, through the real process/tool seam. It produced
+28,952 model-visible characters before the fix; the corrected result is valid
+bounded JSON with `protocol_error`, a false completion claim, verification
+required, and explicit omissions. Detailed protocol, progress, diagnostic, and
+result fields retain their separate existing bounds.
+
+Validated readiness, ownership, observation, prediction, dispatch, and action
+records now remain a small discriminated normalized protocol union. Its consumer
+uses the narrowed observations, trace entries, measurements, and usage values
+directly. The generic JSON-map conversion, primitive coercions, and
+`Measurement`/`JsonValue` assertions are gone. No generic message framework or
+new browser/model policy was added.
+
+Both public regressions were proven red, then green. The focused five-test
+correction set passed, and `pnpm check` passed formatting, TypeScript, all 39
+tests, and Python compilation. `pnpm-lock.yaml` and `uv.lock` retained hashes
+`078dfa074e7244bb461ecb0906d0b5570280a917` and
+`07c18ae06e215cf23e6391e52e28a6fb0df29ecf`. Raw ignored proof is under
+`artifacts/issue-12/correction-20260921/`.
+
+### Correction TUI evidence
+
+The actual Pi TUI lifecycle was repeated through Paseo CLI with synthetic Jev
+replies and the real bridge, pinned Agent, Browser Harness, and isolated Chrome.
+Preflight again reported Python 3.12.13, upstream
+`1231850a0bf1a0c0341fe408ef1668dbbfdfac46`, Browser Harness 0.1.13,
+`jev-1.13.0`, and native daemon `rlcd-brwsr` in local CDP mode.
+
+- Cancellation returned `stopped`/`cancelled` after a real observation, retained
+  the start-page evidence, reported target
+  `5E66A020C0E88B19499A83EC7A72D07E` and bridge PID `35398`, kept mutation state
+  `not_in_flight`, closed the target, and reaped the bridge. The first correction
+  probe that reached its shorter wall budget before the interrupt remains in the
+  raw directory; it was not used as cancellation evidence.
+- Default completion claimed `done_claim` after `CLICK` and `DONE`, observed
+  `ORBIT-27`, closed target `EDECFF237F07349D03F11A63F0815336`, and reaped
+  bridge PID `35786`.
+- Completion with `retainTab: true` retained target
+  `304B33DFBD7B9CE638A85196D76356D6` after bridge PID `36341` was reaped. A
+  fresh direct-CDP observer then found the exact destination URL/title and
+  `ORBIT-27` marker. The exact retained target was closed through the existing
+  native-configured Harness, which returned `success: true`.
+
+The final Chrome target identifiers exactly matched the four-target starting
+set: `2EE927EC06E2228F2B18E6A169347F30`,
+`9564DBF08857A04C4B2A7F11AC40B92F`,
+`963DEBC815B79409D2B83477D49D0196`, and
+`E88744FD63ED22A49304B4C9F8DA910D`. All correction-owned fixture, Pi, observer,
+and failed-probe Paseo terminals were stopped. Chrome PIDs `74985` and `89627`,
+Harness PID `89979`, and pre-existing Paseo terminals `7d560f42-...` and
+`80ded321-...` remain for their owners; PID `69653` was absent before the run.
+No actual Jev/helper HTTP call, credential read, provider configuration, paid
+browser-model call, or setup-resource reprovisioning occurred. Raw ignored TUI
+sessions, captures, results, and censuses are under
+`artifacts/issue-12/correction-tui-20260921T044340Z/`.
+
+The parent-owned targeted recheck is still pending; this correction evidence is
+not that recheck.
+
 ## Limits
 
 The last observation is the last successfully received snapshot, not an

@@ -156,6 +156,7 @@ async function withFakeExternalInteractions<T>(
     "RLCD_TEST_FIELD_MUTATION_MARKER",
     "RLCD_TEST_HELPER_REQUEST_MARKER",
     "RLCD_TEST_INPUT_DISPATCH_MARKER",
+    "RLCD_TEST_MODEL_WORK_MARKER",
     "RLCD_TEST_PHASE_MARKER",
     "RLCD_TEST_PROTOCOL_MARKER",
     "RLCD_TEST_SCENARIO",
@@ -901,6 +902,43 @@ test("valid WAIT-heavy progress reaches the wall budget instead of a record-coun
   });
 });
 
+test("immediate Pi cancellation does not start browser or model work", async () => {
+  await withFakeExternalInteractions("click_done", async (harnessHome) => {
+    const browserWorkMarker = join(harnessHome, "browser-work");
+    const modelWorkMarker = join(harnessHome, "model-work");
+    const targetMarker = join(harnessHome, "target-events");
+    process.env.RLCD_TEST_BROWSER_WORK_MARKER = browserWorkMarker;
+    process.env.RLCD_TEST_MODEL_WORK_MARKER = modelWorkMarker;
+    process.env.RLCD_TEST_TARGET_EVENTS_MARKER = targetMarker;
+    const controller = new AbortController();
+
+    const running = registeredTool().execute(
+      "immediate-cancellation",
+      baseInput(),
+      controller.signal,
+    );
+    controller.abort(new Error("immediate test cancellation"));
+    const result = await running;
+    const details = detailsOf(result);
+
+    assert.equal(stringField(details, "status"), "stopped");
+    assert.equal(stringField(details, "stopReason"), "cancelled");
+    assert.deepEqual(recordField(details, "ownership"), {
+      targetId: null,
+      bridgePid: null,
+      daemon: null,
+    });
+    assert.deepEqual(recordField(details, "cleanup"), {
+      taskTab: "not_created",
+      bridgeProcess: "reaped",
+      sharedDaemon: "retained",
+    });
+    await assert.rejects(access(browserWorkMarker));
+    await assert.rejects(access(modelWorkMarker));
+    await assert.rejects(access(targetMarker));
+  });
+});
+
 test("Pi cancellation cooperatively closes the owned tab and reaps the bridge", async () => {
   await withFakeExternalInteractions("cancel_model", async () => {
     const controller = new AbortController();
@@ -1172,6 +1210,60 @@ test("malformed, truncated, and oversized bridge streams retain bounded partial 
       );
     });
   }
+});
+
+test("malformed output after a large valid observation still has hard-bounded model-visible JSON", async () => {
+  await withFakeExternalInteractions(
+    "large_progress_malformed",
+    async (harnessHome) => {
+      const targetMarker = join(harnessHome, "large-progress-targets");
+      process.env.RLCD_TEST_TARGET_EVENTS_MARKER = targetMarker;
+      process.env.TYPESAFE_API_KEY = "synthetic";
+
+      const result = await registeredTool().execute(
+        "large-progress-malformed",
+        baseInput(),
+        new AbortController().signal,
+      );
+      const details = detailsOf(result);
+      const observation = nullableRecordField(details, "lastObservation");
+      assert.ok(observation);
+      assert.equal(stringField(observation, "url").length, 14_000);
+      assert.equal(
+        stringField(observation, "title").length,
+        15_000,
+        "parent redaction expansion must remain inside the output budget",
+      );
+
+      const content = result.content[0]?.text ?? "";
+      assert.ok(
+        content.length <= 12_000,
+        `content was ${content.length} chars`,
+      );
+      assert.doesNotMatch(content, /synthetic/);
+      const modelVisible: unknown = JSON.parse(content);
+      assert.ok(isRecord(modelVisible));
+      assert.equal(modelVisible.status, "error");
+      assert.equal(modelVisible.stopReason, "protocol_error");
+      const completionClaim = recordField(modelVisible, "completionClaim");
+      assert.equal(completionClaim.claimed, false);
+      assert.equal(completionClaim.requiresIndependentVerification, true);
+      const disclosure = recordField(modelVisible, "modelVisible");
+      assert.equal(disclosure.truncated, true);
+      assert.equal(disclosure.maxChars, 12_000);
+      assert.ok(arrayField(disclosure, "omissions").length > 0);
+      const events = await targetEvents(targetMarker);
+      assert.equal(events[0], "created:rlcd-owned-target");
+      assert.ok(events.includes("close:rlcd-owned-target"));
+      assert.ok(
+        events.every(
+          (event) =>
+            event === "created:rlcd-owned-target" ||
+            event === "close:rlcd-owned-target",
+        ),
+      );
+    },
+  );
 });
 
 test("an abnormal exit after a terminal claim does not preserve stale completion state", async () => {
