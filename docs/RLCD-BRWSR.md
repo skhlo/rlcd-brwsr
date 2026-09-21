@@ -1,277 +1,244 @@
 # RLCD-brwsr v0.1 plan
 
-Status: approved direction; not implemented.
+Status: approved direction; first upstream-backed vertical slice in issue #10.
 
-RLCD-brwsr is a minimal Pi extension that uses TypeSafe Jev as a fast
-classifier inside a bounded browser loop. Pi owns the goal, planning,
-permissions, text preparation, verification and difficult recovery. The existing
-Chrome DevTools CLI owns browser observation and deterministic execution.
+RLCD-brwsr is a thin Pi extension over the pinned Jev Ultrafast `Agent`. The
+outer agent supplies a starting URL, a natural-language goal, and finite
+execution budgets. Jev Ultrafast owns browser observation, indexed action
+candidates, action selection, text-helper handoff, stale-state checks, and
+execution through Browser Harness. RLCD-brwsr owns the Pi-facing contract,
+process bounds, progress capture, normalized result, and run-owned cleanup.
 
-This optimizes browser work Pi already performs. It is not a new authorization
-system or a claim that browser actions are safer when selected by Jev.
+This optimizes browser work that Pi has already authorized. It is not a new
+authorization system, a global browser lock, or proof that model-selected page
+controls are harmless.
 
-The human-facing name is **RLCD-brwsr**. Its source slug will be `rlcd-brwsr`, and
-its Pi tool will be `rlcd_brwsr_run` because tool names use lowercase letters and
-underscores.
+The human-facing name is **RLCD-brwsr**. Its source slug is `rlcd-brwsr`, and its
+single Pi tool is `rlcd_brwsr_run`.
 
 ## Interface
 
+The first slice accepts:
+
 ```ts
 rlcd_brwsr_run({
+  url: string;
   goal: string;
-  maxSteps?: number;
+  maxActions?: number;
   maxSeconds?: number;
 });
 ```
 
-The tool acts on the page currently selected by Chrome DevTools CLI. It returns
-control to Pi when the goal appears complete, no allowed action can advance it,
-a consequential step is recognized, execution becomes uncertain, or a budget
-expires.
+Inputs are validated before a bridge, browser, or model is used. The defaults
+are 6 executed actions and 30 seconds; the maxima are 20 actions and 120
+seconds. Pi schedules this tool sequentially, which does not prevent another
+browser client from changing the page.
 
-The result reports:
+The result is one of a completion claim, an explicit stop, or a structured
+error. It includes:
 
-- completion status and stop reason;
-- final URL and bounded page state;
-- bounded source excerpts with URLs and titles from multiple observed pages;
-- compact action trace and Jev distributions;
-- command errors and timing/model usage;
-- deterministic evidence available from the executor; and
-- a final screenshot when useful.
+- the stop reason and whether Jev claimed completion;
+- the last successfully observed URL, title, and bounded page evidence;
+- a compact executed-action trace and available Jev/text-helper decisions;
+- available timing and usage measurements, with unavailable measurements named;
+- bounded, redacted diagnostics; and
+- task-tab and bridge cleanup status.
 
-A Jev `DONE` choice is supporting evidence. Pi must verify the requested outcome
-independently.
+A Jev `DONE` choice is supporting evidence. The outer agent verifies the
+requested outcome independently.
 
 ## Architecture
 
 ```text
-Pi calls rlcd_brwsr_run(goal)
-  -> chrome-devtools take_snapshot --output-format=json
-  -> TypeScript retains bounded source evidence from the observation
-  -> TypeScript derives the allowed operation and target choices
-  -> Jev classifies the next operation and compatible target
-  -> TypeScript constructs one fixed chrome-devtools invocation
-  -> Chrome DevTools executes and returns the next snapshot
-  -> repeat within the step and time budgets
+Pi calls rlcd_brwsr_run(url, goal, budgets)
+  -> TypeScript validates input and preflight configuration
+  -> TypeScript starts one project-local Python bridge with fixed argv
+  -> bridge requires the configured existing Browser Harness daemon
+  -> bridge constructs the pinned upstream Agent
+  -> upstream observes, predicts, and executes through Browser Harness
+  -> bridge emits bounded JSONL ownership, progress, and terminal records
+  -> TypeScript enforces the wall deadline/cancellation and normalizes output
+  -> bridge closes its run-owned tab; shared daemon and unrelated tabs remain
 ```
 
-RLCD-brwsr is one TypeScript Pi extension. It calls TypeSafe through the HTTP API
-with built-in `fetch` and invokes Chrome DevTools with `pi.exec(command, args)`.
-It has no Python runtime, TypeSafe SDK dependency, MCP wrapper, skill package,
-additional browser backend, or extension-owned daemon.
+There is one active tool implementation. The extension has no DOM extractor,
+action policy, site scripts, TypeScript port of Jev Ultrafast, Chrome DevTools
+CLI fallback, MCP wrapper, or maintained upstream fork.
 
-The Chrome DevTools CLI may use its existing daemon. RLCD-brwsr does not manage a
-second process lifecycle or introduce a new service.
+The Python dependency is pinned to
+`browser-use/jev-ultrafast@1231850a0bf1a0c0341fe408ef1668dbbfdfac46`.
+That manifest pins Browser Harness `0.1.13` and requires Python 3.12. The project
+uses uv for its Python environment and lock. The evaluated Jev model is pinned
+as `jev-1.13.0`, not a moving alias.
 
-## Classifier contract
+The integration deliberately uses upstream's revision-pinned
+prediction/action/state seam so the wrapper can enforce a smaller action budget
+and emit progress after each observation or execution. Observation, candidate
+construction, selection, stale checks, text generation, and execution remain
+upstream code. Compatibility tests are required before any upstream pin update.
 
-Each observation becomes a compact state containing the goal, current URL and
-title, bounded accessibility text, recent actions, a compact inventory of
-retained sources, and an indexed set of allowed controls from the latest
-accessibility snapshot. The source inventory records observed evidence, not
-inferred research completeness.
+## Browser setup and ownership
 
-One TypeSafe request asks speculative questions over that state:
+Extension loading is inert apart from registering the tool. It does not install
+software, start a bridge or daemon, navigate Chrome, request browser permission,
+or call a model.
 
-- a Choice over the operations currently available, plus `DONE` and `BLOCKED`;
-- a Choice over targets compatible with `CLICK`;
-- a Choice over complete `(field, value)` pairs compatible with `TYPE_TEXT`; and
-- a Choice over complete `(field, option)` pairs compatible with `SELECT`.
+Setup explicitly provisions the named `rlcd-brwsr` Browser Harness daemon
+connected to the operator-selected local Chrome. `scripts/setup-runtime.sh`
+runs the frozen uv sync, `scripts/provision-browser.sh` performs the separately
+requested daemon setup, and `scripts/preflight-runtime.sh` checks pins,
+configuration, the version-pinned integration seam, and that exact existing
+daemon without starting or repairing one. Chrome permission remains a human
+step. At run time `RLCD_BRWSR_DAEMON` selects the exact configured daemon. The
+bridge narrowly replaces upstream's automatic `ensure_daemon()` hook with
+Browser Harness's version-pinned `require_existing_daemon()` check. Failure
+returns an actionable setup error; the wrapper must not discover a different
+browser, start another Chrome, or automate a permission flow.
 
-Every target question states the operation it assumes. Questions run
-independently; code consumes only the target head matching the selected
-operation. The extension validates that every returned choice and probability
-belongs to the offered set before constructing a command.
+Each upstream `Agent` creates one task tab and reports its target identifier as
+soon as available. A normal first-slice run closes that tab and reaps its bridge.
+The shared Harness daemon, selected Chrome process, and unrelated tabs are not
+run-owned and remain. Concurrent clients are still an operating limitation.
 
-Jev never supplies a selector, coordinate, URL, shell command, or executable
-JavaScript. The model selects only code-owned enum values and UIDs observed in
-the latest snapshot.
+## Model responsibilities
 
-Pin the evaluated model version rather than using a moving alias. The initial
-candidate is `jev-1.13.0`; thresholds and uncertainty policy must be measured on
-RLCD-brwsr fixtures rather than copied from a cookbook.
+Jev chooses only from upstream's observed, code-owned action candidates.
+Upstream validates the selected operation and operation-specific target before
+execution. Model output never becomes a selector, coordinate, URL, shell
+command, or executable JavaScript.
 
-## Operations
+The OpenAI-compatible text helper is optional for a click-only run. The bridge
+advertises whether it is configured. If upstream first selects `TYPE_TEXT` while
+it is absent, the run stops before a helper request or field mutation and
+returns `needs_text` with prior progress. The outer agent must not silently
+substitute its own model.
 
-The initial operation set is deliberately small:
+## First vertical slice
 
-- `CLICK` - observed links, tabs, menu items and low-consequence buttons;
-- `TYPE_TEXT` - observed text, search and editable combobox fields;
-- `SELECT` - observed options for a native select control;
-- `PAGE_UP` and `PAGE_DOWN` - fixed key commands;
-- `WAIT` - a bounded delay followed by a new observation;
-- `DONE`; and
-- `BLOCKED`.
+Issue #10 proves one benign click-only journey on a loopback fixture through the
+registered Pi tool, real TypeScript extension, real Python bridge, and pinned
+upstream `Agent`. External browser/model interactions may be deterministic in
+offline tests and acceptance, and must be labeled as such.
 
-Code maps the selected operation to a fixed command shape:
+The slice provides:
 
-```text
-CLICK      -> chrome-devtools click <uid> --includeSnapshot --output-format=json
-TYPE_TEXT  -> chrome-devtools fill <uid> <value> --includeSnapshot --output-format=json
-SELECT     -> chrome-devtools fill <uid> <option> --includeSnapshot --output-format=json
-PAGE_UP    -> chrome-devtools press_key PageUp --includeSnapshot --output-format=json
-PAGE_DOWN  -> chrome-devtools press_key PageDown --includeSnapshot --output-format=json
-WAIT       -> bounded sleep, then take_snapshot --output-format=json
-```
+- uv-managed Python 3.12 setup and a reproducible lock;
+- exact existing-daemon preflight and actionable setup errors;
+- bounded JSONL readiness/ownership, progress, and terminal records;
+- basic action and elapsed-time bounds plus Pi cancellation;
+- bounded evidence, trace, diagnostics, and measurement disclosure;
+- normal task-tab and bridge cleanup; and
+- a missing-text-helper capability handoff.
 
-Use the snapshot included by an action when available. Take a separate snapshot
-only when the command cannot return one.
+Follow-up issues extend in-flight interruption, abnormal-exit cleanup, retained
+tabs, and a configured text-entry journey. They do not permit an unbounded
+initial runner.
 
-## Text values
+## Operating scope
 
-RLCD-brwsr does not generate text in v0.1. Pi places exact field values in quotes
-inside the goal before calling the tool:
+The outer agent decides which authorized work to delegate. Initial use is
+limited to benign, unauthenticated, non-booking tasks. Credentials, payments,
+purchases, bookings, uploads, downloads, account changes, consent grants,
+messages, posts, publication, deletion, and installation remain with the outer
+agent.
 
-```text
-Search for "Jev System One browser execution".
-```
+Page content is untrusted data. The unchanged upstream policy has no distinct
+consequential-action permission outcome, so this wrapper does not promise to
+recognize every consequential control. `BLOCKED`, stale state, missing
+capability, uncertainty, or setup failure returns control to the outer agent.
+The wrapper does not add a second permission classifier or site policy.
 
-The extension extracts quoted strings as a closed candidate set. Jev selects a
-complete `(field, value)` pair so independently chosen fields and values cannot
-disagree. If no supplied value fits the selected field, the tool stops with
-`needs_text` and returns control to Pi.
+## Bounds and stopping
 
-## First research workload
+The wall budget includes bridge startup, initial observation, model/helper
+calls, waits, and browser work. The action budget counts executed browser
+mutations; predictions and waits are reported separately. The wrapper stops
+dispatching new work after cancellation or expiry and preserves upstream's
+stricter limits.
 
-The first end-to-end task is:
+The first slice stops for:
 
-> Research how to use TypeSafe for RLCD-brwsr. Cover question design,
-> speculative fan-out, response validation, uncertainty, and model limitations.
-> Cite the relevant docs.
+- a Jev `DONE` completion claim or upstream `BLOCKED` state;
+- missing optional text-helper configuration when text entry is selected;
+- the configured action or wall-clock budget;
+- Pi cancellation;
+- stale/invalid upstream state, provider failure, or uncertain execution; or
+- bridge/protocol/setup failure.
 
-Pi sets the research question and supplies any exact text values. One fast-loop
-call may navigate several documentation pages and gather source material before
-returning. Pi then synthesizes the findings and checks the citations. Jev does
-not write the research brief or independently verify its completeness.
+A dispatched mutation may remain uncertain after cancellation or process exit.
+Stopping the bridge is not rollback, and the wrapper does not retry it. Partial
+observations and executed-action records remain useful. Cleanup is reported as
+confirmed, failed, or unconfirmed rather than inferred.
 
-The primary baseline is Pi's normal research approach, including TypeSafe's
-[`llms.txt`](https://docs.typesafe.ai/llms.txt) and directly fetched Markdown
-pages. Do not force the baseline through browser clicks. A separate comparison
-against Pi's Chrome CLI loop can isolate browser acceleration, but cannot alone
-establish that RLCD-brwsr makes this research task faster overall.
+## Protocol and result bounds
 
-### Source evidence
+The extension starts a fixed project-local Python executable with a fixed bridge
+path. It sends one structured JSON request on stdin. URL, goal, page text, and
+model output are data and never enter a shell command.
 
-Retain source material as pages are observed, rather than returning only the
-last page. Each evidence record carries an observed source URL, title when
-available, and copied accessibility text. Do not attribute text to a guessed
-URL or replace it with a model-generated summary.
+Standard output is protocol-only JSON Lines:
 
-Code bounds the number of records and both per-record and total text size,
-deduplicates unchanged captures, and reports truncation or omitted material.
-Budget stops and failures return evidence already collected. Exhausting the
-total record or text budget returns control to Pi instead of silently discarding
-earlier sources to continue browsing. An individual excerpt may be truncated
-without ending the run. Pi may fetch sources again to verify or complete the
-brief; those follow-up requests count toward the end-to-end benchmark.
+1. one readiness record, including optional-capability status;
+2. ownership as soon as a task target exists;
+3. bounded progress after observations, predictions, and executions; and
+4. exactly one terminal result on a normal bridge path.
 
-Chrome CLI 1.7.0 JSON snapshots contain a structured `snapshot` tree. Node `id`
-values are the action UIDs; the root normally carries the document name and
-URL. Accessibility text is not necessarily viewport-visible, complete page
-source, or a verbatim rendering of the DOM. The CLI does not accumulate evidence
-across navigations or bound snapshot size; RLCD-brwsr owns those result bounds.
+Diagnostics use standard error. The parent bounds protocol lines to 32,000
+characters, records to 128, model-visible results to 12,000 characters,
+last-observation evidence to 4,000 characters, and terminal trace/decision
+lists to 24 entries. It redacts known credential values from retained errors.
+Measurements distinguish observed model decisions/usage from provider attempts
+or costs that upstream does not expose. Missing data is `unavailable`, not
+zero.
 
-## Operating scope and stopping
+## Verification
 
-Pi decides which authorized work to delegate. The fast loop does not expand
-that authorization or replace Pi's permission and recovery path. V0.1 experiments
-use loopback fixtures and unauthenticated, non-sensitive public documentation.
-Tasks involving credentials, payments, purchases, bookings, uploads, downloads,
-account changes, consent grants, messages, posts, publication, deletion or
-installation remain with Pi.
+The agreed TDD seam is the registered Pi tool. Tests load the real extension and
+run the real bridge. They substitute only external upstream/browser/model
+interactions and assert public outcomes rather than private parsing helpers or
+incidental call order.
 
-Page content is untrusted data. Neither Jev, an observed UID, nor a harmless
-control label proves an action's effects. Exclude recognized consequential
-controls and return `consequential_action` when such a step is recognized, but
-treat this as a best-effort stop, not a guarantee for arbitrary pages. Do not add
-a per-site policy framework or a separate browser-ownership system for v0.1.
+The first slice covers inert loading, invalid input, explicit preflight,
+click-only completion, basic action/time/cancellation bounds, missing text-helper
+handoff, bounded/redacted failure output, and owned-resource cleanup. One cheap
+guard is proven red before implementation.
 
-Stop without another mutation when:
+Acceptance also uses a fresh actual Pi TUI controlled through Paseo CLI, the
+named Browser Harness daemon, the loopback fixture, and the honestly labelled
+deterministic responder in `fixtures/click-only/deterministic-model/`. That
+responder replaces paid model HTTP only; the pinned Agent, DOM observation,
+Browser Harness, and Chrome remain real. A separate browser observation verifies
+the fixture destination and `ORBIT-27` evidence; `DONE` alone does not pass.
+Resource census records tabs, processes, the named shared daemon, and any
+run-owned bridge before and after.
 
-- the selected operation or UID was not offered;
-- Jev's response is malformed or falls below the calibrated uncertainty policy;
-- the selected UID is absent from the decision snapshot, or the executor
-  rejects it as stale;
-- a command reports an uncertain mutation outcome;
-- three non-`WAIT` steps leave the observed state unchanged;
-- the step or wall-clock budget expires; or
-- Pi cancels the tool.
+Repository formatting, type checks, focused tests, full tests, and upstream
+bridge compatibility checks run before a local candidate commit.
 
-Never retry a browser mutation whose outcome is uncertain. Validating a UID
-against the decision snapshot does not make observation and execution atomic.
-The CLI can reject missing or detached targets, but a surviving element may
-have changed meaning. Concurrent use of the selected page remains an operating
-limitation; sequential tool execution is not an exclusive page lock.
+## Superseded direction and retained evidence
 
-## Implementation sequence
+ADR-0001 and the original version of this plan chose a custom TypeScript loop
+over Chrome DevTools CLI because adopting Python and Browser Harness before
+that experiment would have added an untested runtime and provisioning path.
+That rationale was appropriate for the experiment. The experiment then showed
+that the wrapper was rebuilding upstream ownership and introduced restrictive
+observation limits, probability-wire validation failures, and timing/visibility
+problems. Its broader research trial did not establish an end-to-end speedup.
+Those results do not establish a general limitation of Jev.
 
-1. Add offline tests for snapshot parsing, compatible candidate construction,
-   quoted values, Jev response validation, excluded candidates, loop detection,
-   result redaction and bounded multi-page evidence retention.
-2. Implement `config/pi/extensions/rlcd-brwsr.ts` with injected Jev and CLI seams
-   so tests use deterministic fakes.
-3. Register `rlcd_brwsr_run` with `executionMode: "sequential"` so Pi schedules
-   it sequentially; do not claim this prevents other clients changing the page.
-4. Build a local HTML fixture covering navigation, search, tabs, native selects,
-   scrolling, completion, stale UIDs, unchanged-state loops, adversarial page
-   instructions and evidence retained across multiple pages.
-5. Exercise the fixture through the real Chrome DevTools CLI with a fake Jev
-   responder.
-6. With explicit approval for paid requests, run Jev against the local fixture,
-   then the TypeSafe documentation research task.
-7. Compare the full research workflow with Pi's normal approach. Separately
-   compare browser execution with Pi's agent-driven Chrome CLI loop.
-8. Only after the experiment passes, add the extension to the builder, rollout
-   fixtures and installed baseline.
-
-## Verification and acceptance
-
-Run repository type checking, formatting and tests, plus the Pi integration check
-and a host-only browser check. Verify the visible tool call and result in Pi's
-actual TUI.
-
-Compare identical research questions and independently checked briefs across
-the primary paths. Check coverage of all five requested topics, source support
-for the findings, and citation correctness; a `DONE` choice or a count of
-visited pages is not a passing result. Use the same main model and comparable
-starting knowledge and cache conditions, without seeding either path with the
-other path's findings.
-
-Measure the whole task, including preparation, evidence gathering, synthesis,
-verification and recovery. Record cold and warm wall time, verified success,
-main-model turns and tokens, Jev requests and tokens, browser commands, direct
-HTTP requests, stale decisions, consequential-action stops, and retained
-processes or pages. Report the secondary browser-only comparison separately.
-
-V0.1 is acceptable when:
-
-- every deterministic fixture passes, including excluded-action and
-  adversarial-page cases; excluded actions do not execute in those tests;
-- success, failure, cancellation and timeout leave no RLCD-brwsr-owned process;
-- research briefs meet the same independently checked outcome criteria as
-  Pi's normal research approach; and
-- it reduces median end-to-end wall time or main-model use on the tested tasks,
-  with any trade-off between the two reported explicitly.
-
-Passing fixtures is not a general guarantee about the effects of controls on
-unseen websites. A browser-only speedup without a primary-baseline improvement
-is a narrower result, not acceptance of the research-workflow hypothesis.
+Issue #9 and ADR-0002 supersede the runtime decision: the pinned upstream Agent
+is now the implementation, and Browser Harness is its only browser execution
+path. Historical custom-loop code, tests, reports, and raw observations remain
+in open PR #8 at `5dafb11` and in the sibling experiment history through
+`6df4b4b0f8b17420f9c9bc0a8176072312ec6de3`. They are references, not a branch
+to merge and not results from this wrapper.
 
 ## References
 
-The policy shape comes from
-[`browser-use/jev-ultrafast`](https://github.com/browser-use/jev-ultrafast) at
-commit `1231850a0bf1a0c0341fe408ef1668dbbfdfac46`; the current implementation was
-last changed at `452c1ad2dd628008f1d5608f28158d76e49e6cc0`. That project demonstrates
-dynamic operation and operation-specific target heads, validates model outputs,
-never turns model output into executable code, does not retry uncertain browser
-mutations, and treats completion as requiring independent verification.
-RLCD-brwsr adopts those control-flow lessons, not its Python or Browser Harness
-runtime.
-
-The current local executor is
-[`ChromeDevTools/chrome-devtools-mcp`](https://github.com/ChromeDevTools/chrome-devtools-mcp)
-version `1.7.0`, package Git commit
-`774d78f5eef5e610407a0c92fa6ec5ed74b027e8`. Before implementation, record its
-pin in the owning repository artifact rather than relying only on the installed
-global package.
+- Parent implementation spec: GitHub issue #9.
+- First vertical slice: GitHub issue #10.
+- Architecture revision: `docs/adr/0002-wrap-pinned-jev-ultrafast-agent.md`.
+- Prior decision: `docs/adr/0001-classifier-over-existing-browser-executor.md`.
+- Jev Ultrafast pin: `1231850a0bf1a0c0341fe408ef1668dbbfdfac46`.
+- Browser Harness pin: `0.1.13` (owned by the upstream manifest and uv lock).
+- Initial Jev model pin: `jev-1.13.0`.
