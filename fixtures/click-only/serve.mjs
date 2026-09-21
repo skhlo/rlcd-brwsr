@@ -9,21 +9,22 @@ if (!Number.isInteger(port) || port < 0 || port > 65_535) {
   throw new Error("RLCD_FIXTURE_PORT must be an integer from 0 through 65535");
 }
 const routes = new Map([
-  ["/", "index.html"],
-  ["/index.html", "index.html"],
-  ["/destination.html", "destination.html"],
+  ["/", join(directory, "index.html")],
+  ["/index.html", join(directory, "index.html")],
+  ["/destination.html", join(directory, "destination.html")],
+  ["/text-entry.html", join(directory, "..", "text-entry", "index.html")],
 ]);
 
 const server = createServer(async (request, response) => {
   const pathname = new URL(request.url ?? "/", "http://127.0.0.1").pathname;
-  const filename = routes.get(pathname);
-  if (!filename) {
+  const filePath = routes.get(pathname);
+  if (!filePath) {
     response.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
     response.end("Not found\n");
     return;
   }
   try {
-    const body = await readFile(join(directory, filename));
+    const body = await readFile(filePath);
     response.writeHead(200, {
       "cache-control": "no-store",
       "content-type": "text/html; charset=utf-8",

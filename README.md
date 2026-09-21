@@ -25,6 +25,12 @@ scripts/setup-runtime.sh
 #   BU_CDP_URL=http://127.0.0.1:<selected-chrome-port>
 
 export TYPESAFE_API_KEY=... # host-local; never commit it
+
+# Optional text helper. Set all three explicitly or leave all three absent.
+export TEXT_MODEL_API_KEY=... # host-local; never commit it
+export TEXT_MODEL_BASE_URL=https://provider.example/v1
+export TEXT_MODEL=provider-model-id
+
 scripts/provision-browser.sh
 scripts/preflight-runtime.sh
 ```
@@ -51,9 +57,20 @@ configuration change. Preflight never creates or synchronizes `.venv`. If Chrome
 asks for remote-debugging permission during explicit provisioning, the operator
 must approve it; the script does not automate permission.
 
-`TEXT_MODEL_API_KEY` and its OpenAI-compatible helper settings are optional for
-click-only work. If upstream chooses `TYPE_TEXT` without that configuration, the
-tool stops before a helper request or field mutation.
+The upstream OpenAI-compatible helper settings are optional for click-only
+work, but enabling the helper requires explicit, coherent
+`TEXT_MODEL_API_KEY`, `TEXT_MODEL_BASE_URL`, and `TEXT_MODEL` values. The base
+URL must use HTTPS, or loopback HTTP for a local responder, and must not embed
+credentials, a query, or a fragment. A lone key never activates upstream's
+default provider/model. If upstream chooses `TYPE_TEXT` while the three-value
+configuration is absent, incomplete, or invalid, the tool stops before a helper
+request or field mutation and retains the Jev decision and page evidence.
+
+Results identify the configured Jev/helper models separately from model IDs
+reported by providers. The pinned helper does not retain its provider-reported
+model ID, so that field is honestly `unavailable`; available per-call usage and
+latency remain separate, while provider HTTP-attempt counts and costs are also
+`unavailable`.
 
 ## Explicit Pi use
 
@@ -76,7 +93,8 @@ pnpm fixture # loopback only: http://127.0.0.1:43113
 pnpm check
 ```
 
-The fixture is benign and click-only. Its destination contains the marker
-`ORBIT-27`. The deterministic acceptance responder under
-`fixtures/click-only/deterministic-model/` replaces only paid model HTTP
-responses; it does not replace the upstream Agent, Browser Harness, or Chrome.
+The loopback fixture serves both the click-only `ORBIT-27` journey and the
+`/text-entry.html` generated-value journey with marker `FIELD-41`. Deterministic
+acceptance responders under the fixture directories replace only paid model
+HTTP responses; they do not replace the upstream Agent, its text-helper field
+context/value validation, Browser Harness, or Chrome.

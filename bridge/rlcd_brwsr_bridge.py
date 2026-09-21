@@ -15,6 +15,7 @@ from runtime_support import (
     JEV_MODEL,
     require_existing_local_daemon,
     resolved_local_daemon_name,
+    resolved_text_helper_configuration,
 )
 
 PROTOCOL_VERSION = 1
@@ -153,7 +154,9 @@ def _bounded_usage(value: object) -> object:
 
 def _usage_record(decision: dict[str, Any]) -> dict[str, Any]:
     return {
-        "model": _bounded_text(decision.get("model", "unavailable"), 160),
+        "reportedModel": _bounded_text(
+            decision.get("model", "unavailable"), 160
+        ),
         "latencyMs": decision.get("latency_ms")
         if isinstance(decision.get("latency_ms"), int)
         else "unavailable",
@@ -210,6 +213,7 @@ def _terminal(
     started_at: float,
     max_seconds: int,
     text_helper_configured: bool,
+    text_helper_configured_model: str | None,
     daemon_name: str | None,
     agent: object | None,
     target_id: str | None,
@@ -226,7 +230,8 @@ def _terminal(
         text_calls = []
     text_usage = [
         {
-            "model": _bounded_text(call.get("model", "unavailable"), 160),
+            "reportedModel": "unavailable",
+            "field": _bounded_text(call.get("field", "unavailable"), 300),
             "latencyMs": call.get("latency_ms", "unavailable"),
             "usage": _bounded_usage(call.get("usage")),
         }
@@ -245,6 +250,7 @@ def _terminal(
         "traceTruncated": len(trace) > MAX_TRACE_ENTRIES,
         "usage": {
             "jev": {
+                "configuredModel": JEV_MODEL,
                 "decisions": decisions[-MAX_TRACE_ENTRIES:],
                 "decisionsTruncated": len(decisions) > MAX_TRACE_ENTRIES,
                 "providerHttpAttempts": "unavailable",
@@ -252,6 +258,7 @@ def _terminal(
             },
             "textHelper": {
                 "configured": text_helper_configured,
+                "configuredModel": text_helper_configured_model,
                 "calls": text_usage[-MAX_TRACE_ENTRIES:],
                 **(
                     {"callsTruncated": True}
@@ -282,10 +289,15 @@ def _terminal(
 def _run(request: dict[str, Any], started_at: float) -> tuple[dict[str, Any], object | None]:
     daemon_name: str | None = None
     text_helper_configured = False
+    text_helper_configured_model: str | None = None
+    text_helper_configuration_error: str | None = None
+    text_helper_configuration_status = "absent"
     trace: list[dict[str, Any]] = []
     decisions: list[dict[str, Any]] = []
     agent: object | None = None
     target_id: str | None = None
+    helper_was_selected = False
+    helper_calls_before = 0
     phase = "preflight"
 
     def finish(
@@ -300,6 +312,7 @@ def _run(request: dict[str, Any], started_at: float) -> tuple[dict[str, Any], ob
             started_at=started_at,
             max_seconds=request["maxSeconds"],
             text_helper_configured=text_helper_configured,
+            text_helper_configured_model=text_helper_configured_model,
             daemon_name=daemon_name,
             agent=agent,
             target_id=target_id,
@@ -311,9 +324,11 @@ def _run(request: dict[str, Any], started_at: float) -> tuple[dict[str, Any], ob
 
     try:
         daemon_name = resolved_local_daemon_name()
-        text_helper_configured = bool(
-            os.environ.get("TEXT_MODEL_API_KEY", "").strip()
-        )
+        text_helper_configuration = resolved_text_helper_configuration()
+        text_helper_configured = text_helper_configuration.configured
+        text_helper_configured_model = text_helper_configuration.model
+        text_helper_configuration_error = text_helper_configuration.error
+        text_helper_configuration_status = text_helper_configuration.status
         if not os.environ.get("TYPESAFE_API_KEY", "").strip():
             return finish(
                 "error",
@@ -335,7 +350,11 @@ def _run(request: dict[str, Any], started_at: float) -> tuple[dict[str, Any], ob
                 "type": "ready",
                 "protocolVersion": PROTOCOL_VERSION,
                 "daemon": daemon_name,
-                "capabilities": {"textHelperConfigured": text_helper_configured},
+                "capabilities": {
+                    "textHelperConfigured": text_helper_configured,
+                    "textHelperConfiguration": text_helper_configuration_status,
+                    "textHelperConfiguredModel": text_helper_configured_model,
+                },
             }
         )
 
@@ -404,15 +423,35 @@ def _run(request: dict[str, Any], started_at: float) -> tuple[dict[str, Any], ob
                     }
                 )
 
-                if action is not None and action.get("kind") == "fill" and not text_helper_configured:
+                if (
+                    action is not None
+                    and action.get("kind") == "fill"
+                    and not text_helper_configured
+                ):
                     entry["outcome"] = "needs_text"
                     return finish(
                         "stopped",
                         "needs_text",
-                        "TYPE_TEXT requires TEXT_MODEL_API_KEY; no helper request or field mutation was made",
+                        text_helper_configuration_error
+                        or "TYPE_TEXT needs explicit TEXT_MODEL_API_KEY, "
+                        "TEXT_MODEL_BASE_URL, and TEXT_MODEL; no helper request "
+                        "or field mutation was made",
                     ), agent
 
-                phase = "mutation" if action is not None and action.get("kind") != "wait" else "action"
+                helper_was_selected = (
+                    action is not None and action.get("kind") == "fill"
+                )
+                current_text_calls = state.get("text_calls", [])
+                helper_calls_before = (
+                    len(current_text_calls)
+                    if isinstance(current_text_calls, list)
+                    else 0
+                )
+                phase = (
+                    "mutation"
+                    if action is not None and action.get("kind") != "wait"
+                    else "action"
+                )
                 agent.command(
                     "act", {"fingerprint": state.get("page", {}).get("fingerprint")}
                 )
@@ -482,6 +521,21 @@ def _run(request: dict[str, Any], started_at: float) -> tuple[dict[str, Any], ob
             mutation_outcome="unknown" if phase == "mutation" else "not_in_flight",
         ), agent
     except Exception as error:
+        current_text_calls = state.get("text_calls", []) if agent is not None else []
+        helper_failed_before_mutation = (
+            phase == "mutation"
+            and helper_was_selected
+            and isinstance(current_text_calls, list)
+            and len(current_text_calls) == helper_calls_before
+        )
+        if helper_failed_before_mutation:
+            if trace:
+                trace[-1]["outcome"] = "text_helper_error"
+            return finish(
+                "error",
+                "text_helper_error",
+                _bounded_text(error, MAX_DIAGNOSTIC_CHARS),
+            ), agent
         return finish(
             "error",
             "setup_error" if phase == "preflight" else "upstream_error",
@@ -509,6 +563,7 @@ def main() -> int:
             started_at=started_at,
             max_seconds=1,
             text_helper_configured=False,
+            text_helper_configured_model=None,
             daemon_name=None,
             agent=agent,
             target_id=None,
@@ -522,6 +577,7 @@ def main() -> int:
             started_at=started_at,
             max_seconds=1,
             text_helper_configured=False,
+            text_helper_configured_model=None,
             daemon_name=None,
             agent=None,
             target_id=None,
@@ -536,6 +592,7 @@ def main() -> int:
             started_at=started_at,
             max_seconds=1,
             text_helper_configured=False,
+            text_helper_configured_model=None,
             daemon_name=None,
             agent=agent,
             target_id=None,

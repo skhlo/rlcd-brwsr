@@ -4,8 +4,10 @@ The production bridge and pinned Jev Agent stay real. Tests replace only the
 Browser Harness CDP transport, exact-daemon check, and model provider response.
 """
 
+import json
 import os
 import re
+import sys
 import time
 from pathlib import Path
 
@@ -17,6 +19,7 @@ _STATE = {
     "url": "about:blank",
     "destination": False,
     "clicks": 0,
+    "typed_text": "",
 }
 
 
@@ -24,6 +27,11 @@ def _mark_external_work(environment_key):
     marker = os.environ.get(environment_key)
     if marker:
         Path(marker).write_text("called", encoding="utf-8")
+
+
+_argv_marker = os.environ.get("RLCD_TEST_ARGV_MARKER")
+if _argv_marker:
+    Path(_argv_marker).write_text(json.dumps(sys.argv), encoding="utf-8")
 
 
 def _resolved_daemon_name(name):
@@ -58,6 +66,49 @@ admin.daemon_browser_kind = _daemon_browser_kind
 
 
 def _page():
+    if _SCENARIO.startswith("text_"):
+        helper_secret = (
+            os.environ.get("TEXT_MODEL_API_KEY", "")
+            if _SCENARIO == "text_secret_error"
+            else ""
+        )
+        if _STATE["typed_text"]:
+            return {
+                "url": _STATE["url"],
+                "title": "Generated field fixture complete",
+                "text": (
+                    "Accepted generated destination: "
+                    f"{_STATE['typed_text']}. Marker: FIELD-41"
+                ),
+                "scroll": {"y": 0},
+                "actions": [{"id": "wait", "kind": "wait", "label": "Wait"}],
+                "marker": "text-complete",
+                "page_key": "text-complete",
+                "guards": {},
+            }
+        return {
+            "url": _STATE["url"],
+            "title": "Generated field fixture",
+            "text": (
+                "Enter the destination city requested by the goal. "
+                f"A valid value reveals marker FIELD-41. {helper_secret}"
+            ),
+            "scroll": {"y": 0},
+            "actions": [
+                {
+                    "id": "destination-city",
+                    "kind": "fill",
+                    "label": f"Destination city {helper_secret}".strip(),
+                    "role": "textbox",
+                    "value": "",
+                    "node": 21,
+                },
+                {"id": "wait", "kind": "wait", "label": "Wait"},
+            ],
+            "marker": "text-start",
+            "page_key": "text-start",
+            "guards": {"21": "guard-21"},
+        }
     if _STATE["destination"]:
         suffix = "X" * 20_000 if _SCENARIO == "large_evidence" else ""
         destination_url = "http://127.0.0.1:43113/destination.html"
@@ -132,7 +183,11 @@ def _cdp(method, session_id=None, **params):
             _STATE["clicks"] += 1
             _STATE["destination"] = True
         return {}
-    if method in {"Input.dispatchKeyEvent", "Input.insertText"}:
+    if method == "Input.insertText":
+        _STATE["typed_text"] = params["text"]
+        _mark_external_work("RLCD_TEST_FIELD_MUTATION_MARKER")
+        return {}
+    if method == "Input.dispatchKeyEvent":
         return {}
     if method == "Runtime.evaluate":
         expression = params.get("expression", "")
@@ -166,7 +221,48 @@ def _choice(criteria, selected):
     }
 
 
-def _post_json(_url, key, body):
+def _post_json(url, key, body):
+    if "messages" in body:
+        _mark_external_work("RLCD_TEST_HELPER_REQUEST_MARKER")
+        if url != "http://127.0.0.1:43115/v1/chat/completions":
+            raise RuntimeError("text helper used an unexpected endpoint")
+        if (
+            _SCENARIO != "text_secret_error"
+            and key != "synthetic-text-helper-key"
+        ):
+            raise RuntimeError("text helper used an unexpected credential")
+        if body.get("model") != "synthetic-text-helper-v1":
+            raise RuntimeError("text helper used an unexpected model")
+        context = json.loads(body["messages"][1]["content"])
+        if (
+            not context.get("field", {}).get("label", "").startswith(
+                "Destination city"
+            )
+            or "second-largest city" not in context.get("goal", "")
+            or "FIELD-41" not in context.get("page", {}).get("text", "")
+        ):
+            raise RuntimeError("upstream field context was not preserved")
+        if _SCENARIO == "text_malformed":
+            content = "not-json"
+        elif _SCENARIO == "text_empty":
+            content = json.dumps({"text": " "})
+        elif _SCENARIO == "text_provider_failure":
+            raise RuntimeError("Model connection failed; no action executed.")
+        elif _SCENARIO == "text_status_failure":
+            raise RuntimeError("Model provider returned HTTP 503; no action executed.")
+        elif _SCENARIO == "text_secret_error":
+            raise RuntimeError(
+                f"Model provider rejected Authorization: Bearer {key}; "
+                f"status detail {key}; no action executed."
+            )
+        else:
+            content = json.dumps({"text": "Busan"})
+        return {
+            "model": "reported-text-helper-external-fake",
+            "choices": [{"message": {"content": content}}],
+            "usage": {"prompt_tokens": 19, "completion_tokens": 4},
+        }
+
     if os.environ.get("TYPESAFE_MODEL") != "jev-1.13.0":
         raise RuntimeError("the wrapper did not select the pinned Jev model")
     if _SCENARIO == "provider_secret_error":
@@ -178,6 +274,8 @@ def _post_json(_url, key, body):
     operations = questions["operation"]["criteria"]
     if _SCENARIO == "needs_text":
         operation = "TYPE_TEXT"
+    elif _SCENARIO.startswith("text_"):
+        operation = "DONE" if _STATE["typed_text"] else "TYPE_TEXT"
     elif _SCENARIO == "blocked":
         operation = "BLOCKED"
     elif _SCENARIO in {"always_click", "large_trace"}:

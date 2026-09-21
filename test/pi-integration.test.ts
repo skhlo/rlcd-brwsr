@@ -1,6 +1,14 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { access, cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import {
+  access,
+  cp,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
@@ -139,12 +147,17 @@ async function withFakeExternalInteractions<T>(
     "BU_CDP_WS",
     "BU_NAME",
     "PYTHONPATH",
+    "RLCD_TEST_ARGV_MARKER",
     "RLCD_TEST_BROWSER_WORK_MARKER",
     "RLCD_TEST_DAEMON_START_MARKER",
     "RLCD_TEST_EXPECTED_DAEMON",
+    "RLCD_TEST_FIELD_MUTATION_MARKER",
+    "RLCD_TEST_HELPER_REQUEST_MARKER",
     "RLCD_TEST_SCENARIO",
     "TYPESAFE_API_KEY",
     "TEXT_MODEL_API_KEY",
+    "TEXT_MODEL_BASE_URL",
+    "TEXT_MODEL",
   ] as const;
   const before = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
   for (const key of keys) delete process.env[key];
@@ -199,7 +212,9 @@ async function capturedFailure(
 }
 
 test("registered Pi tool loads native Harness workspace configuration and completes a click-only journey", async () => {
-  await withFakeExternalInteractions("click_done", async () => {
+  await withFakeExternalInteractions("click_done", async (harnessHome) => {
+    const helperRequestMarker = join(harnessHome, "helper-requested");
+    process.env.RLCD_TEST_HELPER_REQUEST_MARKER = helperRequestMarker;
     const tool = registeredTool();
     assert.equal(tool.name, "rlcd_brwsr_run");
     assert.equal(tool.executionMode, "sequential");
@@ -239,7 +254,7 @@ test("registered Pi tool loads native Harness workspace configuration and comple
       ["CLICK", "DONE"],
     );
     assert.equal(
-      stringField(firstDecision, "model"),
+      stringField(firstDecision, "reportedModel"),
       "deterministic-jev-external-fake",
     );
     assert.deepEqual(cleanup, {
@@ -255,7 +270,125 @@ test("registered Pi tool loads native Harness workspace configuration and comple
         error instanceof Error && "code" in error && error.code === "ESRCH",
     );
     assert.match(result.content[0]?.text ?? "", /completion_claim/);
+    await assert.rejects(access(helperRequestMarker));
   });
+});
+
+test("registered Pi tool uses the configured upstream helper for a generated field value", async () => {
+  await withFakeExternalInteractions("text_generated", async (harnessHome) => {
+    const helperRequestMarker = join(harnessHome, "helper-requested");
+    const fieldMutationMarker = join(harnessHome, "field-mutated");
+    process.env.RLCD_TEST_HELPER_REQUEST_MARKER = helperRequestMarker;
+    process.env.RLCD_TEST_FIELD_MUTATION_MARKER = fieldMutationMarker;
+    process.env.TEXT_MODEL_API_KEY = "synthetic-text-helper-key";
+    process.env.TEXT_MODEL_BASE_URL = "http://127.0.0.1:43115/v1";
+    process.env.TEXT_MODEL = "synthetic-text-helper-v1";
+
+    const result = await registeredTool().execute(
+      "generated-field-value",
+      baseInput({
+        goal: "Fill Destination city with South Korea's second-largest city, then stop when marker FIELD-41 is visible.",
+      }),
+      new AbortController().signal,
+    );
+    const details = detailsOf(result);
+    const observation = nullableRecordField(details, "lastObservation");
+    assert.ok(observation);
+    const usage = recordField(details, "usage");
+    const jevUsage = recordField(usage, "jev");
+    const helperUsage = recordField(usage, "textHelper");
+    const helperCalls = arrayField(helperUsage, "calls");
+    assert.equal(helperCalls.length, 1);
+    const helperCall = recordValue(helperCalls[0], "text helper call");
+
+    assert.equal(stringField(details, "status"), "completion_claim");
+    assert.match(stringField(observation, "evidence"), /Busan.*FIELD-41/);
+    assert.equal(stringField(jevUsage, "configuredModel"), "jev-1.13.0");
+    assert.equal(
+      stringField(
+        recordValue(arrayField(jevUsage, "decisions")[0], "first Jev decision"),
+        "reportedModel",
+      ),
+      "deterministic-jev-external-fake",
+    );
+    assert.equal(
+      stringField(helperUsage, "configuredModel"),
+      "synthetic-text-helper-v1",
+    );
+    assert.equal(stringField(helperCall, "reportedModel"), "unavailable");
+    assert.equal(stringField(helperCall, "field"), "Destination city");
+    assert.deepEqual(helperCall.usage, {
+      prompt_tokens: 19,
+      completion_tokens: 4,
+    });
+    assert.ok(numberField(helperCall, "latencyMs") >= 0);
+    assert.equal(jevUsage.providerHttpAttempts, "unavailable");
+    assert.equal(jevUsage.providerCost, "unavailable");
+    assert.equal(helperUsage.providerHttpAttempts, "unavailable");
+    assert.equal(helperUsage.providerCost, "unavailable");
+    assert.deepEqual(
+      arrayField(details, "trace").map((entry, index) =>
+        stringField(recordValue(entry, `trace[${index}]`), "operation"),
+      ),
+      ["TYPE_TEXT", "DONE"],
+    );
+    assert.equal(await access(helperRequestMarker), undefined);
+    assert.equal(await access(fieldMutationMarker), undefined);
+  });
+});
+
+test("unusable helper generations and provider failures stop before field mutation", async () => {
+  for (const [scenario, diagnostic] of [
+    ["text_malformed", /no valid field value/i],
+    ["text_empty", /no valid field value/i],
+    ["text_provider_failure", /connection failed/i],
+    ["text_status_failure", /HTTP 503/i],
+  ] as const) {
+    await withFakeExternalInteractions(scenario, async (harnessHome) => {
+      const helperRequestMarker = join(harnessHome, "helper-requested");
+      const fieldMutationMarker = join(harnessHome, "field-mutated");
+      process.env.TEXT_MODEL_API_KEY = "synthetic-text-helper-key";
+      process.env.TEXT_MODEL_BASE_URL = "http://127.0.0.1:43115/v1";
+      process.env.TEXT_MODEL = "synthetic-text-helper-v1";
+      process.env.RLCD_TEST_HELPER_REQUEST_MARKER = helperRequestMarker;
+      process.env.RLCD_TEST_FIELD_MUTATION_MARKER = fieldMutationMarker;
+
+      const result = await registeredTool().execute(
+        `helper-failure-${scenario}`,
+        baseInput({
+          goal: "Fill Destination city with South Korea's second-largest city, then stop when marker FIELD-41 is visible.",
+        }),
+        new AbortController().signal,
+      );
+      const details = detailsOf(result);
+      const usage = recordField(details, "usage");
+      const helperUsage = recordField(usage, "textHelper");
+      const trace = arrayField(details, "trace").map((entry, index) =>
+        recordValue(entry, `trace[${index}]`),
+      );
+
+      assert.equal(stringField(details, "status"), "error");
+      assert.equal(stringField(details, "stopReason"), "text_helper_error");
+      assert.equal(stringField(details, "mutationOutcome"), "not_in_flight");
+      assert.match(stringField(details, "diagnostic"), diagnostic);
+      assert.equal(trace.length, 1);
+      assert.equal(stringField(trace[0]!, "operation"), "TYPE_TEXT");
+      assert.equal(stringField(trace[0]!, "outcome"), "text_helper_error");
+      assert.equal(
+        arrayField(recordField(usage, "jev"), "decisions").length,
+        1,
+      );
+      assert.deepEqual(helperUsage, {
+        configured: true,
+        configuredModel: "synthetic-text-helper-v1",
+        calls: [],
+        providerHttpAttempts: "unavailable",
+        providerCost: "unavailable",
+      });
+      assert.equal(await access(helperRequestMarker), undefined);
+      await assert.rejects(access(fieldMutationMarker));
+    });
+  }
 });
 
 test("invalid URL and limits stop before runtime preflight", async () => {
@@ -358,7 +491,11 @@ test("registered tool rejects resolved remote Harness configuration before brows
 });
 
 test("click-only use advertises missing text capability and stops before TYPE_TEXT", async () => {
-  await withFakeExternalInteractions("needs_text", async () => {
+  await withFakeExternalInteractions("needs_text", async (harnessHome) => {
+    const helperRequestMarker = join(harnessHome, "helper-requested");
+    const fieldMutationMarker = join(harnessHome, "field-mutated");
+    process.env.RLCD_TEST_HELPER_REQUEST_MARKER = helperRequestMarker;
+    process.env.RLCD_TEST_FIELD_MUTATION_MARKER = fieldMutationMarker;
     const result = await registeredTool().execute(
       "needs-text",
       baseInput(),
@@ -394,6 +531,7 @@ test("click-only use advertises missing text capability and stops before TYPE_TE
     assert.ok(traceElapsedMs <= numberField(timing, "elapsedMs"));
     assert.deepEqual(textUsage, {
       configured: false,
+      configuredModel: null,
       calls: [],
       providerHttpAttempts: "unavailable",
       providerCost: "unavailable",
@@ -402,7 +540,113 @@ test("click-only use advertises missing text capability and stops before TYPE_TE
       stringField(recordField(details, "cleanup"), "taskTab"),
       "closed",
     );
+    await assert.rejects(access(helperRequestMarker));
+    await assert.rejects(access(fieldMutationMarker));
   });
+});
+
+test("incomplete or invalid helper settings never select upstream defaults or mutate a field", async () => {
+  await withFakeExternalInteractions("needs_text", async (harnessHome) => {
+    const cases = [
+      {
+        name: "incomplete",
+        environment: { TEXT_MODEL_API_KEY: "synthetic-lone-helper-key" },
+        diagnostic: /missing TEXT_MODEL_BASE_URL, TEXT_MODEL/,
+      },
+      {
+        name: "invalid-endpoint",
+        environment: {
+          TEXT_MODEL_API_KEY: "synthetic-text-helper-key",
+          TEXT_MODEL_BASE_URL: "http://helper.example.test/v1",
+          TEXT_MODEL: "synthetic-text-helper-v1",
+        },
+        diagnostic: /HTTPS endpoint or loopback HTTP endpoint/,
+      },
+    ] as const;
+
+    for (const helperCase of cases) {
+      const helperRequestMarker = join(
+        harnessHome,
+        `${helperCase.name}-helper-requested`,
+      );
+      const fieldMutationMarker = join(
+        harnessHome,
+        `${helperCase.name}-field-mutated`,
+      );
+      delete process.env.TEXT_MODEL_API_KEY;
+      delete process.env.TEXT_MODEL_BASE_URL;
+      delete process.env.TEXT_MODEL;
+      Object.assign(process.env, helperCase.environment);
+      process.env.RLCD_TEST_HELPER_REQUEST_MARKER = helperRequestMarker;
+      process.env.RLCD_TEST_FIELD_MUTATION_MARKER = fieldMutationMarker;
+
+      const result = await registeredTool().execute(
+        `${helperCase.name}-helper`,
+        baseInput(),
+        new AbortController().signal,
+      );
+      const details = detailsOf(result);
+      const helperUsage = recordField(
+        recordField(details, "usage"),
+        "textHelper",
+      );
+
+      assert.equal(stringField(details, "status"), "stopped");
+      assert.equal(stringField(details, "stopReason"), "needs_text");
+      assert.match(stringField(details, "diagnostic"), helperCase.diagnostic);
+      assert.equal(helperUsage.configured, false);
+      assert.equal(helperUsage.configuredModel, null);
+      assert.deepEqual(arrayField(helperUsage, "calls"), []);
+      await assert.rejects(access(helperRequestMarker));
+      await assert.rejects(access(fieldMutationMarker));
+    }
+  });
+});
+
+test("helper secrets are redacted from progress, results, and retained diagnostics", async () => {
+  await withFakeExternalInteractions(
+    "text_secret_error",
+    async (harnessHome) => {
+      const helperSecret = "synthetic-text-helper-secret-ALPHA-73";
+      const typesafeSecret = process.env.TYPESAFE_API_KEY;
+      assert.ok(typesafeSecret);
+      process.env.TEXT_MODEL_API_KEY = helperSecret;
+      process.env.TEXT_MODEL_BASE_URL = "http://127.0.0.1:43115/v1";
+      process.env.TEXT_MODEL = "synthetic-text-helper-v1";
+      const updates: ToolResult[] = [];
+      const argvArtifact = join(harnessHome, "bridge-argv.json");
+      process.env.RLCD_TEST_ARGV_MARKER = argvArtifact;
+
+      const result = await registeredTool().execute(
+        "redacted-helper-failure",
+        baseInput({
+          goal: "Fill Destination city with South Korea's second-largest city, then stop when marker FIELD-41 is visible.",
+        }),
+        new AbortController().signal,
+        (update) => updates.push(update),
+      );
+      const details = detailsOf(result);
+      const retainedArtifact = join(harnessHome, "retained-tool-evidence.json");
+      await writeFile(retainedArtifact, JSON.stringify({ result, updates }));
+      const retained = await readFile(retainedArtifact, "utf8");
+      const bridgeArgv = await readFile(argvArtifact, "utf8");
+
+      assert.equal(stringField(details, "stopReason"), "text_helper_error");
+      assert.match(stringField(details, "diagnostic"), /\[REDACTED\]/);
+      for (const serialized of [
+        JSON.stringify(result.content),
+        JSON.stringify(result.details),
+        JSON.stringify(updates),
+        retained,
+        bridgeArgv,
+      ]) {
+        assert.doesNotMatch(serialized, new RegExp(helperSecret));
+        assert.doesNotMatch(serialized, new RegExp(typesafeSecret));
+      }
+      assert.match(JSON.stringify(updates), /\[REDACTED\]/);
+      assert.doesNotMatch(bridgeArgv, /TEXT_MODEL|synthetic|Busan|FIELD-41/);
+    },
+  );
 });
 
 test("action budget stops further upstream dispatch and retains observed evidence", async () => {
@@ -598,6 +842,31 @@ test("executable preflight loads native Harness workspace configuration", async 
     const checks = recordField(report, "checks");
     assert.equal(stringField(checks, "daemon"), nativeDaemonName);
     assert.equal(stringField(checks, "browserMode"), "cdp");
+  });
+});
+
+test("preflight reports only coherent explicit helper configuration", async () => {
+  await withFakeExternalInteractions("click_done", async () => {
+    const secret = "synthetic-preflight-helper-secret";
+    process.env.TEXT_MODEL_API_KEY = secret;
+    process.env.TEXT_MODEL_BASE_URL = "https://helper.example.test/v1";
+    process.env.TEXT_MODEL = "configured-helper-model-v1";
+    const result = await execFileAsync(
+      join(repositoryRoot, "scripts", "preflight-runtime.sh"),
+      [],
+      { cwd: repositoryRoot, env: { ...process.env } },
+    );
+    const report: unknown = JSON.parse(result.stdout);
+    assert.ok(isRecord(report));
+    const checks = recordField(report, "checks");
+
+    assert.equal(checks.textHelperConfigured, true);
+    assert.equal(stringField(checks, "textHelperConfiguration"), "configured");
+    assert.equal(
+      stringField(checks, "textHelperModel"),
+      "configured-helper-model-v1",
+    );
+    assert.doesNotMatch(result.stdout, new RegExp(secret));
   });
 });
 

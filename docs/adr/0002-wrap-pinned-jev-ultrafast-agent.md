@@ -66,7 +66,10 @@ capability; Chrome DevTools CLI is not a fallback.
   selected Chrome, daemon, and unrelated tabs.
 - The Pi tool remains one deep interface and is sequential only within Pi.
 - The optional upstream text helper remains upstream-owned and is not replaced
-  by custom extraction or the main Pi model.
+  by custom extraction or the main Pi model. It is enabled only when native
+  `TEXT_MODEL_API_KEY`, `TEXT_MODEL_BASE_URL`, and `TEXT_MODEL` settings form an
+  explicit coherent configuration; partial settings never activate upstream's
+  default endpoint/model.
 - Historical custom-loop evidence remains in PR #8 at `5dafb11` and sibling
   experiment commit `6df4b4b0f8b17420f9c9bc0a8176072312ec6de3`.
 - No maintained upstream fork, TypeScript port, custom extractor, site scripts,

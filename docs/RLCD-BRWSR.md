@@ -1,6 +1,6 @@
 # RLCD-brwsr v0.1 plan
 
-Status: approved direction; first upstream-backed vertical slice in issue #10.
+Status: approved direction; upstream-backed click and generated-field slices in issues #10 and #11.
 
 RLCD-brwsr is a thin Pi extension over the pinned Jev Ultrafast `Agent`. The
 outer agent supplies a starting URL, a natural-language goal, and finite
@@ -125,9 +125,14 @@ Upstream validates the selected operation and operation-specific target before
 execution. Model output never becomes a selector, coordinate, URL, shell
 command, or executable JavaScript.
 
-The OpenAI-compatible text helper is optional for a click-only run. The bridge
-advertises whether it is configured. If upstream first selects `TYPE_TEXT` while
-it is absent, the run stops before a helper request or field mutation and
+The OpenAI-compatible text helper is optional for a click-only run. It is
+configured only when native upstream `TEXT_MODEL_API_KEY`,
+`TEXT_MODEL_BASE_URL`, and `TEXT_MODEL` values are all explicit and coherent.
+The endpoint must use HTTPS, or loopback HTTP for a local responder, without
+embedded credentials, a query, or a fragment. A lone key cannot select
+upstream's default endpoint/model. The bridge advertises absent, incomplete,
+invalid, or configured status. If upstream first selects `TYPE_TEXT` without a
+configured helper, the run stops before a helper request or field mutation and
 returns `needs_text` with prior progress. The outer agent must not silently
 substitute its own model.
 
@@ -148,9 +153,15 @@ The slice provides:
 - normal task-tab and bridge cleanup; and
 - a missing-text-helper capability handoff.
 
-Follow-up issues extend in-flight interruption, abnormal-exit cleanup, retained
-tabs, and a configured text-entry journey. They do not permit an unbounded
-initial runner.
+Issue #11 adds the configured text-entry journey through the same tool. It
+keeps upstream's field-context construction, helper request, generated-value
+validation, and browser fill. The wrapper adds only coherent optional-capability
+validation, bounded failure classification, and normalized helper evidence. It
+does not add prepared values, a second generator, page cleanup, or site
+planning.
+
+Follow-up issues extend in-flight interruption, abnormal-exit cleanup, and
+retained tabs. They do not permit an unbounded runner.
 
 ## Operating scope
 
@@ -206,11 +217,14 @@ characters and streams validated progress without retaining an unbounded record
 list or imposing a competing record-count stop. Model-visible results are
 bounded to 12,000 characters, last-observation evidence to 4,000 characters,
 and terminal trace/decision lists to 24 entries. It redacts known credential
-values from retained errors. Measurements distinguish observed model
-decisions/usage from provider attempts or costs that upstream does not expose.
-Missing data is `unavailable`, not zero. The Jev model identifier has one
-executable owner in `config/runtime.json`, which the extension, bridge, and
-preflight consume.
+values from retained errors, progress, tool content, and details. Measurements
+name configured Jev/helper models separately from provider-reported identities.
+The pinned helper retains its configured model, latency, field label, and usage
+but not the provider response's model ID, so that reported identity is
+`unavailable`. Provider attempt counts and costs that upstream does not expose
+are also `unavailable`, not zero. The Jev model identifier has one executable
+owner in `config/runtime.json`, which the extension, bridge, and preflight
+consume.
 
 ## Verification
 
@@ -221,20 +235,24 @@ incidental call order.
 
 The first slice covers inert loading, invalid input, explicit preflight,
 click-only completion, basic action/time/cancellation bounds, missing text-helper
-handoff, bounded/redacted failure output, and owned-resource cleanup. Focused
-regressions cross the executable setup, executable preflight, and registered-tool
-seams while letting real Browser Harness import-time workspace `.env` loading
-resolve synthetic local and conflicting cloud settings. One cheap guard is
-proven red before implementation.
+handoff, bounded/redacted failure output, and owned-resource cleanup. The second
+slice adds generated text entry, coherent/partial helper configuration,
+malformed and empty generation, provider/status failures, separate model and
+usage reporting, and synthetic-secret redaction through progress/results and
+retained test evidence. Focused regressions cross the executable setup,
+executable preflight, and registered-tool seams while letting real Browser
+Harness import-time workspace `.env` loading resolve synthetic local and
+conflicting cloud settings. One cheap guard is proven red before implementation.
 
 Acceptance also uses a fresh actual Pi TUI controlled through Paseo CLI, the
-named Browser Harness daemon, the loopback fixture, and the honestly labelled
-deterministic responder in `fixtures/click-only/deterministic-model/`. That
-responder replaces paid model HTTP only; the pinned Agent, DOM observation,
-Browser Harness, and Chrome remain real. A separate browser observation verifies
-the fixture destination and `ORBIT-27` evidence; `DONE` alone does not pass.
-Resource census records tabs, processes, the named shared daemon, and any
-run-owned bridge before and after.
+named Browser Harness daemon, the loopback fixture, and honestly labelled
+deterministic responders. Those responders replace paid model HTTP only; the
+pinned Agent, DOM observation, upstream helper context/value validation, Browser
+Harness, and Chrome remain real. A separate browser observation verifies the
+click destination or inspects the text field and `FIELD-41` marker on the owned
+target while the text run is still open; `DONE` alone does not pass. Resource
+census records tabs, processes, the named shared daemon, and any run-owned bridge
+before and after.
 
 Repository formatting, type checks, focused tests, full tests, and upstream
 bridge compatibility checks run before a local candidate commit.
@@ -272,3 +290,5 @@ to merge and not results from this wrapper.
 - Browser Harness pin: `0.1.13` (owned by the upstream manifest and uv lock).
 - Initial Jev model pin: `jev-1.13.0`.
 - Issue #10 verification summary: `docs/issue-10-evidence.md`.
+- Generated field-value slice: GitHub issue #11.
+- Issue #11 verification summary: `docs/issue-11-evidence.md`.

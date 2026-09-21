@@ -10,6 +10,7 @@ from runtime_support import (
     JEV_MODEL,
     require_existing_local_daemon,
     resolved_local_daemon_name,
+    resolved_text_helper_configuration,
 )
 
 JEV_COMMIT = "1231850a0bf1a0c0341fe408ef1668dbbfdfac46"
@@ -26,6 +27,9 @@ def main() -> int:
         "browserMode": None,
         "typesafeConfigured": False,
         "textHelperConfigured": False,
+        "textHelperConfiguration": "absent",
+        "textHelperModel": None,
+        "textHelperError": None,
     }
     try:
         if sys.version_info[:2] != (3, 12):
@@ -36,9 +40,11 @@ def main() -> int:
         checks["typesafeConfigured"] = bool(
             os.environ.get("TYPESAFE_API_KEY", "").strip()
         )
-        checks["textHelperConfigured"] = bool(
-            os.environ.get("TEXT_MODEL_API_KEY", "").strip()
-        )
+        text_helper = resolved_text_helper_configuration()
+        checks["textHelperConfigured"] = text_helper.configured
+        checks["textHelperConfiguration"] = text_helper.status
+        checks["textHelperModel"] = text_helper.model
+        checks["textHelperError"] = text_helper.error
         if not checks["typesafeConfigured"]:
             raise RuntimeError("TYPESAFE_API_KEY is not configured")
 

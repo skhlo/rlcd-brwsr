@@ -1,6 +1,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { access, constants } from "node:fs/promises";
+import { isIP } from "node:net";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -77,13 +78,15 @@ interface TraceEntry {
 }
 
 interface ModelMeasurement {
-  model: string;
+  reportedModel: string;
+  field?: string;
   latencyMs: Measurement;
   usage: JsonValue;
 }
 
 interface Usage {
   jev: {
+    configuredModel: string;
     decisions: ModelMeasurement[];
     decisionsTruncated?: boolean;
     providerHttpAttempts: Measurement;
@@ -91,6 +94,7 @@ interface Usage {
   };
   textHelper: {
     configured: boolean;
+    configuredModel: string | null;
     calls: ModelMeasurement[];
     callsTruncated?: boolean;
     providerHttpAttempts: Measurement;
@@ -164,6 +168,45 @@ function boundedText(value: string, maximum: number): string {
   return value.length <= maximum ? value : value.slice(0, maximum);
 }
 
+function localHttpHelperHost(hostname: string): boolean {
+  const address = hostname.replace(/^\[|\]$/g, "");
+  if (address === "localhost" || address === "::1") return true;
+  return isIP(address) === 4 && address.startsWith("127.");
+}
+
+function configuredTextHelper(): {
+  configured: boolean;
+  configuredModel: string | null;
+} {
+  const key = process.env.TEXT_MODEL_API_KEY;
+  const baseUrl = process.env.TEXT_MODEL_BASE_URL;
+  const model = process.env.TEXT_MODEL;
+  if (![key, baseUrl, model].every((value) => value?.trim())) {
+    return { configured: false, configuredModel: null };
+  }
+  if ([key, baseUrl, model].some((value) => value !== value?.trim())) {
+    return { configured: false, configuredModel: null };
+  }
+  try {
+    const parsed = new URL(baseUrl as string);
+    const allowedTransport =
+      parsed.protocol === "https:" ||
+      (parsed.protocol === "http:" && localHttpHelperHost(parsed.hostname));
+    if (
+      !allowedTransport ||
+      parsed.username ||
+      parsed.password ||
+      parsed.search ||
+      parsed.hash
+    ) {
+      return { configured: false, configuredModel: null };
+    }
+  } catch {
+    return { configured: false, configuredModel: null };
+  }
+  return { configured: true, configuredModel: model as string };
+}
+
 function validateInput(value: RlcdRunInput): string | undefined {
   if (typeof value.url !== "string" || !value.url.trim()) {
     return "url must be a non-empty absolute HTTP(S) URL";
@@ -218,6 +261,7 @@ function basicResult(
   daemon: string | null,
   status: RlcdRunResult["status"] = "error",
 ): RlcdRunResult {
+  const textHelper = configuredTextHelper();
   return {
     status,
     stopReason,
@@ -230,12 +274,14 @@ function basicResult(
     traceTruncated: false,
     usage: {
       jev: {
+        configuredModel: runtimeConfig.jevModel,
         decisions: [],
         providerHttpAttempts: "unavailable",
         providerCost: "unavailable",
       },
       textHelper: {
-        configured: Boolean(process.env.TEXT_MODEL_API_KEY?.trim()),
+        configured: textHelper.configured,
+        configuredModel: textHelper.configuredModel,
         calls: [],
         providerHttpAttempts: "unavailable",
         providerCost: "unavailable",
@@ -366,7 +412,8 @@ function normalizedModelMeasurements(
   for (const item of value) {
     if (
       !isRecord(item) ||
-      typeof item.model !== "string" ||
+      typeof item.reportedModel !== "string" ||
+      (item.field !== undefined && typeof item.field !== "string") ||
       (item.latencyMs !== "unavailable" && !isNonnegativeFinite(item.latencyMs))
     ) {
       return undefined;
@@ -374,7 +421,10 @@ function normalizedModelMeasurements(
     const usage = sanitizedJson(item.usage, credentials);
     if (usage === undefined) return undefined;
     output.push({
-      model: redactText(item.model, credentials),
+      reportedModel: redactText(item.reportedModel, credentials),
+      ...(typeof item.field === "string"
+        ? { field: redactText(item.field, credentials) }
+        : {}),
       latencyMs: item.latencyMs,
       usage,
     });
@@ -410,7 +460,10 @@ function normalizedUsage(
     jevCost === undefined ||
     textAttempts === undefined ||
     textCost === undefined ||
+    typeof value.jev.configuredModel !== "string" ||
     typeof value.textHelper.configured !== "boolean" ||
+    (value.textHelper.configuredModel !== null &&
+      typeof value.textHelper.configuredModel !== "string") ||
     (value.jev.decisionsTruncated !== undefined &&
       typeof value.jev.decisionsTruncated !== "boolean") ||
     (value.textHelper.callsTruncated !== undefined &&
@@ -420,6 +473,7 @@ function normalizedUsage(
   }
   return {
     jev: {
+      configuredModel: redactText(value.jev.configuredModel, credentials),
       decisions,
       ...(typeof value.jev.decisionsTruncated === "boolean"
         ? { decisionsTruncated: value.jev.decisionsTruncated }
@@ -429,6 +483,10 @@ function normalizedUsage(
     },
     textHelper: {
       configured: value.textHelper.configured,
+      configuredModel:
+        typeof value.textHelper.configuredModel === "string"
+          ? redactText(value.textHelper.configuredModel, credentials)
+          : null,
       calls,
       ...(typeof value.textHelper.callsTruncated === "boolean"
         ? { callsTruncated: value.textHelper.callsTruncated }
@@ -551,7 +609,12 @@ function normalizedProgressRecord(
       value.protocolVersion !== 1 ||
       typeof value.daemon !== "string" ||
       !isRecord(value.capabilities) ||
-      typeof value.capabilities.textHelperConfigured !== "boolean"
+      typeof value.capabilities.textHelperConfigured !== "boolean" ||
+      !["absent", "incomplete", "invalid", "configured"].includes(
+        String(value.capabilities.textHelperConfiguration),
+      ) ||
+      (value.capabilities.textHelperConfiguredModel !== null &&
+        typeof value.capabilities.textHelperConfiguredModel !== "string")
     ) {
       return undefined;
     }
@@ -561,6 +624,16 @@ function normalizedProgressRecord(
       daemon: redactText(value.daemon, credentials),
       capabilities: {
         textHelperConfigured: value.capabilities.textHelperConfigured,
+        textHelperConfiguration: String(
+          value.capabilities.textHelperConfiguration,
+        ),
+        textHelperConfiguredModel:
+          typeof value.capabilities.textHelperConfiguredModel === "string"
+            ? redactText(
+                value.capabilities.textHelperConfiguredModel,
+                credentials,
+              )
+            : null,
       },
     };
   }
