@@ -55,3 +55,42 @@ redacted. The task fixture and three task-owned Paseo terminals were stopped.
 Regular Chrome PID 69653, old automation Chrome PID 74985, approved isolated
 Chrome PID 89627, Harness PID 89979, their pre-existing tabs, and pre-existing
 Paseo terminal `7d560f42-7cb3-4b8c-ae6c-f6d9ff383074` remained.
+
+## Correction pass
+
+The correction from candidate `a31bcae` moved known-credential redaction into
+the Python emission and diagnostic boundary. The bridge refreshes known values
+immediately after native Harness workspace configuration resolution and redacts
+protocol records and standard-error diagnostics before they reach the parent.
+The parent still redacts its own known values. The regression puts a synthetic
+helper tuple only in an isolated Harness workspace `.env`, has an external
+failure echo it through observation, progress, and error surfaces, and verifies
+its absence from content, details, updates, raw bridge JSONL, arguments, and a
+retained test artifact.
+
+Fill-phase failures before a recorded helper result now remain conservative
+`upstream_error` results. A registered-tool regression fails the second real
+upstream freshness transport check, before `field_text`; it verifies no helper
+request, no field mutation, `mutationOutcome: not_in_flight`, and bounded useful
+diagnostics. Malformed/empty helper output and provider failures preserve the
+same mutation outcome and diagnostics without retries. Python now solely
+classifies native helper configuration; pre-bridge parent results report helper
+capability and model as unknown.
+
+The correction acceptance repeated the actual Pi TUI text-entry fixture with
+the real pinned Agent, Browser Harness, and approved Chrome, replacing only Jev
+and helper HTTP replies with the deterministic synthetic responder. The tool
+returned `completion_claim`/`done_claim` after `TYPE_TEXT` and `DONE`. While the
+owned target `2697F2A490C9B78E8B48D42232A32A6B` was still open, the independent
+direct-CDP observer read `Busan` and the visible `FIELD-41` marker from that same
+target. Normal run cleanup then closed it and reaped bridge PID 21959.
+
+Correction raw evidence is ignored under
+`artifacts/issue-11/correction-tui-acceptance-20260921T034349Z/`; focused red and
+green guard logs remain alongside it under `artifacts/issue-11/`. The correction
+run stopped its fixture and three task-owned Paseo terminals. Chrome PIDs 69653,
+74985, and 89627 and Harness PID 89979 remained. The requested old Paseo terminal
+`7d560f42-7cb3-4b8c-ae6c-f6d9ff383074` was already absent from the pre-run Paseo
+census, so the correction run took no action on it. The final `pnpm check`
+passed formatting, TypeScript, all 25 registered-tool/production-load tests, and
+Python compilation; `pnpm-lock.yaml` and `uv.lock` hashes were unchanged.

@@ -130,8 +130,10 @@ configured only when native upstream `TEXT_MODEL_API_KEY`,
 `TEXT_MODEL_BASE_URL`, and `TEXT_MODEL` values are all explicit and coherent.
 The endpoint must use HTTPS, or loopback HTTP for a local responder, without
 embedded credentials, a query, or a fragment. A lone key cannot select
-upstream's default endpoint/model. The bridge advertises absent, incomplete,
-invalid, or configured status. If upstream first selects `TYPE_TEXT` without a
+upstream's default endpoint/model. The Python bridge classifies this native
+resolved configuration and advertises absent, incomplete, invalid, or
+configured status; before the bridge reports it, the parent reports capability
+and model status as unknown. If upstream first selects `TYPE_TEXT` without a
 configured helper, the run stops before a helper request or field mutation and
 returns `needs_text` with prior progress. The outer agent must not silently
 substitute its own model.
@@ -195,9 +197,13 @@ The first slice stops for:
 - bridge/protocol/setup failure.
 
 A dispatched mutation may remain uncertain after cancellation or process exit.
-Stopping the bridge is not rollback, and the wrapper does not retry it. Partial
-observations and executed-action records remain useful. Cleanup is reported as
-confirmed, failed, or unconfirmed rather than inferred.
+Stopping the bridge is not rollback, and the wrapper does not retry it. A fill
+failure before a recorded helper result can also originate in the preceding
+browser freshness check, so the wrapper reports a conservative upstream error
+rather than inventing a helper-specific origin; it still reports whether a
+mutation could have started. Partial observations and executed-action records
+remain useful. Cleanup is reported as confirmed, failed, or unconfirmed rather
+than inferred.
 
 ## Protocol and result bounds
 
@@ -216,9 +222,13 @@ Diagnostics use standard error. The parent bounds each protocol line to 32,000
 characters and streams validated progress without retaining an unbounded record
 list or imposing a competing record-count stop. Model-visible results are
 bounded to 12,000 characters, last-observation evidence to 4,000 characters,
-and terminal trace/decision lists to 24 entries. It redacts known credential
-values from retained errors, progress, tool content, and details. Measurements
-name configured Jev/helper models separately from provider-reported identities.
+and terminal trace/decision lists to 24 entries. After native Harness
+configuration resolution, the child redacts its known credentials from every
+protocol record and diagnostic stream before emission. The parent separately
+retains its defense for values it knows. Redaction therefore covers retained
+errors, progress, tool content, and details without serializing child-only
+secrets to the parent. Measurements name configured Jev/helper models separately
+from provider-reported identities.
 The pinned helper retains its configured model, latency, field label, and usage
 but not the provider response's model ID, so that reported identity is
 `unavailable`. Provider attempt counts and costs that upstream does not expose
@@ -237,12 +247,15 @@ The first slice covers inert loading, invalid input, explicit preflight,
 click-only completion, basic action/time/cancellation bounds, missing text-helper
 handoff, bounded/redacted failure output, and owned-resource cleanup. The second
 slice adds generated text entry, coherent/partial helper configuration,
-malformed and empty generation, provider/status failures, separate model and
-usage reporting, and synthetic-secret redaction through progress/results and
-retained test evidence. Focused regressions cross the executable setup,
-executable preflight, and registered-tool seams while letting real Browser
-Harness import-time workspace `.env` loading resolve synthetic local and
-conflicting cloud settings. One cheap guard is proven red before implementation.
+malformed and empty generation, provider/status failures, a pre-helper browser
+freshness transport failure, separate model and usage reporting, and
+synthetic-secret redaction through progress/results and retained test evidence.
+The helper-secret regression loads its synthetic tuple only through an isolated
+Harness workspace `.env` and checks the raw child protocol as well as parent and
+retained surfaces. Focused regressions cross the executable setup, executable
+preflight, and registered-tool seams while letting real Browser Harness
+import-time workspace `.env` loading resolve synthetic local and conflicting
+cloud settings. Cheap guards are proven red before implementation.
 
 Acceptance also uses a fresh actual Pi TUI controlled through Paseo CLI, the
 named Browser Harness daemon, the loopback fixture, and honestly labelled

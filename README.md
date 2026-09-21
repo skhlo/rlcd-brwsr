@@ -62,15 +62,20 @@ work, but enabling the helper requires explicit, coherent
 `TEXT_MODEL_API_KEY`, `TEXT_MODEL_BASE_URL`, and `TEXT_MODEL` values. The base
 URL must use HTTPS, or loopback HTTP for a local responder, and must not embed
 credentials, a query, or a fragment. A lone key never activates upstream's
-default provider/model. If upstream chooses `TYPE_TEXT` while the three-value
-configuration is absent, incomplete, or invalid, the tool stops before a helper
-request or field mutation and retains the Jev decision and page evidence.
+default provider/model. The Python bridge is the sole executable owner of this
+classification after native Harness `.env` resolution; pre-bridge results report
+helper capability and model as unknown. If upstream chooses `TYPE_TEXT` while
+the three-value configuration is absent, incomplete, or invalid, the tool stops
+before a helper request or field mutation and retains the Jev decision and page
+evidence.
 
 Results identify the configured Jev/helper models separately from model IDs
 reported by providers. The pinned helper does not retain its provider-reported
 model ID, so that field is honestly `unavailable`; available per-call usage and
 latency remain separate, while provider HTTP-attempt counts and costs are also
-`unavailable`.
+`unavailable`. Failures before a fill's helper result remain conservative
+upstream errors because the preceding browser freshness check can fail at the
+same boundary.
 
 ## Explicit Pi use
 

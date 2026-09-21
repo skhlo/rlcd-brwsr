@@ -20,18 +20,40 @@ _STATE = {
     "destination": False,
     "clicks": 0,
     "typed_text": "",
+    "fresh_checks": 0,
 }
 
 
 def _mark_external_work(environment_key):
     marker = os.environ.get(environment_key)
     if marker:
-        Path(marker).write_text("called", encoding="utf-8")
+        with Path(marker).open("a", encoding="utf-8") as marker_file:
+            marker_file.write("called\n")
 
 
 _argv_marker = os.environ.get("RLCD_TEST_ARGV_MARKER")
 if _argv_marker:
     Path(_argv_marker).write_text(json.dumps(sys.argv), encoding="utf-8")
+
+_protocol_marker = os.environ.get("RLCD_TEST_PROTOCOL_MARKER")
+if _protocol_marker:
+    _protocol_output = sys.stdout
+    _protocol_capture = Path(_protocol_marker).open("w", encoding="utf-8")
+
+    class _ProtocolTee:
+        def write(self, value):
+            _protocol_capture.write(value)
+            _protocol_capture.flush()
+            return _protocol_output.write(value)
+
+        def flush(self):
+            _protocol_capture.flush()
+            return _protocol_output.flush()
+
+        def __getattr__(self, name):
+            return getattr(_protocol_output, name)
+
+    sys.stdout = _ProtocolTee()
 
 
 def _resolved_daemon_name(name):
@@ -191,6 +213,15 @@ def _cdp(method, session_id=None, **params):
         return {}
     if method == "Runtime.evaluate":
         expression = params.get("expression", "")
+        if "return state?.marker ?? null" in expression:
+            _STATE["fresh_checks"] += 1
+            if (
+                _SCENARIO == "text_freshness_failure"
+                and _STATE["fresh_checks"] == 2
+            ):
+                raise RuntimeError(
+                    "Browser Harness transport failed during the pre-helper freshness check"
+                )
         if expression == "document.readyState":
             value = "complete"
         elif "if (!document.body) return null" in expression and "const state=" not in expression:
@@ -251,6 +282,7 @@ def _post_json(url, key, body):
         elif _SCENARIO == "text_status_failure":
             raise RuntimeError("Model provider returned HTTP 503; no action executed.")
         elif _SCENARIO == "text_secret_error":
+            print(f"external helper diagnostic echoed {key}", file=sys.stderr)
             raise RuntimeError(
                 f"Model provider rejected Authorization: Bearer {key}; "
                 f"status detail {key}; no action executed."

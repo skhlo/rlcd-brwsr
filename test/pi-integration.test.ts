@@ -153,6 +153,7 @@ async function withFakeExternalInteractions<T>(
     "RLCD_TEST_EXPECTED_DAEMON",
     "RLCD_TEST_FIELD_MUTATION_MARKER",
     "RLCD_TEST_HELPER_REQUEST_MARKER",
+    "RLCD_TEST_PROTOCOL_MARKER",
     "RLCD_TEST_SCENARIO",
     "TYPESAFE_API_KEY",
     "TEXT_MODEL_API_KEY",
@@ -368,12 +369,13 @@ test("unusable helper generations and provider failures stop before field mutati
       );
 
       assert.equal(stringField(details, "status"), "error");
-      assert.equal(stringField(details, "stopReason"), "text_helper_error");
+      assert.equal(stringField(details, "stopReason"), "upstream_error");
       assert.equal(stringField(details, "mutationOutcome"), "not_in_flight");
       assert.match(stringField(details, "diagnostic"), diagnostic);
+      assert.ok(stringField(details, "diagnostic").length <= 600);
       assert.equal(trace.length, 1);
       assert.equal(stringField(trace[0]!, "operation"), "TYPE_TEXT");
-      assert.equal(stringField(trace[0]!, "outcome"), "text_helper_error");
+      assert.equal(stringField(trace[0]!, "outcome"), "upstream_error");
       assert.equal(
         arrayField(recordField(usage, "jev"), "decisions").length,
         1,
@@ -386,9 +388,54 @@ test("unusable helper generations and provider failures stop before field mutati
         providerCost: "unavailable",
       });
       assert.equal(await access(helperRequestMarker), undefined);
+      assert.equal(
+        (await readFile(helperRequestMarker, "utf8")).trim().split("\n").length,
+        1,
+        "helper failures must not be retried",
+      );
       await assert.rejects(access(fieldMutationMarker));
     });
   }
+});
+
+test("pre-helper browser freshness transport failures remain conservative upstream errors", async () => {
+  await withFakeExternalInteractions(
+    "text_freshness_failure",
+    async (harnessHome) => {
+      const helperRequestMarker = join(harnessHome, "helper-requested");
+      const fieldMutationMarker = join(harnessHome, "field-mutated");
+      process.env.TEXT_MODEL_API_KEY = "synthetic-text-helper-key";
+      process.env.TEXT_MODEL_BASE_URL = "http://127.0.0.1:43115/v1";
+      process.env.TEXT_MODEL = "synthetic-text-helper-v1";
+      process.env.RLCD_TEST_HELPER_REQUEST_MARKER = helperRequestMarker;
+      process.env.RLCD_TEST_FIELD_MUTATION_MARKER = fieldMutationMarker;
+
+      const result = await registeredTool().execute(
+        "pre-helper-freshness-failure",
+        baseInput({
+          goal: "Fill Destination city with South Korea's second-largest city, then stop when marker FIELD-41 is visible.",
+        }),
+        new AbortController().signal,
+      );
+      const details = detailsOf(result);
+      const trace = arrayField(details, "trace").map((entry, index) =>
+        recordValue(entry, `trace[${index}]`),
+      );
+
+      assert.equal(stringField(details, "status"), "error");
+      assert.equal(stringField(details, "stopReason"), "upstream_error");
+      assert.equal(stringField(details, "mutationOutcome"), "not_in_flight");
+      assert.match(
+        stringField(details, "diagnostic"),
+        /transport failed during the pre-helper freshness check/i,
+      );
+      assert.equal(trace.length, 1);
+      assert.equal(stringField(trace[0]!, "operation"), "TYPE_TEXT");
+      assert.equal(stringField(trace[0]!, "outcome"), "upstream_error");
+      await assert.rejects(access(helperRequestMarker));
+      await assert.rejects(access(fieldMutationMarker));
+    },
+  );
 });
 
 test("invalid URL and limits stop before runtime preflight", async () => {
@@ -410,6 +457,27 @@ test("invalid URL and limits stop before runtime preflight", async () => {
       assert.equal(stringField(details, "stopReason"), "invalid_input");
       assert.equal(recordField(details, "ownership").bridgePid, null);
     }
+  });
+});
+
+test("pre-bridge results leave native helper capability and model unknown", async () => {
+  await withFakeExternalInteractions("click_done", async () => {
+    process.env.TEXT_MODEL_API_KEY = "synthetic-parent-helper-key";
+    process.env.TEXT_MODEL_BASE_URL = "https://helper.example.test/v1";
+    process.env.TEXT_MODEL = "synthetic-parent-helper-model";
+
+    const result = await registeredTool().execute(
+      "invalid-before-native-configuration",
+      baseInput({ url: "file:///tmp/not-browser-input" }),
+      new AbortController().signal,
+    );
+    const helperUsage = recordField(
+      recordField(detailsOf(result), "usage"),
+      "textHelper",
+    );
+
+    assert.equal(helperUsage.configured, "unknown");
+    assert.equal(helperUsage.configuredModel, "unknown");
   });
 });
 
@@ -603,22 +671,24 @@ test("incomplete or invalid helper settings never select upstream defaults or mu
   });
 });
 
-test("helper secrets are redacted from progress, results, and retained diagnostics", async () => {
+test("native workspace helper secrets are redacted before child protocol emission", async () => {
+  const helperSecret = "synthetic-text-helper-secret-ALPHA-73";
   await withFakeExternalInteractions(
     "text_secret_error",
     async (harnessHome) => {
-      const helperSecret = "synthetic-text-helper-secret-ALPHA-73";
       const typesafeSecret = process.env.TYPESAFE_API_KEY;
       assert.ok(typesafeSecret);
-      process.env.TEXT_MODEL_API_KEY = helperSecret;
-      process.env.TEXT_MODEL_BASE_URL = "http://127.0.0.1:43115/v1";
-      process.env.TEXT_MODEL = "synthetic-text-helper-v1";
+      assert.equal(process.env.TEXT_MODEL_API_KEY, undefined);
+      assert.equal(process.env.TEXT_MODEL_BASE_URL, undefined);
+      assert.equal(process.env.TEXT_MODEL, undefined);
       const updates: ToolResult[] = [];
       const argvArtifact = join(harnessHome, "bridge-argv.json");
+      const protocolArtifact = join(harnessHome, "raw-bridge-protocol.jsonl");
       process.env.RLCD_TEST_ARGV_MARKER = argvArtifact;
+      process.env.RLCD_TEST_PROTOCOL_MARKER = protocolArtifact;
 
       const result = await registeredTool().execute(
-        "redacted-helper-failure",
+        "redacted-native-helper-failure",
         baseInput({
           goal: "Fill Destination city with South Korea's second-largest city, then stop when marker FIELD-41 is visible.",
         }),
@@ -626,25 +696,42 @@ test("helper secrets are redacted from progress, results, and retained diagnosti
         (update) => updates.push(update),
       );
       const details = detailsOf(result);
+      const rawProtocol = await readFile(protocolArtifact, "utf8");
       const retainedArtifact = join(harnessHome, "retained-tool-evidence.json");
-      await writeFile(retainedArtifact, JSON.stringify({ result, updates }));
+      await writeFile(
+        retainedArtifact,
+        JSON.stringify({ result, updates, rawProtocol }),
+      );
       const retained = await readFile(retainedArtifact, "utf8");
       const bridgeArgv = await readFile(argvArtifact, "utf8");
 
-      assert.equal(stringField(details, "stopReason"), "text_helper_error");
+      assert.equal(stringField(details, "stopReason"), "upstream_error");
       assert.match(stringField(details, "diagnostic"), /\[REDACTED\]/);
-      for (const serialized of [
-        JSON.stringify(result.content),
-        JSON.stringify(result.details),
-        JSON.stringify(updates),
-        retained,
-        bridgeArgv,
-      ]) {
-        assert.doesNotMatch(serialized, new RegExp(helperSecret));
+      const progress = JSON.stringify(updates);
+      assert.match(progress, /\[REDACTED\]/);
+      for (const [surface, serialized] of [
+        ["content", JSON.stringify(result.content)],
+        ["details", JSON.stringify(result.details)],
+        ["progress", progress],
+        ["raw bridge protocol", rawProtocol],
+        ["retained artifact", retained],
+        ["bridge arguments", bridgeArgv],
+      ] as const) {
+        assert.doesNotMatch(
+          serialized,
+          new RegExp(helperSecret),
+          `${surface} exposed the child-loaded helper secret`,
+        );
         assert.doesNotMatch(serialized, new RegExp(typesafeSecret));
       }
-      assert.match(JSON.stringify(updates), /\[REDACTED\]/);
       assert.doesNotMatch(bridgeArgv, /TEXT_MODEL|synthetic|Busan|FIELD-41/);
+    },
+    {
+      nativeConfiguration:
+        `${nativeHarnessConfiguration}` +
+        `TEXT_MODEL_API_KEY=${helperSecret}\n` +
+        "TEXT_MODEL_BASE_URL=http://127.0.0.1:43115/v1\n" +
+        "TEXT_MODEL=synthetic-text-helper-v1\n",
     },
   );
 });

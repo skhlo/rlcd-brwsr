@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import signal
 import sys
 import time
@@ -37,6 +38,56 @@ class InputError(ValueError):
 
 
 _cancel_reason: str | None = None
+_known_credentials: tuple[str, ...] = ()
+
+
+def _refresh_known_credentials() -> None:
+    global _known_credentials
+    values = (
+        *_known_credentials,
+        os.environ.get("TYPESAFE_API_KEY", ""),
+        os.environ.get("TEXT_MODEL_API_KEY", ""),
+    )
+    _known_credentials = tuple(dict.fromkeys(value for value in values if value))
+
+
+def _redact_text(value: str) -> str:
+    redacted = value
+    for credential in _known_credentials:
+        redacted = redacted.replace(credential, "[REDACTED]")
+    return re.sub(
+        r"\b(?:Bearer|Authorization:)\s+[A-Za-z0-9._~+\-/=]{8,}",
+        "[REDACTED]",
+        redacted,
+        flags=re.IGNORECASE,
+    )
+
+
+def _redacted_json(value: Any) -> Any:
+    if isinstance(value, str):
+        return _redact_text(value)
+    if isinstance(value, list):
+        return [_redacted_json(item) for item in value]
+    if isinstance(value, dict):
+        return {
+            _redact_text(str(key)): _redacted_json(item)
+            for key, item in value.items()
+        }
+    return value
+
+
+class _RedactingDiagnosticStream:
+    def __init__(self, stream: Any) -> None:
+        self._stream = stream
+
+    def write(self, value: str) -> int:
+        return self._stream.write(_redact_text(value))
+
+    def flush(self) -> None:
+        self._stream.flush()
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._stream, name)
 
 
 def _handle_stop(_signum: int, _frame: object) -> None:
@@ -51,7 +102,9 @@ def _bounded_text(value: object, maximum: int) -> str:
 
 
 def _emit(record: dict[str, Any]) -> None:
-    line = json.dumps(record, ensure_ascii=False, separators=(",", ":"))
+    line = json.dumps(
+        _redacted_json(record), ensure_ascii=False, separators=(",", ":")
+    )
     if len(line) > MAX_PROTOCOL_LINE_CHARS:
         raise RuntimeError("bridge protocol record exceeded its fixed line bound")
     sys.stdout.write(line + "\n")
@@ -296,7 +349,7 @@ def _run(request: dict[str, Any], started_at: float) -> tuple[dict[str, Any], ob
     decisions: list[dict[str, Any]] = []
     agent: object | None = None
     target_id: str | None = None
-    helper_was_selected = False
+    fill_was_selected = False
     helper_calls_before = 0
     phase = "preflight"
 
@@ -323,6 +376,12 @@ def _run(request: dict[str, Any], started_at: float) -> tuple[dict[str, Any], ob
         )
 
     try:
+        # Importing Harness resolves its native workspace .env. Refresh the
+        # child-owned redactor immediately afterward, before any diagnostics or
+        # protocol records can contain those resolved credentials.
+        from browser_harness import admin
+
+        _refresh_known_credentials()
         daemon_name = resolved_local_daemon_name()
         text_helper_configuration = resolved_text_helper_configuration()
         text_helper_configured = text_helper_configuration.configured
@@ -338,7 +397,6 @@ def _run(request: dict[str, Any], started_at: float) -> tuple[dict[str, Any], ob
 
         os.environ["TYPESAFE_MODEL"] = JEV_MODEL
 
-        from browser_harness import admin
         import jev_ultrafast.browser as upstream_browser
         from jev_ultrafast import Agent
         from jev_ultrafast.browser import StalePage
@@ -438,7 +496,7 @@ def _run(request: dict[str, Any], started_at: float) -> tuple[dict[str, Any], ob
                         "or field mutation was made",
                     ), agent
 
-                helper_was_selected = (
+                fill_was_selected = (
                     action is not None and action.get("kind") == "fill"
                 )
                 current_text_calls = state.get("text_calls", [])
@@ -522,30 +580,31 @@ def _run(request: dict[str, Any], started_at: float) -> tuple[dict[str, Any], ob
         ), agent
     except Exception as error:
         current_text_calls = state.get("text_calls", []) if agent is not None else []
-        helper_failed_before_mutation = (
+        failed_before_mutation = (
             phase == "mutation"
-            and helper_was_selected
+            and fill_was_selected
             and isinstance(current_text_calls, list)
             and len(current_text_calls) == helper_calls_before
         )
-        if helper_failed_before_mutation:
-            if trace:
-                trace[-1]["outcome"] = "text_helper_error"
-            return finish(
-                "error",
-                "text_helper_error",
-                _bounded_text(error, MAX_DIAGNOSTIC_CHARS),
-            ), agent
+        stop_reason = "setup_error" if phase == "preflight" else "upstream_error"
+        if trace:
+            trace[-1]["outcome"] = stop_reason
         return finish(
             "error",
-            "setup_error" if phase == "preflight" else "upstream_error",
+            stop_reason,
             _bounded_text(error, MAX_DIAGNOSTIC_CHARS),
-            mutation_outcome="unknown" if phase == "mutation" else "not_in_flight",
+            mutation_outcome=(
+                "not_in_flight"
+                if failed_before_mutation or phase != "mutation"
+                else "unknown"
+            ),
         ), agent
 
 
 def main() -> int:
     started_at = time.perf_counter()
+    _refresh_known_credentials()
+    sys.stderr = _RedactingDiagnosticStream(sys.stderr)
     signal.signal(signal.SIGTERM, _handle_stop)
     signal.signal(signal.SIGINT, _handle_stop)
     agent: object | None = None
@@ -614,6 +673,7 @@ def main() -> int:
                 MAX_DIAGNOSTIC_CHARS,
             )
     result["cleanup"] = cleanup
+    result = _redacted_json(result)
     _fit_terminal_result(result)
     _emit({"type": "result", "result": result})
     return 0

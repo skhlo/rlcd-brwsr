@@ -1,7 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { access, constants } from "node:fs/promises";
-import { isIP } from "node:net";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -93,8 +92,8 @@ interface Usage {
     providerCost: Measurement;
   };
   textHelper: {
-    configured: boolean;
-    configuredModel: string | null;
+    configured: boolean | "unknown";
+    configuredModel: string | null | "unknown";
     calls: ModelMeasurement[];
     callsTruncated?: boolean;
     providerHttpAttempts: Measurement;
@@ -168,45 +167,6 @@ function boundedText(value: string, maximum: number): string {
   return value.length <= maximum ? value : value.slice(0, maximum);
 }
 
-function localHttpHelperHost(hostname: string): boolean {
-  const address = hostname.replace(/^\[|\]$/g, "");
-  if (address === "localhost" || address === "::1") return true;
-  return isIP(address) === 4 && address.startsWith("127.");
-}
-
-function configuredTextHelper(): {
-  configured: boolean;
-  configuredModel: string | null;
-} {
-  const key = process.env.TEXT_MODEL_API_KEY;
-  const baseUrl = process.env.TEXT_MODEL_BASE_URL;
-  const model = process.env.TEXT_MODEL;
-  if (![key, baseUrl, model].every((value) => value?.trim())) {
-    return { configured: false, configuredModel: null };
-  }
-  if ([key, baseUrl, model].some((value) => value !== value?.trim())) {
-    return { configured: false, configuredModel: null };
-  }
-  try {
-    const parsed = new URL(baseUrl as string);
-    const allowedTransport =
-      parsed.protocol === "https:" ||
-      (parsed.protocol === "http:" && localHttpHelperHost(parsed.hostname));
-    if (
-      !allowedTransport ||
-      parsed.username ||
-      parsed.password ||
-      parsed.search ||
-      parsed.hash
-    ) {
-      return { configured: false, configuredModel: null };
-    }
-  } catch {
-    return { configured: false, configuredModel: null };
-  }
-  return { configured: true, configuredModel: model as string };
-}
-
 function validateInput(value: RlcdRunInput): string | undefined {
   if (typeof value.url !== "string" || !value.url.trim()) {
     return "url must be a non-empty absolute HTTP(S) URL";
@@ -261,7 +221,6 @@ function basicResult(
   daemon: string | null,
   status: RlcdRunResult["status"] = "error",
 ): RlcdRunResult {
-  const textHelper = configuredTextHelper();
   return {
     status,
     stopReason,
@@ -280,8 +239,8 @@ function basicResult(
         providerCost: "unavailable",
       },
       textHelper: {
-        configured: textHelper.configured,
-        configuredModel: textHelper.configuredModel,
+        configured: "unknown",
+        configuredModel: "unknown",
         calls: [],
         providerHttpAttempts: "unavailable",
         providerCost: "unavailable",
