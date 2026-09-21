@@ -24,14 +24,35 @@ Chrome, unrelated tabs, and pre-existing Paseo terminal were not touched.
 The initial browser mismatch was not evidence that either old profile exposed a
 usable endpoint: the user toggled the old Chrome DevTools CLI pipe instance, and
 neither old profile had a WebSocket endpoint. The approved resolution was the
-new isolated profile and explicit loopback endpoint. Provision, preflight, and
-run now verify that endpoint rather than silently selecting personal/default
-Chrome.
+new isolated profile and explicit loopback endpoint.
 
-Offline correction regressions cover cloud and mismatched same-name daemons,
-correct local reuse despite inherited Browser Harness selectors, a WAIT-heavy
-stream beyond the former 128-record stop, and missing-runtime preflight without
-`uv` execution. `pnpm check`, executable real-host preflight, and `uv lock
---check` passed; the uv lock hash remained unchanged. Larger TUI, session,
-Chrome-history, CDP, and resource-census evidence remains gitignored under
-`artifacts/issue-10/`.
+The first correction then added wrapper-owned `RLCD_BRWSR_DAEMON` and
+`RLCD_BRWSR_CDP_URL` settings plus an independent live target-identity check. A
+later user-approved design decision superseded that contract. Browser Harness
+now owns browser selection through `BU_NAME` and native connection resolution.
+The wrapper validates local-only resolved settings and requires the named
+existing daemon at run time, but intentionally no longer proves that a
+same-named local daemon reflects a changed endpoint. The operator must
+explicitly stop/restart and reprovision Harness after changing its browser
+configuration.
+
+Current offline regressions let the real upstream import-time workspace `.env`
+loader resolve synthetic native settings through executable setup, executable
+preflight, and the registered Pi tool. They cover valid local configuration and
+remote/cloud rejection before setup starts a daemon or a run starts browser
+work. The prior result bounds, privacy, cleanup, WAIT-heavy stream, and
+missing-runtime-without-uv coverage remain.
+
+The native-configuration acceptance rerun loaded `BU_NAME=rlcd-brwsr` and the
+loopback endpoint from Browser Harness's default trusted workspace `.env`; the
+Pi terminal explicitly removed browser selectors from its shell first. The
+actual Pi TUI returned `completion_claim`/`done_claim` after `CLICK` then `DONE`
+through the real bridge, pinned Agent, Harness, and isolated Chrome. Only model
+HTTP was replaced by the deterministic responder. The task tab closed, bridge
+was reaped, shared daemon remained, and before/after target sets were identical.
+A separate direct-CDP observer saw the destination title and `ORBIT-27`, closed
+its own target, and isolated Chrome history recorded a new start/destination
+pair at the tool-run timestamp. The task fixture and two task-owned Paseo
+terminals were stopped; the approved isolated Chrome and named daemon remain.
+Raw TUI, session, history, CDP, and resource-census evidence is gitignored under
+`artifacts/issue-10/native-config-acceptance-20260921T024540Z/`.

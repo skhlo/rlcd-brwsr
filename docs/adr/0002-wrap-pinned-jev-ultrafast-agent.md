@@ -12,9 +12,28 @@ budgets, cancellation, bounded JSONL progress/results, and run-owned cleanup.
 The bridge uses upstream's prediction/action/state integration seam at that
 exact revision to report progress and enforce wrapper budgets. This seam is not
 a stable upstream API, so pin updates require explicit compatibility tests.
-Upstream's browser startup hook is narrowly rebound to Browser Harness's
-`require_existing_daemon()` check for one explicitly configured named daemon.
-The wrapper never falls back to automatic discovery or startup.
+Upstream's browser startup hook is narrowly rebound directly to Browser
+Harness's native `require_existing_daemon()` check. The wrapper never falls back
+to automatic discovery or startup during a run.
+
+## Browser configuration ownership amendment
+
+Issue #10 initially implemented a stronger wrapper-owned connection contract:
+`RLCD_BRWSR_DAEMON` and `RLCD_BRWSR_CDP_URL` overrode Browser Harness settings,
+and the wrapper compared endpoint and daemon target identifiers. The user's
+later approved simplification supersedes that part of this ADR.
+
+Browser Harness now solely owns connection configuration and resolution through
+`BU_NAME` and its native settings, including workspace `.env` loading. The
+wrapper no longer parses, aliases, clears, reapplies, mirrors, or independently
+reconciles browser selectors. It retains a small local-only check after native
+resolution, explicit provisioning, and existing-daemon-only preflight/runtime.
+Cloud/remote resolved settings are rejected rather than overridden.
+
+This intentionally removes the independent same-browser target identity
+guarantee. Because Harness consumes connection settings at daemon startup, an
+operator changing them must explicitly stop/restart and reprovision Harness; the
+wrapper does not detect a same-named local daemon still using older settings.
 
 ## Why this changes ADR-0001
 
@@ -40,10 +59,11 @@ capability; Chrome DevTools CLI is not a fallback.
   dependencies with a reproducible lock and explicit setup.
 - Extension loading remains inert. Runtime or browser setup never happens as a
   side effect of registration.
-- One named, already-running Browser Harness daemon connects to the explicitly
-  selected loopback CDP endpoint. Provision, preflight, and run compare live
-  target metadata so a same-named cloud or differently bound daemon fails
-  closed. Runs preserve the selected Chrome, daemon, and unrelated tabs.
+- One natively configured named Browser Harness daemon is explicitly
+  provisioned, then required to be already running for preflight and tool runs.
+  Native local discovery or a loopback HTTP CDP endpoint is supported; resolved
+  cloud/remote settings and live cloud daemons fail closed. Runs preserve the
+  selected Chrome, daemon, and unrelated tabs.
 - The Pi tool remains one deep interface and is sequential only within Pi.
 - The optional upstream text helper remains upstream-owned and is not replaced
   by custom extraction or the main Pi model.

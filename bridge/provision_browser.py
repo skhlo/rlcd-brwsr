@@ -1,24 +1,25 @@
 #!/usr/bin/env python3
-"""Explicitly provision one daemon for the operator-selected loopback Chrome."""
+"""Explicitly provision the Browser Harness daemon from its native settings."""
 
-import os
-
-from runtime_support import (
-    configure_selected_browser_environment,
-    require_selected_browser_binding,
-)
+from runtime_support import require_existing_local_daemon, resolved_local_daemon_name
 
 
 def main() -> int:
-    daemon = os.environ.get("RLCD_BRWSR_DAEMON", "").strip()
-    if not daemon:
-        raise RuntimeError("RLCD_BRWSR_DAEMON must name the daemon to provision")
-    endpoint = configure_selected_browser_environment()
+    daemon_name = resolved_local_daemon_name()
 
     from browser_harness import admin
 
-    admin.ensure_daemon(name=daemon, env={"BU_CDP_URL": endpoint})
-    require_selected_browser_binding(daemon, endpoint)
+    if admin.daemon_alive():
+        kind = admin.daemon_browser_kind()
+        if kind not in {"local", "cdp"}:
+            label = kind if kind is not None else "unknown"
+            raise RuntimeError(
+                f"existing daemon {daemon_name!r} uses unsupported "
+                f"{label!r} browser mode; stop it before provisioning local configuration"
+            )
+    admin.ensure_daemon()
+    kind = require_existing_local_daemon(daemon_name)
+    print(f"Browser Harness daemon {daemon_name!r} is ready in {kind!r} mode.")
     return 0
 
 

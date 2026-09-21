@@ -1,7 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { access, constants } from "node:fs/promises";
-import { isIP } from "node:net";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -159,45 +158,6 @@ function loadRuntimeConfig(): { jevModel: string } {
     throw new Error("Runtime configuration must define a non-empty jevModel");
   }
   return { jevModel: value.jevModel };
-}
-
-function selectedCdpEndpoint():
-  { endpoint: string; error?: never } | { endpoint?: never; error: string } {
-  const raw = process.env.RLCD_BRWSR_CDP_URL?.trim();
-  if (!raw) {
-    return {
-      error:
-        "Set RLCD_BRWSR_CDP_URL to the explicitly selected loopback HTTP CDP endpoint",
-    };
-  }
-  let parsed: URL;
-  try {
-    parsed = new URL(raw);
-  } catch {
-    return {
-      error:
-        "RLCD_BRWSR_CDP_URL must be the explicitly selected loopback HTTP CDP endpoint",
-    };
-  }
-  const hostname = parsed.hostname.replace(/^\[|\]$/g, "");
-  const loopback =
-    (isIP(hostname) === 4 && hostname.startsWith("127.")) || hostname === "::1";
-  if (
-    parsed.protocol !== "http:" ||
-    !loopback ||
-    !parsed.port ||
-    parsed.username ||
-    parsed.password ||
-    !["", "/"].includes(parsed.pathname) ||
-    parsed.search ||
-    parsed.hash
-  ) {
-    return {
-      error:
-        "RLCD_BRWSR_CDP_URL must be the explicitly selected loopback HTTP CDP endpoint",
-    };
-  }
-  return { endpoint: raw.replace(/\/$/, "") };
 }
 
 function boundedText(value: string, maximum: number): string {
@@ -714,7 +674,7 @@ async function waitForBridge(
   signal: AbortSignal | undefined,
   onUpdate: ((result: ToolResult) => void) | undefined,
   startedAt: number,
-  daemon: string,
+  daemon: string | null,
 ): Promise<RlcdRunResult> {
   const credentials = knownCredentials();
   let stdoutBuffer = "";
@@ -901,7 +861,7 @@ async function runRegisteredTool(
 ): Promise<ToolResult> {
   const startedAt = Date.now();
   const maxSeconds = params.maxSeconds ?? DEFAULT_MAX_SECONDS;
-  const daemon = process.env.RLCD_BRWSR_DAEMON?.trim() || null;
+  const daemon = null;
   const inputError = validateInput(params);
   if (inputError) {
     return asToolResult(
@@ -923,29 +883,6 @@ async function runRegisteredTool(
         maxSeconds,
         daemon,
         "stopped",
-      ),
-    );
-  }
-  if (!daemon) {
-    return asToolResult(
-      basicResult(
-        "setup_error",
-        "Set RLCD_BRWSR_DAEMON to the exact provisioned Browser Harness daemon name",
-        Date.now() - startedAt,
-        maxSeconds,
-        null,
-      ),
-    );
-  }
-  const selectedEndpoint = selectedCdpEndpoint();
-  if (selectedEndpoint.error) {
-    return asToolResult(
-      basicResult(
-        "setup_error",
-        selectedEndpoint.error,
-        Date.now() - startedAt,
-        maxSeconds,
-        daemon,
       ),
     );
   }
@@ -983,14 +920,8 @@ async function runRegisteredTool(
   };
   const childEnvironment: NodeJS.ProcessEnv = {
     ...process.env,
-    BU_CDP_URL: selectedEndpoint.endpoint,
-    BU_NAME: daemon,
-    RLCD_BRWSR_CDP_URL: selectedEndpoint.endpoint,
-    RLCD_BRWSR_DAEMON: daemon,
     TYPESAFE_MODEL: runtimeConfig.jevModel,
   };
-  delete childEnvironment.BU_BROWSER_ID;
-  delete childEnvironment.BU_CDP_WS;
   const child = spawn(pythonExecutable, [bridgeExecutable], {
     cwd: projectRoot,
     env: childEnvironment,
@@ -1007,7 +938,7 @@ export default function rlcdBrwsrExtension(pi: ExtensionAPI): void {
   pi.registerTool({
     name: "rlcd_brwsr_run",
     label: "RLCD Browser",
-    description: `Run one bounded Jev Ultrafast browser task in an owned tab. Defaults: ${DEFAULT_MAX_ACTIONS} executed actions and ${DEFAULT_MAX_SECONDS} seconds; maxima: ${MAX_ACTIONS} actions and ${MAX_SECONDS} seconds. The tool requires an exact configured existing Browser Harness daemon, preserves the shared daemon and unrelated tabs, and returns a completion claim that requires independent verification. Output is bounded to ${MAX_TOOL_CONTENT_CHARS} model-visible characters.`,
+    description: `Run one bounded Jev Ultrafast browser task in an owned tab. Defaults: ${DEFAULT_MAX_ACTIONS} executed actions and ${DEFAULT_MAX_SECONDS} seconds; maxima: ${MAX_ACTIONS} actions and ${MAX_SECONDS} seconds. Browser Harness natively selects the required existing local daemon, which the tool preserves along with unrelated tabs. A completion claim requires independent verification. Output is bounded to ${MAX_TOOL_CONTENT_CHARS} model-visible characters.`,
     promptSnippet:
       "Delegate one already-authorized benign browser task to the bounded Jev Ultrafast loop",
     promptGuidelines: [

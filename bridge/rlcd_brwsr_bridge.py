@@ -13,8 +13,8 @@ from urllib.parse import urlsplit
 
 from runtime_support import (
     JEV_MODEL,
-    configure_selected_browser_environment,
-    require_selected_browser_binding,
+    require_existing_local_daemon,
+    resolved_local_daemon_name,
 )
 
 PROTOCOL_VERSION = 1
@@ -280,8 +280,8 @@ def _terminal(
 
 
 def _run(request: dict[str, Any], started_at: float) -> tuple[dict[str, Any], object | None]:
-    daemon_name = os.environ.get("RLCD_BRWSR_DAEMON", "").strip()
-    text_helper_configured = bool(os.environ.get("TEXT_MODEL_API_KEY", "").strip())
+    daemon_name: str | None = None
+    text_helper_configured = False
     trace: list[dict[str, Any]] = []
     decisions: list[dict[str, Any]] = []
     agent: object | None = None
@@ -300,7 +300,7 @@ def _run(request: dict[str, Any], started_at: float) -> tuple[dict[str, Any], ob
             started_at=started_at,
             max_seconds=request["maxSeconds"],
             text_helper_configured=text_helper_configured,
-            daemon_name=daemon_name or None,
+            daemon_name=daemon_name,
             agent=agent,
             target_id=target_id,
             trace=trace,
@@ -310,12 +310,10 @@ def _run(request: dict[str, Any], started_at: float) -> tuple[dict[str, Any], ob
         )
 
     try:
-        if not daemon_name:
-            return finish(
-                "error",
-                "setup_error",
-                "RLCD_BRWSR_DAEMON must name the explicitly provisioned Browser Harness daemon",
-            ), agent
+        daemon_name = resolved_local_daemon_name()
+        text_helper_configured = bool(
+            os.environ.get("TEXT_MODEL_API_KEY", "").strip()
+        )
         if not os.environ.get("TYPESAFE_API_KEY", "").strip():
             return finish(
                 "error",
@@ -323,20 +321,15 @@ def _run(request: dict[str, Any], started_at: float) -> tuple[dict[str, Any], ob
                 "TYPESAFE_API_KEY is not configured; no browser or model work started",
             ), agent
 
-        selected_endpoint = configure_selected_browser_environment()
         os.environ["TYPESAFE_MODEL"] = JEV_MODEL
-        os.environ["BU_NAME"] = daemon_name
 
+        from browser_harness import admin
         import jev_ultrafast.browser as upstream_browser
         from jev_ultrafast import Agent
         from jev_ultrafast.browser import StalePage
 
-        require_selected_browser_binding(daemon_name, selected_endpoint)
-
-        def require_selected_daemon() -> None:
-            require_selected_browser_binding(daemon_name, selected_endpoint)
-
-        upstream_browser.ensure_daemon = require_selected_daemon
+        require_existing_local_daemon(daemon_name)
+        upstream_browser.ensure_daemon = admin.require_existing_daemon
         _emit(
             {
                 "type": "ready",
@@ -516,7 +509,7 @@ def main() -> int:
             started_at=started_at,
             max_seconds=1,
             text_helper_configured=False,
-            daemon_name=os.environ.get("RLCD_BRWSR_DAEMON"),
+            daemon_name=None,
             agent=agent,
             target_id=None,
             trace=[],
@@ -529,7 +522,7 @@ def main() -> int:
             started_at=started_at,
             max_seconds=1,
             text_helper_configured=False,
-            daemon_name=os.environ.get("RLCD_BRWSR_DAEMON"),
+            daemon_name=None,
             agent=None,
             target_id=None,
             trace=[],
@@ -543,7 +536,7 @@ def main() -> int:
             started_at=started_at,
             max_seconds=1,
             text_helper_configured=False,
-            daemon_name=os.environ.get("RLCD_BRWSR_DAEMON"),
+            daemon_name=None,
             agent=agent,
             target_id=None,
             trace=[],

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Read-only compatibility and exact-daemon preflight for RLCD-brwsr."""
+"""Read-only compatibility and existing-daemon preflight for RLCD-brwsr."""
 
 import importlib.metadata
 import json
@@ -8,8 +8,8 @@ import sys
 
 from runtime_support import (
     JEV_MODEL,
-    configure_selected_browser_environment,
-    require_selected_browser_binding,
+    require_existing_local_daemon,
+    resolved_local_daemon_name,
 )
 
 JEV_COMMIT = "1231850a0bf1a0c0341fe408ef1668dbbfdfac46"
@@ -17,27 +17,28 @@ BROWSER_HARNESS_VERSION = "0.1.13"
 
 
 def main() -> int:
-    daemon = os.environ.get("RLCD_BRWSR_DAEMON", "").strip()
-    selected_endpoint: str | None = None
     checks: dict[str, object] = {
         "python": f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
         "jevCommit": JEV_COMMIT,
         "browserHarnessVersion": BROWSER_HARNESS_VERSION,
         "jevModel": JEV_MODEL,
-        "daemon": daemon or None,
-        "selectedCdpUrl": None,
-        "typesafeConfigured": bool(os.environ.get("TYPESAFE_API_KEY", "").strip()),
-        "textHelperConfigured": bool(os.environ.get("TEXT_MODEL_API_KEY", "").strip()),
+        "daemon": None,
+        "browserMode": None,
+        "typesafeConfigured": False,
+        "textHelperConfigured": False,
     }
     try:
         if sys.version_info[:2] != (3, 12):
             raise RuntimeError("the project runtime must use Python 3.12")
-        if not daemon:
-            raise RuntimeError(
-                "RLCD_BRWSR_DAEMON must name the explicitly provisioned Browser Harness daemon"
-            )
-        selected_endpoint = configure_selected_browser_environment()
-        checks["selectedCdpUrl"] = selected_endpoint
+
+        daemon_name = resolved_local_daemon_name()
+        checks["daemon"] = daemon_name
+        checks["typesafeConfigured"] = bool(
+            os.environ.get("TYPESAFE_API_KEY", "").strip()
+        )
+        checks["textHelperConfigured"] = bool(
+            os.environ.get("TEXT_MODEL_API_KEY", "").strip()
+        )
         if not checks["typesafeConfigured"]:
             raise RuntimeError("TYPESAFE_API_KEY is not configured")
 
@@ -55,7 +56,6 @@ def main() -> int:
                 f"expected {BROWSER_HARNESS_VERSION}, got {installed_harness}"
             )
 
-        os.environ["BU_NAME"] = daemon
         from jev_ultrafast import Agent, Browser
 
         for owner, attribute in (
@@ -67,7 +67,7 @@ def main() -> int:
                 raise RuntimeError(
                     f"pinned upstream compatibility seam is missing {owner.__name__}.{attribute}"
                 )
-        require_selected_browser_binding(daemon, selected_endpoint)
+        checks["browserMode"] = require_existing_local_daemon(daemon_name)
     except Exception as error:
         print(json.dumps({"ok": False, "checks": checks, "error": str(error)}))
         return 1

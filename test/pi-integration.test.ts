@@ -37,7 +37,9 @@ interface RegisteredTool {
 const execFileAsync = promisify(execFile);
 const repositoryRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const fakePythonPath = join(repositoryRoot, "test", "python");
-const selectedCdpUrl = "http://127.0.0.1:43114";
+const nativeDaemonName = "rlcd-brwsr-test";
+const nativeCdpUrl = "http://127.0.0.1:43114";
+const nativeHarnessConfiguration = `BU_NAME=${nativeDaemonName}\nBU_CDP_URL=${nativeCdpUrl}\n`;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -108,43 +110,66 @@ function registeredTool(): RegisteredTool {
   return registered;
 }
 
+interface FakeExternalOptions {
+  nativeConfiguration?: string;
+  browserWorkMarker?: string;
+  daemonStartMarker?: string;
+}
+
 async function withFakeExternalInteractions<T>(
   scenario: string,
-  run: () => Promise<T>,
+  run: (harnessHome: string) => Promise<T>,
+  options: FakeExternalOptions = {},
 ): Promise<T> {
+  const harnessHome = await mkdtemp(join(tmpdir(), "rlcd-harness-"));
+  const workspace = join(harnessHome, "agent-workspace");
+  await mkdir(workspace);
+  await writeFile(
+    join(workspace, ".env"),
+    options.nativeConfiguration ?? nativeHarnessConfiguration,
+  );
+
   const keys = [
+    "BH_AGENT_WORKSPACE",
+    "BH_HOME",
+    "BROWSER_HARNESS_HOME",
+    "BU_AUTOSPAWN",
     "BU_BROWSER_ID",
     "BU_CDP_URL",
     "BU_CDP_WS",
+    "BU_NAME",
     "PYTHONPATH",
-    "RLCD_BRWSR_CDP_URL",
-    "RLCD_BRWSR_DAEMON",
+    "RLCD_TEST_BROWSER_WORK_MARKER",
+    "RLCD_TEST_DAEMON_START_MARKER",
     "RLCD_TEST_EXPECTED_DAEMON",
     "RLCD_TEST_SCENARIO",
     "TYPESAFE_API_KEY",
     "TEXT_MODEL_API_KEY",
   ] as const;
   const before = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+  for (const key of keys) delete process.env[key];
   Object.assign(process.env, {
-    BU_BROWSER_ID: "inherited-cloud-browser",
-    BU_CDP_URL: "https://inherited-cloud.example.test",
-    BU_CDP_WS: "wss://inherited-cloud.example.test/devtools/browser/session",
+    BH_HOME: harnessHome,
     PYTHONPATH: fakePythonPath,
-    RLCD_BRWSR_CDP_URL: selectedCdpUrl,
-    RLCD_BRWSR_DAEMON: "rlcd-brwsr-test",
-    RLCD_TEST_EXPECTED_DAEMON: "rlcd-brwsr-test",
+    RLCD_TEST_EXPECTED_DAEMON: nativeDaemonName,
     RLCD_TEST_SCENARIO: scenario,
     TYPESAFE_API_KEY: "synthetic-typesafe-key",
+    ...(options.browserWorkMarker
+      ? { RLCD_TEST_BROWSER_WORK_MARKER: options.browserWorkMarker }
+      : {}),
+    ...(options.daemonStartMarker
+      ? { RLCD_TEST_DAEMON_START_MARKER: options.daemonStartMarker }
+      : {}),
   });
-  delete process.env.TEXT_MODEL_API_KEY;
   try {
-    return await run();
+    return await run(harnessHome);
   } finally {
     for (const key of keys) {
       const value = before[key];
       if (value === undefined) delete process.env[key];
       else process.env[key] = value;
     }
+    await rm(harnessHome, { recursive: true });
   }
 }
 
@@ -173,7 +198,7 @@ async function capturedFailure(
   return failure;
 }
 
-test("registered Pi tool completes a click-only journey through the real bridge and Agent", async () => {
+test("registered Pi tool loads native Harness workspace configuration and completes a click-only journey", async () => {
   await withFakeExternalInteractions("click_done", async () => {
     const tool = registeredTool();
     assert.equal(tool.name, "rlcd_brwsr_run");
@@ -291,45 +316,45 @@ test("run rejects a cloud daemon even when its name matches", async () => {
     assert.equal(stringField(details, "stopReason"), "setup_error");
     assert.match(
       stringField(details, "diagnostic"),
-      /cloud.*selected loopback/i,
+      /cloud.*local browsers only/i,
     );
     assert.equal(recordField(details, "ownership").targetId, null);
   });
 });
 
-test("run rejects a same-named daemon bound to a different local Chrome", async () => {
-  await withFakeExternalInteractions("mismatched_daemon", async () => {
-    const result = await registeredTool().execute(
-      "mismatched-daemon",
-      baseInput(),
-      new AbortController().signal,
-    );
-    const details = detailsOf(result);
+test("registered tool rejects resolved remote Harness configuration before browser work", async () => {
+  const browserWorkMarker = join(
+    tmpdir(),
+    `rlcd-browser-work-${process.pid}-${Date.now()}`,
+  );
+  await rm(browserWorkMarker, { force: true });
+  try {
+    await withFakeExternalInteractions(
+      "click_done",
+      async () => {
+        const result = await registeredTool().execute(
+          "remote-native-configuration",
+          baseInput(),
+          new AbortController().signal,
+        );
+        const details = detailsOf(result);
 
-    assert.equal(stringField(details, "stopReason"), "setup_error");
-    assert.match(stringField(details, "diagnostic"), /binding mismatch/i);
-    assert.equal(recordField(details, "ownership").targetId, null);
-  });
-});
-
-test("run rejects a non-loopback selected browser endpoint before bridge startup", async () => {
-  await withFakeExternalInteractions("click_done", async () => {
-    process.env.RLCD_BRWSR_CDP_URL =
-      "https://cloud.example.test/devtools/browser/session";
-    const result = await registeredTool().execute(
-      "remote-selected-endpoint",
-      baseInput(),
-      new AbortController().signal,
+        assert.equal(stringField(details, "stopReason"), "setup_error");
+        assert.match(
+          stringField(details, "diagnostic"),
+          /remote\/cloud.*local browser configuration.*BU_BROWSER_ID/i,
+        );
+        assert.equal(recordField(details, "ownership").targetId, null);
+        await assert.rejects(access(browserWorkMarker));
+      },
+      {
+        nativeConfiguration: `${nativeHarnessConfiguration}BU_BROWSER_ID=synthetic-cloud-browser\n`,
+        browserWorkMarker,
+      },
     );
-    const details = detailsOf(result);
-
-    assert.equal(stringField(details, "stopReason"), "setup_error");
-    assert.match(
-      stringField(details, "diagnostic"),
-      /loopback HTTP CDP endpoint/i,
-    );
-    assert.equal(recordField(details, "ownership").bridgePid, null);
-  });
+  } finally {
+    await rm(browserWorkMarker, { force: true });
+  }
 });
 
 test("click-only use advertises missing text capability and stops before TYPE_TEXT", async () => {
@@ -560,24 +585,20 @@ test("large bounded traces still produce a terminal result through the registere
   });
 });
 
-test("executable preflight rejects a mismatched existing daemon binding", async () => {
-  const failure = await capturedFailure(
-    join(repositoryRoot, "scripts", "preflight-runtime.sh"),
-    [],
-    {
-      ...process.env,
-      BU_BROWSER_ID: "inherited-cloud-browser",
-      BU_CDP_URL: "https://inherited-cloud.example.test",
-      BU_CDP_WS: "wss://inherited-cloud.example.test/session",
-      PYTHONPATH: fakePythonPath,
-      RLCD_BRWSR_CDP_URL: selectedCdpUrl,
-      RLCD_BRWSR_DAEMON: "rlcd-brwsr-test",
-      RLCD_TEST_EXPECTED_DAEMON: "rlcd-brwsr-test",
-      RLCD_TEST_SCENARIO: "mismatched_daemon",
-      TYPESAFE_API_KEY: "synthetic-typesafe-key",
-    },
-  );
-  assert.match(stringField(failure, "stdout"), /binding mismatch/i);
+test("executable preflight loads native Harness workspace configuration", async () => {
+  await withFakeExternalInteractions("click_done", async () => {
+    const result = await execFileAsync(
+      join(repositoryRoot, "scripts", "preflight-runtime.sh"),
+      [],
+      { cwd: repositoryRoot, env: { ...process.env } },
+    );
+    const report: unknown = JSON.parse(result.stdout);
+    assert.ok(isRecord(report));
+    assert.equal(report.ok, true);
+    const checks = recordField(report, "checks");
+    assert.equal(stringField(checks, "daemon"), nativeDaemonName);
+    assert.equal(stringField(checks, "browserMode"), "cdp");
+  });
 });
 
 test("preflight never creates or syncs a missing project environment", async () => {
@@ -613,48 +634,48 @@ test("preflight never creates or syncs a missing project environment", async () 
   }
 });
 
-test("provisioning rejects remote or mismatched daemons and reuses the correct selected browser", async () => {
-  const script = join(repositoryRoot, "scripts", "provision-browser.sh");
-  const inherited = {
-    ...process.env,
-    BU_BROWSER_ID: "cloud-session",
-    BU_CDP_URL: "https://cloud.example.test",
-    BU_CDP_WS: "wss://cloud.example.test/session",
-    PYTHONPATH: fakePythonPath,
-    RLCD_BRWSR_DAEMON: "rlcd-brwsr-test",
-    RLCD_TEST_EXPECTED_DAEMON: "rlcd-brwsr-test",
-  };
+test("explicit setup provisions from native Harness workspace configuration", async () => {
+  await withFakeExternalInteractions("click_done", async (harnessHome) => {
+    const daemonStartMarker = join(harnessHome, "daemon-started");
+    process.env.RLCD_TEST_DAEMON_START_MARKER = daemonStartMarker;
+    const result = await execFileAsync(
+      join(repositoryRoot, "scripts", "provision-browser.sh"),
+      [],
+      { cwd: repositoryRoot, env: { ...process.env } },
+    );
 
-  const missingSelection = await capturedFailure(script, [], inherited);
-  assert.match(
-    stringField(missingSelection, "stderr"),
-    /RLCD_BRWSR_CDP_URL.*loopback/i,
+    assert.match(result.stdout, /Browser Harness daemon.*rlcd-brwsr-test/i);
+    assert.equal(await access(daemonStartMarker), undefined);
+  });
+});
+
+test("explicit setup rejects remote Harness configuration before daemon startup", async () => {
+  const daemonStartMarker = join(
+    tmpdir(),
+    `rlcd-daemon-start-${process.pid}-${Date.now()}`,
   );
-
-  const remoteDaemon = await capturedFailure(script, [], {
-    ...inherited,
-    RLCD_BRWSR_CDP_URL: selectedCdpUrl,
-    RLCD_TEST_SCENARIO: "remote_daemon",
-  });
-  assert.match(
-    stringField(remoteDaemon, "stderr"),
-    /cloud.*selected loopback/i,
-  );
-
-  const mismatchedDaemon = await capturedFailure(script, [], {
-    ...inherited,
-    RLCD_BRWSR_CDP_URL: selectedCdpUrl,
-    RLCD_TEST_SCENARIO: "mismatched_daemon",
-  });
-  assert.match(stringField(mismatchedDaemon, "stderr"), /binding mismatch/i);
-
-  const success = await execFileAsync(script, [], {
-    cwd: repositoryRoot,
-    env: {
-      ...inherited,
-      RLCD_BRWSR_CDP_URL: selectedCdpUrl,
-      RLCD_TEST_SCENARIO: "click_done",
-    },
-  });
-  assert.match(success.stdout, /connected to the selected local endpoint/i);
+  await rm(daemonStartMarker, { force: true });
+  try {
+    await withFakeExternalInteractions(
+      "click_done",
+      async () => {
+        const failure = await capturedFailure(
+          join(repositoryRoot, "scripts", "provision-browser.sh"),
+          [],
+          { ...process.env },
+        );
+        assert.match(
+          stringField(failure, "stderr"),
+          /remote\/cloud.*local browser configuration.*BU_CDP_WS/i,
+        );
+        await assert.rejects(access(daemonStartMarker));
+      },
+      {
+        nativeConfiguration: `BU_NAME=${nativeDaemonName}\nBU_CDP_WS=wss://synthetic-cloud.example.test/session\n`,
+        daemonStartMarker,
+      },
+    );
+  } finally {
+    await rm(daemonStartMarker, { force: true });
+  }
 });

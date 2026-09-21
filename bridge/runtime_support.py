@@ -1,16 +1,17 @@
-"""Small shared runtime contract for model and selected-browser binding."""
+"""Small shared runtime contract for model pinning and local Harness use."""
 
 from __future__ import annotations
 
 import ipaddress
 import json
 import os
-import urllib.request
+import re
 from pathlib import Path
 from urllib.parse import urlsplit
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 _CONFIG_PATH = _PROJECT_ROOT / "config" / "runtime.json"
+_DAEMON_NAME = re.compile(r"[A-Za-z0-9_-]{1,64}")
 
 
 def _load_jev_model() -> str:
@@ -27,15 +28,14 @@ def _load_jev_model() -> str:
 JEV_MODEL = _load_jev_model()
 
 
-def selected_cdp_url() -> str:
-    raw = os.environ.get("RLCD_BRWSR_CDP_URL", "").strip()
+def _validate_loopback_cdp_url(raw: str) -> None:
     try:
         parsed = urlsplit(raw)
         address = ipaddress.ip_address(parsed.hostname or "")
         port = parsed.port
     except ValueError as error:
         raise RuntimeError(
-            "RLCD_BRWSR_CDP_URL must be the explicitly selected loopback HTTP CDP endpoint"
+            "BU_CDP_URL must be a loopback HTTP endpoint for local browser configuration"
         ) from error
     if (
         parsed.scheme != "http"
@@ -48,68 +48,51 @@ def selected_cdp_url() -> str:
         or parsed.fragment
     ):
         raise RuntimeError(
-            "RLCD_BRWSR_CDP_URL must be the explicitly selected loopback HTTP CDP endpoint"
+            "BU_CDP_URL must be a loopback HTTP endpoint for local browser configuration"
         )
-    return raw.rstrip("/")
 
 
-def configure_selected_browser_environment() -> str:
-    endpoint = selected_cdp_url()
-    os.environ.pop("BU_BROWSER_ID", None)
-    os.environ.pop("BU_CDP_WS", None)
-    os.environ["BU_CDP_URL"] = endpoint
-    return endpoint
+def resolved_local_daemon_name() -> str:
+    """Load Browser Harness's native settings, then enforce this tool's local scope."""
+    from browser_harness import admin
+
+    daemon_name = admin.NAME
+    if not os.environ.get("BU_NAME", "").strip():
+        raise RuntimeError(
+            "BU_NAME must name the Browser Harness daemon in its native configuration"
+        )
+    if not isinstance(daemon_name, str) or not _DAEMON_NAME.fullmatch(daemon_name):
+        raise RuntimeError(
+            "BU_NAME must match [A-Za-z0-9_-]{1,64} in Browser Harness configuration"
+        )
+
+    unsupported = [
+        name
+        for name in ("BU_BROWSER_ID", "BU_CDP_WS", "BU_AUTOSPAWN")
+        if os.environ.get(name)
+    ]
+    if unsupported:
+        raise RuntimeError(
+            "remote/cloud settings are unsupported for local browser configuration: "
+            f"{', '.join(unsupported)}"
+        )
+
+    cdp_url = os.environ.get("BU_CDP_URL", "").strip()
+    if cdp_url:
+        _validate_loopback_cdp_url(cdp_url)
+    return daemon_name
 
 
-def _target_ids(value: object, *, key: str) -> set[str]:
-    if not isinstance(value, list):
-        return set()
-    identifiers: set[str] = set()
-    for item in value:
-        if not isinstance(item, dict):
-            continue
-        identifier = item.get(key)
-        if isinstance(identifier, str) and identifier:
-            identifiers.add(identifier)
-    return identifiers
+def require_existing_local_daemon(daemon_name: str) -> str:
+    """Require the natively selected existing daemon and reject cloud mode."""
+    from browser_harness import admin
 
-
-def require_selected_browser_binding(daemon_name: str, endpoint: str) -> None:
-    """Require the named daemon to report and share targets with the selected CDP."""
-    from browser_harness import admin, helpers
-
-    admin.require_existing_daemon(daemon_name)
-    kind = admin.daemon_browser_kind(daemon_name)
-    if kind != "cdp":
+    admin.require_existing_daemon()
+    kind = admin.daemon_browser_kind()
+    if kind not in {"local", "cdp"}:
         label = kind if kind is not None else "unknown"
         raise RuntimeError(
-            f"required daemon {daemon_name!r} uses {label!r} browser mode; "
-            "expected the explicitly selected loopback CDP endpoint"
+            f"required daemon {daemon_name!r} uses unsupported "
+            f"{label!r} browser mode; RLCD-brwsr supports local browsers only"
         )
-
-    try:
-        with urllib.request.urlopen(f"{endpoint}/json/list", timeout=3) as response:
-            selected_targets: object = json.loads(response.read())
-    except Exception as error:
-        raise RuntimeError(
-            "the explicitly selected loopback CDP endpoint is not reachable"
-        ) from error
-    selected_ids = _target_ids(selected_targets, key="id")
-
-    try:
-        daemon_targets = helpers.cdp("Target.getTargets").get("targetInfos")
-    except Exception as error:
-        raise RuntimeError(
-            f"required daemon {daemon_name!r} could not report its browser targets"
-        ) from error
-    daemon_ids = _target_ids(daemon_targets, key="targetId")
-
-    if not selected_ids or not daemon_ids:
-        raise RuntimeError(
-            "selected-browser identity could not be established because target metadata was empty"
-        )
-    if selected_ids.isdisjoint(daemon_ids):
-        raise RuntimeError(
-            f"required daemon {daemon_name!r} browser binding mismatch: "
-            "it is not attached to RLCD_BRWSR_CDP_URL"
-        )
+    return kind

@@ -4,13 +4,12 @@ The production bridge and pinned Jev Agent stay real. Tests replace only the
 Browser Harness CDP transport, exact-daemon check, and model provider response.
 """
 
-import json
 import os
 import re
 import time
-import urllib.request
+from pathlib import Path
 
-from browser_harness import admin, helpers
+from browser_harness import admin
 from jev_ultrafast import browser, model
 
 _SCENARIO = os.environ.get("RLCD_TEST_SCENARIO", "click_done")
@@ -21,12 +20,25 @@ _STATE = {
 }
 
 
+def _mark_external_work(environment_key):
+    marker = os.environ.get(environment_key)
+    if marker:
+        Path(marker).write_text("called", encoding="utf-8")
+
+
+def _resolved_daemon_name(name):
+    return name or admin.NAME
+
+
 def _require_existing_daemon(name=None):
+    resolved_name = _resolved_daemon_name(name)
     expected = os.environ.get("RLCD_TEST_EXPECTED_DAEMON", "rlcd-brwsr-test")
     if _SCENARIO == "missing_daemon":
-        raise RuntimeError(f"required daemon {name!r} is not running")
-    if name != expected:
-        raise RuntimeError(f"unexpected daemon {name!r}; expected {expected!r}")
+        raise RuntimeError(f"required daemon {resolved_name!r} is not running")
+    if resolved_name != expected:
+        raise RuntimeError(
+            f"unexpected daemon {resolved_name!r}; expected {expected!r}"
+        )
 
 
 def _daemon_browser_kind(name=None):
@@ -36,41 +48,13 @@ def _daemon_browser_kind(name=None):
 
 def _ensure_daemon(wait=None, name=None, env=None):
     del wait, env
+    _mark_external_work("RLCD_TEST_DAEMON_START_MARKER")
     _require_existing_daemon(name)
 
 
 admin.ensure_daemon = _ensure_daemon
 admin.require_existing_daemon = _require_existing_daemon
 admin.daemon_browser_kind = _daemon_browser_kind
-
-
-class _FakeHttpResponse:
-    def __init__(self, value):
-        self._body = json.dumps(value).encode()
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *_args):
-        return False
-
-    def read(self):
-        return self._body
-
-
-def _urlopen(url, timeout=None):
-    del timeout
-    if not str(url).endswith("/json/list"):
-        raise AssertionError(f"unexpected fake endpoint request: {url}")
-    target_id = (
-        "other-browser-target"
-        if _SCENARIO == "mismatched_daemon"
-        else "selected-browser-target"
-    )
-    return _FakeHttpResponse([{"id": target_id, "type": "page"}])
-
-
-urllib.request.urlopen = _urlopen
 
 
 def _page():
@@ -131,6 +115,7 @@ def _page():
 
 def _cdp(method, session_id=None, **params):
     del session_id
+    _mark_external_work("RLCD_TEST_BROWSER_WORK_MARKER")
     if method == "Target.createTarget":
         return {"targetId": "rlcd-owned-target"}
     if method == "Target.attachToTarget":
@@ -171,21 +156,6 @@ def _cdp(method, session_id=None, **params):
 
 
 browser.cdp = _cdp
-
-
-def _daemon_cdp(method, session_id=None, **params):
-    del session_id, params
-    if method != "Target.getTargets":
-        raise AssertionError(f"unexpected daemon identity CDP method: {method}")
-    target_id = (
-        "daemon-browser-target"
-        if _SCENARIO == "mismatched_daemon"
-        else "selected-browser-target"
-    )
-    return {"targetInfos": [{"targetId": target_id, "type": "page"}]}
-
-
-helpers.cdp = _daemon_cdp
 
 
 def _choice(criteria, selected):

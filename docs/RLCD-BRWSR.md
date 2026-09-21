@@ -51,7 +51,7 @@ requested outcome independently.
 
 ```text
 Pi calls rlcd_brwsr_run(url, goal, budgets)
-  -> TypeScript validates input and preflight configuration
+  -> TypeScript validates input and project-local runtime availability
   -> TypeScript starts one project-local Python bridge with fixed argv
   -> bridge requires the configured existing Browser Harness daemon
   -> bridge constructs the pinned upstream Agent
@@ -83,22 +83,35 @@ Extension loading is inert apart from registering the tool. It does not install
 software, start a bridge or daemon, navigate Chrome, request browser permission,
 or call a model.
 
-Setup explicitly provisions the named `rlcd-brwsr` Browser Harness daemon
-connected to the operator-selected local Chrome. `scripts/setup-runtime.sh`
-runs the frozen uv sync, `scripts/provision-browser.sh` performs the separately
-requested daemon setup, and `scripts/preflight-runtime.sh` checks pins,
-configuration, the version-pinned integration seam, and that exact existing
-daemon without starting or repairing one. Chrome permission remains a human
-step. At run time `RLCD_BRWSR_DAEMON` selects the exact configured daemon and
-`RLCD_BRWSR_CDP_URL` selects the approved loopback HTTP endpoint. Provision,
-preflight, and each run reject cloud/local-discovery daemon modes and establish
-that the named daemon and endpoint expose the same browser target. Inherited
-Browser Harness cloud or CDP selectors are removed before the pinned runtime is
-loaded. The bridge narrowly replaces upstream's automatic `ensure_daemon()`
-hook with this existing-daemon and selected-browser check. Failure returns an
-actionable setup error; the wrapper must not discover a different browser,
-start another Chrome, or automate a permission flow. Preflight invokes only the
-existing `.venv/bin/python`; it never creates or synchronizes the environment.
+Browser Harness is the single authoritative owner of browser connection
+configuration. It resolves `BU_NAME` and its native connection settings itself,
+including its normal workspace `.env` loading. The wrapper has no browser
+aliases, dotenv parser, selector precedence, endpoint mirror, or target-set
+binding comparison. RLCD-brwsr applies only its local safety envelope after
+Harness resolution: native local discovery and a loopback HTTP `BU_CDP_URL` are
+supported, while resolved `BU_BROWSER_ID`, `BU_CDP_WS`, `BU_AUTOSPAWN`, a
+non-loopback CDP URL, or a live cloud daemon are rejected rather than silently
+overridden.
+
+`scripts/setup-runtime.sh` runs the frozen uv sync.
+`scripts/provision-browser.sh` is the separately requested setup action that may
+call Browser Harness's native `ensure_daemon()` after the resolved configuration
+passes local validation. `scripts/preflight-runtime.sh` checks pins,
+configuration, the version-pinned integration seam, and the configured existing
+named daemon without starting or repairing one. At run time the bridge requires
+that existing daemon and directly substitutes Browser Harness's native
+`require_existing_daemon()` for the upstream Agent's automatic startup hook. A
+run never invokes daemon recovery, selects another browser, starts Chrome, or
+automates a permission flow. Preflight invokes only the existing
+`.venv/bin/python`; it never creates or synchronizes the environment.
+
+Browser Harness consumes connection settings when its daemon starts. The
+wrapper does not independently detect or reconcile a same-named local daemon
+left running after those settings change. The operator must stop/restart Harness
+using the old native configuration, update that configuration, and explicitly
+provision again. This intentionally replaces the earlier stronger wrapper
+contract that independently compared an `RLCD_BRWSR_CDP_URL` endpoint with live
+daemon target identifiers.
 
 Each upstream `Agent` creates one task tab and reports its target identifier as
 soon as available. A normal first-slice run closes that tab and reaps its bridge.
@@ -208,8 +221,11 @@ incidental call order.
 
 The first slice covers inert loading, invalid input, explicit preflight,
 click-only completion, basic action/time/cancellation bounds, missing text-helper
-handoff, bounded/redacted failure output, and owned-resource cleanup. One cheap
-guard is proven red before implementation.
+handoff, bounded/redacted failure output, and owned-resource cleanup. Focused
+regressions cross the executable setup, executable preflight, and registered-tool
+seams while letting real Browser Harness import-time workspace `.env` loading
+resolve synthetic local and conflicting cloud settings. One cheap guard is
+proven red before implementation.
 
 Acceptance also uses a fresh actual Pi TUI controlled through Paseo CLI, the
 named Browser Harness daemon, the loopback fixture, and the honestly labelled
@@ -236,7 +252,12 @@ Those results do not establish a general limitation of Jev.
 
 Issue #9 and ADR-0002 supersede the runtime decision: the pinned upstream Agent
 is now the implementation, and Browser Harness is its only browser execution
-path. Historical custom-loop code, tests, reports, and raw observations remain
+path. The issue #10 implementation initially added wrapper-specific
+`RLCD_BRWSR_DAEMON`/`RLCD_BRWSR_CDP_URL` settings and a live target-identity
+binding check. A later user-approved simplification supersedes that connection
+contract: Browser Harness now owns native resolution, while the wrapper retains
+only local-mode validation and existing-daemon-only runtime behavior. Historical
+custom-loop code, tests, reports, and raw observations remain
 in open PR #8 at `5dafb11` and in the sibling experiment history through
 `6df4b4b0f8b17420f9c9bc0a8176072312ec6de3`. They are references, not a branch
 to merge and not results from this wrapper.
