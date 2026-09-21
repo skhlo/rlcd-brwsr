@@ -4,11 +4,13 @@ The production bridge and pinned Jev Agent stay real. Tests replace only the
 Browser Harness CDP transport, exact-daemon check, and model provider response.
 """
 
+import json
 import os
 import re
 import time
+import urllib.request
 
-from browser_harness import admin
+from browser_harness import admin, helpers
 from jev_ultrafast import browser, model
 
 _SCENARIO = os.environ.get("RLCD_TEST_SCENARIO", "click_done")
@@ -16,7 +18,6 @@ _STATE = {
     "url": "about:blank",
     "destination": False,
     "clicks": 0,
-    "closed": False,
 }
 
 
@@ -28,7 +29,48 @@ def _require_existing_daemon(name=None):
         raise RuntimeError(f"unexpected daemon {name!r}; expected {expected!r}")
 
 
+def _daemon_browser_kind(name=None):
+    _require_existing_daemon(name)
+    return "cloud" if _SCENARIO == "remote_daemon" else "cdp"
+
+
+def _ensure_daemon(wait=None, name=None, env=None):
+    del wait, env
+    _require_existing_daemon(name)
+
+
+admin.ensure_daemon = _ensure_daemon
 admin.require_existing_daemon = _require_existing_daemon
+admin.daemon_browser_kind = _daemon_browser_kind
+
+
+class _FakeHttpResponse:
+    def __init__(self, value):
+        self._body = json.dumps(value).encode()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return False
+
+    def read(self):
+        return self._body
+
+
+def _urlopen(url, timeout=None):
+    del timeout
+    if not str(url).endswith("/json/list"):
+        raise AssertionError(f"unexpected fake endpoint request: {url}")
+    target_id = (
+        "other-browser-target"
+        if _SCENARIO == "mismatched_daemon"
+        else "selected-browser-target"
+    )
+    return _FakeHttpResponse([{"id": target_id, "type": "page"}])
+
+
+urllib.request.urlopen = _urlopen
 
 
 def _page():
@@ -94,7 +136,6 @@ def _cdp(method, session_id=None, **params):
     if method == "Target.attachToTarget":
         return {"sessionId": "rlcd-owned-session"}
     if method == "Target.closeTarget":
-        _STATE["closed"] = True
         return {"success": True}
     if method == "Page.navigate":
         _STATE["url"] = params["url"]
@@ -132,6 +173,21 @@ def _cdp(method, session_id=None, **params):
 browser.cdp = _cdp
 
 
+def _daemon_cdp(method, session_id=None, **params):
+    del session_id, params
+    if method != "Target.getTargets":
+        raise AssertionError(f"unexpected daemon identity CDP method: {method}")
+    target_id = (
+        "daemon-browser-target"
+        if _SCENARIO == "mismatched_daemon"
+        else "selected-browser-target"
+    )
+    return {"targetInfos": [{"targetId": target_id, "type": "page"}]}
+
+
+helpers.cdp = _daemon_cdp
+
+
 def _choice(criteria, selected):
     return {
         "choice": selected,
@@ -141,6 +197,8 @@ def _choice(criteria, selected):
 
 
 def _post_json(_url, key, body):
+    if os.environ.get("TYPESAFE_MODEL") != "jev-1.13.0":
+        raise RuntimeError("the wrapper did not select the pinned Jev model")
     if _SCENARIO == "provider_secret_error":
         raise RuntimeError(f"provider rejected synthetic credential {key}")
     if _SCENARIO in {"slow_model", "cancel_model"}:
@@ -154,6 +212,8 @@ def _post_json(_url, key, body):
         operation = "BLOCKED"
     elif _SCENARIO in {"always_click", "large_trace"}:
         operation = "CLICK"
+    elif _SCENARIO == "wait_heavy":
+        operation = "WAIT"
     else:
         operation = "DONE" if _STATE["destination"] else "CLICK"
 

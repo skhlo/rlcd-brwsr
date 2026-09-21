@@ -89,11 +89,16 @@ runs the frozen uv sync, `scripts/provision-browser.sh` performs the separately
 requested daemon setup, and `scripts/preflight-runtime.sh` checks pins,
 configuration, the version-pinned integration seam, and that exact existing
 daemon without starting or repairing one. Chrome permission remains a human
-step. At run time `RLCD_BRWSR_DAEMON` selects the exact configured daemon. The
-bridge narrowly replaces upstream's automatic `ensure_daemon()` hook with
-Browser Harness's version-pinned `require_existing_daemon()` check. Failure
-returns an actionable setup error; the wrapper must not discover a different
-browser, start another Chrome, or automate a permission flow.
+step. At run time `RLCD_BRWSR_DAEMON` selects the exact configured daemon and
+`RLCD_BRWSR_CDP_URL` selects the approved loopback HTTP endpoint. Provision,
+preflight, and each run reject cloud/local-discovery daemon modes and establish
+that the named daemon and endpoint expose the same browser target. Inherited
+Browser Harness cloud or CDP selectors are removed before the pinned runtime is
+loaded. The bridge narrowly replaces upstream's automatic `ensure_daemon()`
+hook with this existing-daemon and selected-browser check. Failure returns an
+actionable setup error; the wrapper must not discover a different browser,
+start another Chrome, or automate a permission flow. Preflight invokes only the
+existing `.venv/bin/python`; it never creates or synchronizes the environment.
 
 Each upstream `Agent` creates one task tab and reports its target identifier as
 soon as available. A normal first-slice run closes that tab and reaps its bridge.
@@ -183,13 +188,16 @@ Standard output is protocol-only JSON Lines:
 3. bounded progress after observations, predictions, and executions; and
 4. exactly one terminal result on a normal bridge path.
 
-Diagnostics use standard error. The parent bounds protocol lines to 32,000
-characters, records to 128, model-visible results to 12,000 characters,
-last-observation evidence to 4,000 characters, and terminal trace/decision
-lists to 24 entries. It redacts known credential values from retained errors.
-Measurements distinguish observed model decisions/usage from provider attempts
-or costs that upstream does not expose. Missing data is `unavailable`, not
-zero.
+Diagnostics use standard error. The parent bounds each protocol line to 32,000
+characters and streams validated progress without retaining an unbounded record
+list or imposing a competing record-count stop. Model-visible results are
+bounded to 12,000 characters, last-observation evidence to 4,000 characters,
+and terminal trace/decision lists to 24 entries. It redacts known credential
+values from retained errors. Measurements distinguish observed model
+decisions/usage from provider attempts or costs that upstream does not expose.
+Missing data is `unavailable`, not zero. The Jev model identifier has one
+executable owner in `config/runtime.json`, which the extension, bridge, and
+preflight consume.
 
 ## Verification
 
@@ -242,3 +250,4 @@ to merge and not results from this wrapper.
 - Jev Ultrafast pin: `1231850a0bf1a0c0341fe408ef1668dbbfdfac46`.
 - Browser Harness pin: `0.1.13` (owned by the upstream manifest and uv lock).
 - Initial Jev model pin: `jev-1.13.0`.
+- Issue #10 verification summary: `docs/issue-10-evidence.md`.

@@ -6,19 +6,26 @@ import json
 import os
 import sys
 
+from runtime_support import (
+    JEV_MODEL,
+    configure_selected_browser_environment,
+    require_selected_browser_binding,
+)
+
 JEV_COMMIT = "1231850a0bf1a0c0341fe408ef1668dbbfdfac46"
 BROWSER_HARNESS_VERSION = "0.1.13"
-JEV_MODEL = "jev-1.13.0"
 
 
 def main() -> int:
     daemon = os.environ.get("RLCD_BRWSR_DAEMON", "").strip()
+    selected_endpoint: str | None = None
     checks: dict[str, object] = {
         "python": f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
         "jevCommit": JEV_COMMIT,
         "browserHarnessVersion": BROWSER_HARNESS_VERSION,
         "jevModel": JEV_MODEL,
         "daemon": daemon or None,
+        "selectedCdpUrl": None,
         "typesafeConfigured": bool(os.environ.get("TYPESAFE_API_KEY", "").strip()),
         "textHelperConfigured": bool(os.environ.get("TEXT_MODEL_API_KEY", "").strip()),
     }
@@ -29,6 +36,8 @@ def main() -> int:
             raise RuntimeError(
                 "RLCD_BRWSR_DAEMON must name the explicitly provisioned Browser Harness daemon"
             )
+        selected_endpoint = configure_selected_browser_environment()
+        checks["selectedCdpUrl"] = selected_endpoint
         if not checks["typesafeConfigured"]:
             raise RuntimeError("TYPESAFE_API_KEY is not configured")
 
@@ -47,7 +56,6 @@ def main() -> int:
             )
 
         os.environ["BU_NAME"] = daemon
-        from browser_harness.admin import require_existing_daemon
         from jev_ultrafast import Agent, Browser
 
         for owner, attribute in (
@@ -59,7 +67,7 @@ def main() -> int:
                 raise RuntimeError(
                     f"pinned upstream compatibility seam is missing {owner.__name__}.{attribute}"
                 )
-        require_existing_daemon(daemon)
+        require_selected_browser_binding(daemon, selected_endpoint)
     except Exception as error:
         print(json.dumps({"ok": False, "checks": checks, "error": str(error)}))
         return 1

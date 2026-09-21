@@ -18,6 +18,7 @@ daemon, opens Chrome, or requests browser permission.
 pnpm install --frozen-lockfile
 scripts/setup-runtime.sh
 export RLCD_BRWSR_DAEMON=rlcd-brwsr
+export RLCD_BRWSR_CDP_URL=http://127.0.0.1:<selected-chrome-port>
 export TYPESAFE_API_KEY=... # host-local; never commit it
 scripts/provision-browser.sh
 scripts/preflight-runtime.sh
@@ -25,10 +26,14 @@ scripts/preflight-runtime.sh
 
 `uv.lock` fixes Python 3.12, Jev Ultrafast commit
 `1231850a0bf1a0c0341fe408ef1668dbbfdfac46`, and Browser Harness 0.1.13. The
-bridge fixes the Jev model to `jev-1.13.0`. `scripts/provision-browser.sh`
-provisions only the named `rlcd-brwsr` daemon against the currently selected
-local Chrome. If Chrome asks for remote-debugging permission, the operator must
-approve it; the script does not automate permission.
+runtime configuration fixes the Jev model to `jev-1.13.0`.
+`RLCD_BRWSR_CDP_URL` must name the approved loopback HTTP CDP endpoint of the
+selected Chrome. `scripts/provision-browser.sh` ignores inherited Browser
+Harness cloud/remote selectors, provisions only the named `rlcd-brwsr` daemon,
+and verifies that the daemon and endpoint expose the same browser target.
+Preflight performs that same read-only identity check and never creates or
+synchronizes `.venv`. If Chrome asks for remote-debugging permission, the
+operator must approve it; the script does not automate permission.
 
 `TEXT_MODEL_API_KEY` and its OpenAI-compatible helper settings are optional for
 click-only work. If upstream chooses `TYPE_TEXT` without that configuration, the
@@ -39,8 +44,9 @@ tool stops before a helper request or field mutation.
 Load and enable the project extension for one fresh Pi session:
 
 ```bash
-RLCD_BRWSR_DAEMON=rlcd-brwsr pi \
-  -e ./config/pi/extensions/rlcd-brwsr.ts \
+RLCD_BRWSR_DAEMON=rlcd-brwsr \
+RLCD_BRWSR_CDP_URL=http://127.0.0.1:<selected-chrome-port> \
+pi -e ./config/pi/extensions/rlcd-brwsr.ts \
   -t rlcd_brwsr_run
 ```
 

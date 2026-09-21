@@ -40,8 +40,10 @@ capability; Chrome DevTools CLI is not a fallback.
   dependencies with a reproducible lock and explicit setup.
 - Extension loading remains inert. Runtime or browser setup never happens as a
   side effect of registration.
-- One named, already-running Browser Harness daemon connects to an explicitly
-  selected local Chrome. Runs preserve it and unrelated tabs.
+- One named, already-running Browser Harness daemon connects to the explicitly
+  selected loopback CDP endpoint. Provision, preflight, and run compare live
+  target metadata so a same-named cloud or differently bound daemon fails
+  closed. Runs preserve the selected Chrome, daemon, and unrelated tabs.
 - The Pi tool remains one deep interface and is sequential only within Pi.
 - The optional upstream text helper remains upstream-owned and is not replaced
   by custom extraction or the main Pi model.

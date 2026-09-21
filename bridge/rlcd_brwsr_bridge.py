@@ -11,8 +11,13 @@ import time
 from typing import Any
 from urllib.parse import urlsplit
 
+from runtime_support import (
+    JEV_MODEL,
+    configure_selected_browser_environment,
+    require_selected_browser_binding,
+)
+
 PROTOCOL_VERSION = 1
-JEV_MODEL = "jev-1.13.0"
 MAX_REQUEST_BYTES = 8_192
 MAX_PROTOCOL_LINE_CHARS = 32_000
 MAX_EVIDENCE_CHARS = 4_000
@@ -318,18 +323,18 @@ def _run(request: dict[str, Any], started_at: float) -> tuple[dict[str, Any], ob
                 "TYPESAFE_API_KEY is not configured; no browser or model work started",
             ), agent
 
+        selected_endpoint = configure_selected_browser_environment()
         os.environ["TYPESAFE_MODEL"] = JEV_MODEL
         os.environ["BU_NAME"] = daemon_name
 
-        from browser_harness import admin
         import jev_ultrafast.browser as upstream_browser
         from jev_ultrafast import Agent
         from jev_ultrafast.browser import StalePage
 
-        admin.require_existing_daemon(daemon_name)
+        require_selected_browser_binding(daemon_name, selected_endpoint)
 
         def require_selected_daemon() -> None:
-            admin.require_existing_daemon(daemon_name)
+            require_selected_browser_binding(daemon_name, selected_endpoint)
 
         upstream_browser.ensure_daemon = require_selected_daemon
         _emit(
