@@ -35,6 +35,32 @@ guarantee. Because Harness consumes connection settings at daemon startup, an
 operator changing them must explicitly stop/restart and reprovision Harness; the
 wrapper does not detect a same-named local daemon still using older settings.
 
+## Interrupted-run and retention amendment
+
+The TypeScript parent retains validated ownership, observations, decisions, and
+executed-action progress while the bridge runs. Cancellation or wall expiry
+requests cooperative bridge cleanup, then stops and reaps the bridge after a
+fixed grace period. If normal bridge cleanup is absent or unconfirmed, the
+parent may start the same Python bridge in a bounded cleanup mode. That mode
+resolves Harness's native configuration, requires the existing daemon, and
+issues one direct close for only the target identifier that the original bridge
+reported incrementally. It does not enumerate target differences, bind a second
+browser selector, restart Harness, or touch unrelated targets.
+
+A mutation-dispatch progress record marks uncertainty before upstream execution.
+A later execution/observation record or a trusted terminal result can narrow it;
+process exit itself cannot. An unchanged text-helper call count is safe evidence
+only when no cached generated value could be reused. Cleanup, stale terminal
+state, and initialization before reported ownership remain unconfirmed when the
+available evidence cannot establish them.
+
+Default runs close the task tab. `retainTab: true` skips task-tab closure only
+for a completion claim; the per-run bridge still exits. Cancellation, expiry,
+and every failed/stopped result continue to attempt cleanup. Parent-observed
+elapsed time includes bounded shutdown and reports wall-budget overrun, while
+provider attempts, retries, and costs stay unavailable when upstream does not
+expose them.
+
 ## Why this changes ADR-0001
 
 ADR-0001 rejected the Python and Browser Harness runtime before the custom

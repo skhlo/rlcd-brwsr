@@ -11,7 +11,7 @@ import sys
 import time
 from pathlib import Path
 
-from browser_harness import admin
+from browser_harness import admin, helpers as harness_helpers
 from jev_ultrafast import browser, model
 
 _SCENARIO = os.environ.get("RLCD_TEST_SCENARIO", "click_done")
@@ -21,19 +21,41 @@ _STATE = {
     "clicks": 0,
     "typed_text": "",
     "fresh_checks": 0,
+    "stale_click_checks": 0,
 }
 
 
-def _mark_external_work(environment_key):
+def _mark_external_work(environment_key, value="called"):
     marker = os.environ.get(environment_key)
     if marker:
         with Path(marker).open("a", encoding="utf-8") as marker_file:
-            marker_file.write("called\n")
+            marker_file.write(f"{value}\n")
 
 
 _argv_marker = os.environ.get("RLCD_TEST_ARGV_MARKER")
 if _argv_marker:
     Path(_argv_marker).write_text(json.dumps(sys.argv), encoding="utf-8")
+
+if _SCENARIO in {"terminal_abnormal", "retained_terminal_hang"}:
+    _terminal_output = sys.stdout
+
+    class _TerminalExitBehavior:
+        def write(self, value):
+            written = _terminal_output.write(value)
+            _terminal_output.flush()
+            if '\"type\":\"result\"' in value:
+                if _SCENARIO == "terminal_abnormal":
+                    os._exit(25)
+                time.sleep(30)
+            return written
+
+        def flush(self):
+            return _terminal_output.flush()
+
+        def __getattr__(self, name):
+            return getattr(_terminal_output, name)
+
+    sys.stdout = _TerminalExitBehavior()
 
 _protocol_marker = os.environ.get("RLCD_TEST_PROTOCOL_MARKER")
 if _protocol_marker:
@@ -190,10 +212,29 @@ def _cdp(method, session_id=None, **params):
     del session_id
     _mark_external_work("RLCD_TEST_BROWSER_WORK_MARKER")
     if method == "Target.createTarget":
+        _mark_external_work("RLCD_TEST_TARGET_EVENTS_MARKER", "created:rlcd-owned-target")
         return {"targetId": "rlcd-owned-target"}
     if method == "Target.attachToTarget":
         return {"sessionId": "rlcd-owned-session"}
     if method == "Target.closeTarget":
+        target_id = params.get("targetId")
+        _mark_external_work("RLCD_TEST_TARGET_EVENTS_MARKER", f"close:{target_id}")
+        if target_id != "rlcd-owned-target":
+            raise RuntimeError(f"attempted to close unrelated target {target_id!r}")
+        if _SCENARIO == "bridge_death_cleanup_unconfirmed":
+            secret = os.environ.get("TEXT_MODEL_API_KEY", "")
+            raise RuntimeError(
+                f"targeted cleanup transport unavailable for credential {secret}"
+            )
+        if _SCENARIO == "slow_primary_cleanup":
+            marker = os.environ.get("RLCD_TEST_TARGET_EVENTS_MARKER")
+            close_count = (
+                Path(marker).read_text(encoding="utf-8").count("close:")
+                if marker
+                else 0
+            )
+            if close_count == 1:
+                time.sleep(30)
         return {"success": True}
     if method == "Page.navigate":
         _STATE["url"] = params["url"]
@@ -204,8 +245,14 @@ def _cdp(method, session_id=None, **params):
         if params.get("type") == "mouseReleased":
             _STATE["clicks"] += 1
             _STATE["destination"] = True
+            if _SCENARIO == "cancel_dispatched_input":
+                _mark_external_work("RLCD_TEST_PHASE_MARKER", "input-dispatched")
+                time.sleep(30)
         return {}
     if method == "Input.insertText":
+        _mark_external_work("RLCD_TEST_INPUT_DISPATCH_MARKER")
+        if _SCENARIO == "text_cached_fill_failure":
+            raise RuntimeError("cached fill failed after dispatched browser input")
         _STATE["typed_text"] = params["text"]
         _mark_external_work("RLCD_TEST_FIELD_MUTATION_MARKER")
         return {}
@@ -222,17 +269,37 @@ def _cdp(method, session_id=None, **params):
                 raise RuntimeError(
                     "Browser Harness transport failed during the pre-helper freshness check"
                 )
+            if (
+                _SCENARIO == "text_cached_fill_failure"
+                and _STATE["fresh_checks"] == 3
+            ):
+                value = "stale-before-first-fill"
         if expression == "document.readyState":
             value = "complete"
         elif "if (!document.body) return null" in expression and "const state=" not in expression:
+            if _SCENARIO == "initial_observation_failure":
+                raise RuntimeError("initial observation failed before ownership")
+            if _SCENARIO == "cancel_observation" and _STATE["destination"]:
+                _mark_external_work("RLCD_TEST_PHASE_MARKER", "observation-started")
+                time.sleep(30)
             value = _page()
         elif "return state?.marker ?? null" in expression:
-            value = _page()["marker"]
+            if not (
+                _SCENARIO == "text_cached_fill_failure"
+                and _STATE["fresh_checks"] == 3
+            ):
+                value = _page()["marker"]
         elif "return c ? [c.pageKey()" in expression:
             match = re.search(r"nodes\.get\((\d+)\)", expression)
             node = match.group(1) if match else ""
             current = _page()
+            _STATE["stale_click_checks"] += 1
             value = [current["page_key"], current["guards"].get(node)]
+            if (
+                _SCENARIO == "stale_click_once"
+                and _STATE["stale_click_checks"] == 1
+            ):
+                value = ["stale-page", "stale-guard"]
         elif "return {x,y}" in expression:
             value = {"x": 100, "y": 100}
         else:
@@ -242,6 +309,7 @@ def _cdp(method, session_id=None, **params):
 
 
 browser.cdp = _cdp
+harness_helpers.cdp = _cdp
 
 
 def _choice(criteria, selected):
@@ -297,9 +365,26 @@ def _post_json(url, key, body):
 
     if os.environ.get("TYPESAFE_MODEL") != "jev-1.13.0":
         raise RuntimeError("the wrapper did not select the pinned Jev model")
+    if _SCENARIO in {
+        "bridge_death_cleanup_confirmed",
+        "bridge_death_cleanup_unconfirmed",
+    }:
+        os._exit(23)
+    if _SCENARIO == "malformed_protocol":
+        sys.stdout.write("not-json-from-bridge\n")
+        sys.stdout.flush()
+        time.sleep(30)
+    if _SCENARIO == "truncated_protocol":
+        sys.stdout.write('{"type":"progress"')
+        sys.stdout.flush()
+        os._exit(24)
+    if _SCENARIO == "oversized_protocol":
+        sys.stdout.write("X" * 32_001 + "\n")
+        sys.stdout.flush()
+        time.sleep(30)
     if _SCENARIO == "provider_secret_error":
         raise RuntimeError(f"provider rejected synthetic credential {key}")
-    if _SCENARIO in {"slow_model", "cancel_model"}:
+    if _SCENARIO in {"slow_model", "cancel_model", "slow_primary_cleanup"}:
         time.sleep(30)
 
     questions = body["questions"]

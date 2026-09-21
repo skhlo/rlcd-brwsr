@@ -126,8 +126,23 @@ def _read_request() -> dict[str, Any]:
 
     url = value.get("url")
     goal = value.get("goal")
+    if value.get("requestType") == "cleanup_target":
+        target_id = value.get("targetId")
+        if (
+            not isinstance(target_id, str)
+            or not target_id.strip()
+            or len(target_id) > 300
+        ):
+            raise InputError(
+                "cleanup targetId must be a non-empty string of at most 300 characters"
+            )
+        return {"requestType": "cleanup_target", "targetId": target_id}
+    if value.get("requestType") is not None:
+        raise InputError("requestType is not supported")
+
     max_actions = value.get("maxActions")
     max_seconds = value.get("maxSeconds")
+    retain_tab = value.get("retainTab", False)
     if not isinstance(url, str) or not url.strip() or len(url) > 2_048:
         raise InputError("url must be a non-empty string of at most 2048 characters")
     parsed = urlsplit(url)
@@ -149,11 +164,14 @@ def _read_request() -> dict[str, Any]:
         or not 1 <= max_seconds <= 120
     ):
         raise InputError("maxSeconds must be an integer from 1 through 120")
+    if not isinstance(retain_tab, bool):
+        raise InputError("retainTab must be a boolean")
     return {
         "url": url,
         "goal": goal.strip(),
         "maxActions": max_actions,
         "maxSeconds": max_seconds,
+        "retainTab": retain_tab,
     }
 
 
@@ -307,6 +325,7 @@ def _terminal(
                 "decisions": decisions[-MAX_TRACE_ENTRIES:],
                 "decisionsTruncated": len(decisions) > MAX_TRACE_ENTRIES,
                 "providerHttpAttempts": "unavailable",
+                "providerRetries": "unavailable",
                 "providerCost": "unavailable",
             },
             "textHelper": {
@@ -319,12 +338,15 @@ def _terminal(
                     else {}
                 ),
                 "providerHttpAttempts": "unavailable",
+                "providerRetries": "unavailable",
                 "providerCost": "unavailable",
             },
         },
         "timing": {
             "elapsedMs": round((time.perf_counter() - started_at) * 1_000),
             "wallBudgetMs": max_seconds * 1_000,
+            "cleanupElapsedMs": "unavailable",
+            "cleanupOverrunMs": 0,
         },
         "ownership": {
             "targetId": _bounded_text(target_id, 300) if target_id else None,
@@ -350,8 +372,11 @@ def _run(request: dict[str, Any], started_at: float) -> tuple[dict[str, Any], ob
     agent: object | None = None
     target_id: str | None = None
     fill_was_selected = False
+    fill_may_reuse_cached_text = False
     helper_calls_before = 0
     phase = "preflight"
+
+    initialization_started = False
 
     def finish(
         status: str,
@@ -359,7 +384,7 @@ def _run(request: dict[str, Any], started_at: float) -> tuple[dict[str, Any], ob
         diagnostic: str | None = None,
         mutation_outcome: str = "not_in_flight",
     ) -> dict[str, Any]:
-        return _terminal(
+        result = _terminal(
             status=status,
             stop_reason=stop_reason,
             started_at=started_at,
@@ -374,6 +399,8 @@ def _run(request: dict[str, Any], started_at: float) -> tuple[dict[str, Any], ob
             diagnostic=diagnostic,
             mutation_outcome=mutation_outcome,
         )
+        result["_initializationStarted"] = initialization_started
+        return result
 
     try:
         # Importing Harness resolves its native workspace .env. Refresh the
@@ -417,6 +444,7 @@ def _run(request: dict[str, Any], started_at: float) -> tuple[dict[str, Any], ob
         )
 
         phase = "initial_observation"
+        initialization_started = True
         agent = Agent(request["url"], request["goal"], screenshots=False)
         browser_instance = getattr(agent, "browser", None)
         raw_target = getattr(browser_instance, "target", None)
@@ -477,6 +505,7 @@ def _run(request: dict[str, Any], started_at: float) -> tuple[dict[str, Any], ob
                         "type": "progress",
                         "phase": "prediction",
                         "decision": entry,
+                        "measurement": decisions[-1],
                         "executedActions": executed_actions,
                     }
                 )
@@ -505,11 +534,24 @@ def _run(request: dict[str, Any], started_at: float) -> tuple[dict[str, Any], ob
                     if isinstance(current_text_calls, list)
                     else 0
                 )
+                fill_may_reuse_cached_text = bool(
+                    fill_was_selected and getattr(agent, "pending_text", None)
+                )
                 phase = (
                     "mutation"
                     if action is not None and action.get("kind") != "wait"
                     else "action"
                 )
+                if phase == "mutation":
+                    entry["outcome"] = "dispatched"
+                    _emit(
+                        {
+                            "type": "progress",
+                            "phase": "dispatch",
+                            "action": entry,
+                            "executedActions": executed_actions,
+                        }
+                    )
                 agent.command(
                     "act", {"fingerprint": state.get("page", {}).get("fingerprint")}
                 )
@@ -583,6 +625,7 @@ def _run(request: dict[str, Any], started_at: float) -> tuple[dict[str, Any], ob
         failed_before_mutation = (
             phase == "mutation"
             and fill_was_selected
+            and not fill_may_reuse_cached_text
             and isinstance(current_text_calls, list)
             and len(current_text_calls) == helper_calls_before
         )
@@ -601,6 +644,41 @@ def _run(request: dict[str, Any], started_at: float) -> tuple[dict[str, Any], ob
         ), agent
 
 
+def _run_target_cleanup(request: dict[str, Any], started_at: float) -> int:
+    daemon_name: str | None = None
+    closed = False
+    diagnostic: str | None = None
+    try:
+        # This process resolves the same native Harness configuration as a run.
+        # It never discovers a target or daemon: the parent supplies only the
+        # incrementally reported target identifier and existing-daemon use is
+        # required before issuing the one targeted close command.
+        from browser_harness import admin
+        from browser_harness.helpers import cdp
+
+        _refresh_known_credentials()
+        daemon_name = resolved_local_daemon_name()
+        require_existing_local_daemon(daemon_name)
+        response = cdp("Target.closeTarget", targetId=request["targetId"])
+        closed = isinstance(response, dict) and response.get("success") is True
+        if not closed:
+            diagnostic = "targeted task-tab cleanup was not confirmed"
+    except Exception as error:
+        diagnostic = _bounded_text(error, MAX_DIAGNOSTIC_CHARS)
+
+    _emit(
+        {
+            "type": "cleanup",
+            "targetId": request["targetId"],
+            "daemon": daemon_name,
+            "closed": closed,
+            "elapsedMs": round((time.perf_counter() - started_at) * 1_000),
+            "diagnostic": diagnostic,
+        }
+    )
+    return 0 if closed else 1
+
+
 def main() -> int:
     started_at = time.perf_counter()
     _refresh_known_credentials()
@@ -608,13 +686,18 @@ def main() -> int:
     signal.signal(signal.SIGTERM, _handle_stop)
     signal.signal(signal.SIGINT, _handle_stop)
     agent: object | None = None
+    request: dict[str, Any] | None = None
+    initialization_started = False
     cleanup = {
         "taskTab": "not_created",
         "sharedDaemon": "retained",
     }
     try:
         request = _read_request()
+        if request.get("requestType") == "cleanup_target":
+            return _run_target_cleanup(request, started_at)
         result, agent = _run(request, started_at)
+        initialization_started = bool(result.pop("_initializationStarted", False))
     except RunCancelled:
         result = _terminal(
             status="stopped",
@@ -660,18 +743,42 @@ def main() -> int:
             diagnostic=_bounded_text(error, MAX_DIAGNOSTIC_CHARS),
         )
 
+    cleanup_started_at = time.perf_counter()
     if agent is not None:
-        try:
-            agent.close()
-            cleanup["taskTab"] = "closed"
-        except Exception as error:
-            cleanup["taskTab"] = "unconfirmed"
-            existing = result.get("diagnostic")
-            cleanup_error = f"task-tab cleanup failed: {_bounded_text(error, 240)}"
-            result["diagnostic"] = _bounded_text(
-                f"{existing}; {cleanup_error}" if existing else cleanup_error,
-                MAX_DIAGNOSTIC_CHARS,
-            )
+        retain_completed_tab = bool(
+            request
+            and request.get("retainTab") is True
+            and result.get("status") == "completion_claim"
+        )
+        if retain_completed_tab:
+            cleanup["taskTab"] = "retained"
+        else:
+            try:
+                agent.close()
+                cleanup["taskTab"] = "closed"
+            except Exception as error:
+                cleanup["taskTab"] = "unconfirmed"
+                existing = result.get("diagnostic")
+                cleanup_error = f"task-tab cleanup failed: {_bounded_text(error, 240)}"
+                result["diagnostic"] = _bounded_text(
+                    f"{existing}; {cleanup_error}" if existing else cleanup_error,
+                    MAX_DIAGNOSTIC_CHARS,
+                )
+    elif initialization_started:
+        # Agent construction can create a target before its initial observation
+        # fails. Without an emitted ownership record its identity is unknown.
+        cleanup["taskTab"] = "unconfirmed"
+
+    elapsed_ms = round((time.perf_counter() - started_at) * 1_000)
+    cleanup_elapsed_ms = round(
+        (time.perf_counter() - cleanup_started_at) * 1_000
+    )
+    wall_budget_ms = result["timing"]["wallBudgetMs"]
+    result["timing"].update(
+        elapsedMs=elapsed_ms,
+        cleanupElapsedMs=cleanup_elapsed_ms,
+        cleanupOverrunMs=max(0, elapsed_ms - wall_budget_ms),
+    )
     result["cleanup"] = cleanup
     result = _redacted_json(result)
     _fit_terminal_result(result)

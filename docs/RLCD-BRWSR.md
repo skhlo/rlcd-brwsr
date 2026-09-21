@@ -26,13 +26,16 @@ rlcd_brwsr_run({
   goal: string;
   maxActions?: number;
   maxSeconds?: number;
+  retainTab?: boolean;
 });
 ```
 
 Inputs are validated before a bridge, browser, or model is used. The defaults
 are 6 executed actions and 30 seconds; the maxima are 20 actions and 120
 seconds. Pi schedules this tool sequentially, which does not prevent another
-browser client from changing the page.
+browser client from changing the page. `retainTab` defaults to false and applies
+only to a completion claim; stopped, failed, expired, and cancelled runs still
+attempt cleanup.
 
 The result is one of a completion claim, an explicit stop, or a structured
 error. It includes:
@@ -40,9 +43,10 @@ error. It includes:
 - the stop reason and whether Jev claimed completion;
 - the last successfully observed URL, title, and bounded page evidence;
 - a compact executed-action trace and available Jev/text-helper decisions;
-- available timing and usage measurements, with unavailable measurements named;
-- bounded, redacted diagnostics; and
-- task-tab and bridge cleanup status.
+- available timing and usage measurements, including bounded cleanup overrun,
+  with unavailable measurements named;
+- bounded, redacted diagnostics with explicit truncation; and
+- task-tab retention/cleanup and bridge cleanup status.
 
 A Jev `DONE` choice is supporting evidence. The outer agent verifies the
 requested outcome independently.
@@ -58,7 +62,8 @@ Pi calls rlcd_brwsr_run(url, goal, budgets)
   -> upstream observes, predicts, and executes through Browser Harness
   -> bridge emits bounded JSONL ownership, progress, and terminal records
   -> TypeScript enforces the wall deadline/cancellation and normalizes output
-  -> bridge closes its run-owned tab; shared daemon and unrelated tabs remain
+  -> bridge closes its run-owned tab unless a completion-only retention request applies
+  -> shared daemon and unrelated tabs remain
 ```
 
 There is one active tool implementation. The extension has no DOM extractor,
@@ -114,9 +119,11 @@ contract that independently compared an `RLCD_BRWSR_CDP_URL` endpoint with live
 daemon target identifiers.
 
 Each upstream `Agent` creates one task tab and reports its target identifier as
-soon as available. A normal first-slice run closes that tab and reaps its bridge.
-The shared Harness daemon, selected Chrome process, and unrelated tabs are not
-run-owned and remain. Concurrent clients are still an operating limitation.
+soon as available. A normal run closes that tab and reaps its bridge. An explicit
+completion-only retention request can instead leave that identified tab open
+after the bridge exits. The shared Harness daemon, selected Chrome process, and
+unrelated tabs are not run-owned and remain. Concurrent clients are still an
+operating limitation.
 
 ## Model responsibilities
 
@@ -162,8 +169,9 @@ validation, bounded failure classification, and normalized helper evidence. It
 does not add prepared values, a second generator, page cleanup, or site
 planning.
 
-Follow-up issues extend in-flight interruption, abnormal-exit cleanup, and
-retained tabs. They do not permit an unbounded runner.
+Issue #12 extends the same registered-tool/real-bridge seam with in-flight
+interruption, abnormal-exit cleanup, and completion-only retained tabs. It does
+not add a tab manager or permit an unbounded runner.
 
 ## Operating scope
 
@@ -201,9 +209,10 @@ Stopping the bridge is not rollback, and the wrapper does not retry it. A fill
 failure before a recorded helper result can also originate in the preceding
 browser freshness check, so the wrapper reports a conservative upstream error
 rather than inventing a helper-specific origin; it still reports whether a
-mutation could have started. Partial observations and executed-action records
-remain useful. Cleanup is reported as confirmed, failed, or unconfirmed rather
-than inferred.
+mutation could have started. In particular, an unchanged helper-call count does
+not prove safety when upstream can reuse a cached generated value after a stale
+retry. Partial observations and executed-action records remain useful. Cleanup
+is reported as confirmed or unconfirmed rather than inferred.
 
 ## Protocol and result bounds
 
@@ -215,7 +224,8 @@ Standard output is protocol-only JSON Lines:
 
 1. one readiness record, including optional-capability status;
 2. ownership as soon as a task target exists;
-3. bounded progress after observations, predictions, and executions; and
+3. bounded progress after observations, predictions, mutation dispatch, and
+   executions; and
 4. exactly one terminal result on a normal bridge path.
 
 Diagnostics use standard error. The parent bounds each protocol line to 32,000
@@ -231,10 +241,12 @@ secrets to the parent. Measurements name configured Jev/helper models separately
 from provider-reported identities.
 The pinned helper retains its configured model, latency, field label, and usage
 but not the provider response's model ID, so that reported identity is
-`unavailable`. Provider attempt counts and costs that upstream does not expose
-are also `unavailable`, not zero. The Jev model identifier has one executable
-owner in `config/runtime.json`, which the extension, bridge, and preflight
-consume.
+`unavailable`. Provider attempt, retry, and cost counts that upstream does not
+expose are also `unavailable`, not zero. Cleanup elapsed time remains unavailable
+when an abnormal exit prevents measuring the whole interval; total elapsed time
+and any overrun beyond the wall budget remain parent-observed. The Jev model
+identifier has one executable owner in `config/runtime.json`, which the
+extension, bridge, and preflight consume.
 
 ## Verification
 
@@ -255,7 +267,14 @@ Harness workspace `.env` and checks the raw child protocol as well as parent and
 retained surfaces. Focused regressions cross the executable setup, executable
 preflight, and registered-tool seams while letting real Browser Harness
 import-time workspace `.env` loading resolve synthetic local and conflicting
-cloud settings. Cheap guards are proven red before implementation.
+cloud settings. Cheap guards are proven red before implementation. Issue #12 adds interruption
+at observation/model/dispatched-input phases, missing-terminal partial evidence,
+failed initialization before ownership, malformed/truncated/oversized output,
+abnormal exit, confirmed and unconfirmed targeted cleanup, default closure, and
+completion-only retention. Fallback cleanup starts the same bridge executable in
+a bounded cleanup mode, resolves Harness's native configuration again, requires
+the existing daemon, and sends one direct close for only the incrementally
+reported target identifier. It never lists or reconciles a target set.
 
 Acceptance also uses a fresh actual Pi TUI controlled through Paseo CLI, the
 named Browser Harness daemon, the loopback fixture, and honestly labelled
@@ -305,3 +324,5 @@ to merge and not results from this wrapper.
 - Issue #10 verification summary: `docs/issue-10-evidence.md`.
 - Generated field-value slice: GitHub issue #11.
 - Issue #11 verification summary: `docs/issue-11-evidence.md`.
+- Interrupted-run and retention slice: GitHub issue #12.
+- Issue #12 verification summary: `docs/issue-12-evidence.md`.

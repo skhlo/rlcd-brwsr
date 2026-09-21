@@ -87,9 +87,21 @@ pi -e ./config/pi/extensions/rlcd-brwsr.ts \
 ```
 
 The registered tool accepts an absolute HTTP(S) `url`, a natural-language
-`goal`, and optional `maxActions` and `maxSeconds`. Defaults are 6 executed
-actions and 30 seconds; maxima are 20 actions and 120 seconds. Pi schedules the
-tool sequentially, which is not a global browser lock.
+`goal`, optional `maxActions` and `maxSeconds`, and optional `retainTab`.
+Defaults are 6 executed actions and 30 seconds; maxima are 20 actions and 120
+seconds. `retainTab: true` keeps the identified task tab only after a completion
+claim; its bridge still exits, while cancelled, expired, stopped, and failed
+runs attempt cleanup. Pi schedules the tool sequentially, which is not a global
+browser lock.
+
+The parent preserves bounded ownership, observation, decision, and action
+progress if a bridge exits without a terminal record. It first allows bounded
+cooperative shutdown, then reaps the run-owned process. When cleanup is absent
+or unconfirmed, it can ask the same bridge executable to close only the target
+identifier reported by that run through the same native-configured existing
+Harness daemon. It never chooses a target from before/after differences and
+never stops the shared daemon. An interrupted dispatched mutation remains
+`unknown`; process exit is neither cancellation proof nor rollback.
 
 ## Local fixture and checks
 

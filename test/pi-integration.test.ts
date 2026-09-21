@@ -11,6 +11,7 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
@@ -24,6 +25,7 @@ interface RlcdInput {
   goal: string;
   maxActions?: number;
   maxSeconds?: number;
+  retainTab?: boolean;
 }
 
 interface ToolResult {
@@ -153,8 +155,11 @@ async function withFakeExternalInteractions<T>(
     "RLCD_TEST_EXPECTED_DAEMON",
     "RLCD_TEST_FIELD_MUTATION_MARKER",
     "RLCD_TEST_HELPER_REQUEST_MARKER",
+    "RLCD_TEST_INPUT_DISPATCH_MARKER",
+    "RLCD_TEST_PHASE_MARKER",
     "RLCD_TEST_PROTOCOL_MARKER",
     "RLCD_TEST_SCENARIO",
+    "RLCD_TEST_TARGET_EVENTS_MARKER",
     "TYPESAFE_API_KEY",
     "TEXT_MODEL_API_KEY",
     "TEXT_MODEL_BASE_URL",
@@ -184,6 +189,27 @@ async function withFakeExternalInteractions<T>(
       else process.env[key] = value;
     }
     await rm(harnessHome, { recursive: true });
+  }
+}
+
+async function waitForFile(path: string, timeoutMs = 3_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      await access(path);
+      return;
+    } catch {
+      await delay(10);
+    }
+  }
+  assert.fail(`timed out waiting for ${path}`);
+}
+
+async function targetEvents(path: string): Promise<string[]> {
+  try {
+    return (await readFile(path, "utf8")).trim().split("\n").filter(Boolean);
+  } catch {
+    return [];
   }
 }
 
@@ -385,6 +411,7 @@ test("unusable helper generations and provider failures stop before field mutati
         configuredModel: "synthetic-text-helper-v1",
         calls: [],
         providerHttpAttempts: "unavailable",
+        providerRetries: "unavailable",
         providerCost: "unavailable",
       });
       assert.equal(await access(helperRequestMarker), undefined);
@@ -434,6 +461,44 @@ test("pre-helper browser freshness transport failures remain conservative upstre
       assert.equal(stringField(trace[0]!, "outcome"), "upstream_error");
       await assert.rejects(access(helperRequestMarker));
       await assert.rejects(access(fieldMutationMarker));
+    },
+  );
+});
+
+test("a cached generated value does not make a later fill failure safe to retry", async () => {
+  await withFakeExternalInteractions(
+    "text_cached_fill_failure",
+    async (harnessHome) => {
+      const helperRequestMarker = join(harnessHome, "helper-requested");
+      const inputDispatchMarker = join(harnessHome, "input-dispatched");
+      process.env.TEXT_MODEL_API_KEY = "synthetic-text-helper-key";
+      process.env.TEXT_MODEL_BASE_URL = "http://127.0.0.1:43115/v1";
+      process.env.TEXT_MODEL = "synthetic-text-helper-v1";
+      process.env.RLCD_TEST_HELPER_REQUEST_MARKER = helperRequestMarker;
+      process.env.RLCD_TEST_INPUT_DISPATCH_MARKER = inputDispatchMarker;
+
+      const result = await registeredTool().execute(
+        "cached-generated-fill-failure",
+        baseInput({
+          goal: "Fill Destination city with South Korea's second-largest city, then stop when marker FIELD-41 is visible.",
+        }),
+        new AbortController().signal,
+      );
+      const details = detailsOf(result);
+
+      assert.equal(stringField(details, "status"), "error");
+      assert.equal(stringField(details, "stopReason"), "upstream_error");
+      assert.equal(stringField(details, "mutationOutcome"), "unknown");
+      assert.match(
+        stringField(details, "diagnostic"),
+        /cached fill failed after dispatched browser input/i,
+      );
+      assert.equal(
+        (await readFile(helperRequestMarker, "utf8")).trim().split("\n").length,
+        1,
+        "the stale retry must reuse upstream's cached generated value",
+      );
+      assert.equal(await access(inputDispatchMarker), undefined);
     },
   );
 });
@@ -602,6 +667,7 @@ test("click-only use advertises missing text capability and stops before TYPE_TE
       configuredModel: null,
       calls: [],
       providerHttpAttempts: "unavailable",
+      providerRetries: "unavailable",
       providerCost: "unavailable",
     });
     assert.equal(
@@ -765,6 +831,48 @@ test("action budget stops further upstream dispatch and retains observed evidenc
   });
 });
 
+test("upstream BLOCKED and stale re-observation remain distinct outcomes", async () => {
+  await withFakeExternalInteractions("blocked", async () => {
+    const result = await registeredTool().execute(
+      "blocked-outcome",
+      baseInput(),
+      new AbortController().signal,
+    );
+    const details = detailsOf(result);
+    const trace = arrayField(details, "trace").map((entry, index) =>
+      recordValue(entry, `trace[${index}]`),
+    );
+
+    assert.equal(stringField(details, "status"), "stopped");
+    assert.equal(stringField(details, "stopReason"), "blocked");
+    assert.equal(stringField(trace[0]!, "outcome"), "blocked");
+    assert.doesNotMatch(JSON.stringify(result), /unsupported.action/i);
+  });
+
+  await withFakeExternalInteractions("stale_click_once", async () => {
+    const result = await registeredTool().execute(
+      "stale-reobservation",
+      baseInput(),
+      new AbortController().signal,
+    );
+    const details = detailsOf(result);
+    const trace = arrayField(details, "trace").map((entry, index) =>
+      recordValue(entry, `trace[${index}]`),
+    );
+
+    assert.equal(stringField(details, "status"), "completion_claim");
+    assert.equal(stringField(details, "stopReason"), "done_claim");
+    assert.equal(stringField(trace[0]!, "outcome"), "stale_reobserved");
+    assert.ok(
+      trace.some(
+        (entry) =>
+          stringField(entry, "operation") === "CLICK" &&
+          stringField(entry, "outcome") === "executed",
+      ),
+    );
+  });
+});
+
 test("valid WAIT-heavy progress reaches the wall budget instead of a record-count protocol error", async () => {
   await withFakeExternalInteractions("wait_heavy", async () => {
     let progressUpdates = 0;
@@ -818,6 +926,10 @@ test("Pi cancellation cooperatively closes the owned tab and reaps the bridge", 
     assert.equal(cancellationRequested, true);
     assert.equal(stringField(details, "status"), "stopped");
     assert.equal(stringField(details, "stopReason"), "cancelled");
+    assert.equal(stringField(details, "mutationOutcome"), "not_in_flight");
+    const observation = nullableRecordField(details, "lastObservation");
+    assert.ok(observation);
+    assert.match(stringField(observation, "evidence"), /Click Continue/);
     assert.equal(stringField(ownership, "targetId"), "rlcd-owned-target");
     assert.deepEqual(cleanup, {
       taskTab: "closed",
@@ -831,6 +943,395 @@ test("Pi cancellation cooperatively closes the owned tab and reaps the bridge", 
         error instanceof Error && "code" in error && error.code === "ESRCH",
     );
   });
+});
+
+test("cancellation during observation or dispatched input preserves partial evidence and uncertain mutation", async () => {
+  for (const [scenario, phase] of [
+    ["cancel_observation", "observation-started"],
+    ["cancel_dispatched_input", "input-dispatched"],
+  ] as const) {
+    await withFakeExternalInteractions(scenario, async (harnessHome) => {
+      const phaseMarker = join(harnessHome, `${scenario}-phase`);
+      const targetMarker = join(harnessHome, `${scenario}-targets`);
+      process.env.RLCD_TEST_PHASE_MARKER = phaseMarker;
+      process.env.RLCD_TEST_TARGET_EVENTS_MARKER = targetMarker;
+      const controller = new AbortController();
+      const running = registeredTool().execute(
+        `cancel-${scenario}`,
+        baseInput({ retainTab: true }),
+        controller.signal,
+      );
+
+      await waitForFile(phaseMarker);
+      assert.match(await readFile(phaseMarker, "utf8"), new RegExp(phase));
+      controller.abort(new Error("interrupt in-flight browser work"));
+      const result = await running;
+      const details = detailsOf(result);
+      const observation = nullableRecordField(details, "lastObservation");
+      assert.ok(observation);
+      const ownership = recordField(details, "ownership");
+      const trace = arrayField(details, "trace").map((entry, index) =>
+        recordValue(entry, `trace[${index}]`),
+      );
+
+      assert.equal(stringField(details, "status"), "stopped");
+      assert.equal(stringField(details, "stopReason"), "cancelled");
+      assert.equal(stringField(details, "mutationOutcome"), "unknown");
+      assert.match(stringField(observation, "evidence"), /Click Continue/);
+      assert.equal(stringField(ownership, "targetId"), "rlcd-owned-target");
+      assert.equal(stringField(trace.at(-1)!, "outcome"), "dispatched");
+      assert.deepEqual(recordField(details, "cleanup"), {
+        taskTab: "closed",
+        bridgeProcess: "reaped",
+        sharedDaemon: "retained",
+      });
+      assert.deepEqual(await targetEvents(targetMarker), [
+        "created:rlcd-owned-target",
+        "close:rlcd-owned-target",
+      ]);
+      const bridgePid = numberField(ownership, "bridgePid");
+      assert.throws(
+        () => process.kill(bridgePid, 0),
+        (error: unknown) =>
+          error instanceof Error && "code" in error && error.code === "ESRCH",
+      );
+    });
+  }
+});
+
+test("bridge death retains reported ownership and progress and targets only that tab for cleanup", async () => {
+  await withFakeExternalInteractions(
+    "bridge_death_cleanup_confirmed",
+    async (harnessHome) => {
+      const targetMarker = join(harnessHome, "target-events");
+      process.env.RLCD_TEST_TARGET_EVENTS_MARKER = targetMarker;
+      const updates: ToolResult[] = [];
+
+      const result = await registeredTool().execute(
+        "bridge-death-after-progress",
+        baseInput(),
+        new AbortController().signal,
+        (update) => updates.push(update),
+      );
+      const details = detailsOf(result);
+      const observation = nullableRecordField(details, "lastObservation");
+      assert.ok(observation);
+      const ownership = recordField(details, "ownership");
+
+      assert.equal(stringField(details, "status"), "error");
+      assert.equal(stringField(details, "stopReason"), "bridge_error");
+      assert.match(stringField(observation, "evidence"), /Click Continue/);
+      assert.equal(stringField(ownership, "targetId"), "rlcd-owned-target");
+      assert.equal(
+        stringField(recordField(details, "cleanup"), "taskTab"),
+        "closed",
+      );
+      assert.equal(
+        stringField(recordField(details, "cleanup"), "sharedDaemon"),
+        "retained",
+      );
+      assert.ok(
+        updates.some((update) =>
+          update.content[0]?.text.includes('"type":"ownership"'),
+        ),
+      );
+      assert.ok(
+        updates.some((update) => {
+          const updateOwnership = recordField(detailsOf(update), "ownership");
+          return updateOwnership.targetId === "rlcd-owned-target";
+        }),
+      );
+      assert.deepEqual(await targetEvents(targetMarker), [
+        "created:rlcd-owned-target",
+        "close:rlcd-owned-target",
+      ]);
+      const bridgePid = numberField(ownership, "bridgePid");
+      assert.throws(
+        () => process.kill(bridgePid, 0),
+        (error: unknown) =>
+          error instanceof Error && "code" in error && error.code === "ESRCH",
+      );
+    },
+  );
+});
+
+test("failed targeted cleanup remains unconfirmed without disturbing shared resources", async () => {
+  const cleanupSecret = "synthetic-cleanup-secret-BRAVO-18";
+  await withFakeExternalInteractions(
+    "bridge_death_cleanup_unconfirmed",
+    async (harnessHome) => {
+      const targetMarker = join(harnessHome, "target-events");
+      process.env.RLCD_TEST_TARGET_EVENTS_MARKER = targetMarker;
+
+      const result = await registeredTool().execute(
+        "bridge-death-cleanup-unconfirmed",
+        baseInput(),
+        new AbortController().signal,
+      );
+      const details = detailsOf(result);
+
+      assert.equal(stringField(details, "stopReason"), "bridge_error");
+      assert.equal(
+        stringField(recordField(details, "cleanup"), "taskTab"),
+        "unconfirmed",
+      );
+      assert.equal(
+        stringField(recordField(details, "cleanup"), "sharedDaemon"),
+        "retained",
+      );
+      assert.match(
+        stringField(details, "diagnostic"),
+        /targeted cleanup.*unconfirmed|transport unavailable/i,
+      );
+      assert.match(stringField(details, "diagnostic"), /\[REDACTED\]/);
+      assert.doesNotMatch(JSON.stringify(result), new RegExp(cleanupSecret));
+      assert.deepEqual(await targetEvents(targetMarker), [
+        "created:rlcd-owned-target",
+        "close:rlcd-owned-target",
+      ]);
+    },
+    {
+      nativeConfiguration:
+        `${nativeHarnessConfiguration}` +
+        `TEXT_MODEL_API_KEY=${cleanupSecret}\n` +
+        "TEXT_MODEL_BASE_URL=http://127.0.0.1:43115/v1\n" +
+        "TEXT_MODEL=synthetic-text-helper-v1\n",
+    },
+  );
+});
+
+test("an initial observation failure before reported ownership stays unknown", async () => {
+  await withFakeExternalInteractions(
+    "initial_observation_failure",
+    async (harnessHome) => {
+      const targetMarker = join(harnessHome, "target-events");
+      process.env.RLCD_TEST_TARGET_EVENTS_MARKER = targetMarker;
+
+      const result = await registeredTool().execute(
+        "initial-observation-failure",
+        baseInput(),
+        new AbortController().signal,
+      );
+      const details = detailsOf(result);
+      const ownership = recordField(details, "ownership");
+
+      assert.equal(stringField(details, "status"), "error");
+      assert.equal(stringField(details, "stopReason"), "upstream_error");
+      assert.equal(ownership.targetId, null);
+      assert.equal(details.lastObservation, null);
+      assert.equal(
+        stringField(recordField(details, "cleanup"), "taskTab"),
+        "unconfirmed",
+      );
+      assert.deepEqual(await targetEvents(targetMarker), [
+        "created:rlcd-owned-target",
+        "close:rlcd-owned-target",
+      ]);
+    },
+  );
+});
+
+test("malformed, truncated, and oversized bridge streams retain bounded partial evidence", async () => {
+  for (const scenario of [
+    "malformed_protocol",
+    "truncated_protocol",
+    "oversized_protocol",
+  ] as const) {
+    await withFakeExternalInteractions(scenario, async (harnessHome) => {
+      const targetMarker = join(harnessHome, `${scenario}-targets`);
+      process.env.RLCD_TEST_TARGET_EVENTS_MARKER = targetMarker;
+
+      const result = await registeredTool().execute(
+        scenario,
+        baseInput(),
+        new AbortController().signal,
+      );
+      const details = detailsOf(result);
+      const observation = nullableRecordField(details, "lastObservation");
+      assert.ok(observation);
+
+      assert.equal(stringField(details, "status"), "error");
+      assert.equal(stringField(details, "stopReason"), "protocol_error");
+      assert.equal(
+        stringField(recordField(details, "ownership"), "targetId"),
+        "rlcd-owned-target",
+      );
+      assert.match(stringField(observation, "evidence"), /Click Continue/);
+      assert.ok(stringField(details, "diagnostic").length <= 4_000);
+      assert.ok((result.content[0]?.text.length ?? Infinity) <= 12_000);
+      assert.equal(
+        stringField(recordField(details, "cleanup"), "taskTab"),
+        "closed",
+      );
+      assert.ok(
+        (await targetEvents(targetMarker)).every(
+          (event) =>
+            event === "created:rlcd-owned-target" ||
+            event === "close:rlcd-owned-target",
+        ),
+      );
+    });
+  }
+});
+
+test("an abnormal exit after a terminal claim does not preserve stale completion state", async () => {
+  await withFakeExternalInteractions(
+    "terminal_abnormal",
+    async (harnessHome) => {
+      const targetMarker = join(harnessHome, "target-events");
+      process.env.RLCD_TEST_TARGET_EVENTS_MARKER = targetMarker;
+
+      const result = await registeredTool().execute(
+        "stale-terminal",
+        baseInput(),
+        new AbortController().signal,
+      );
+      const details = detailsOf(result);
+
+      assert.equal(stringField(details, "status"), "error");
+      assert.equal(stringField(details, "stopReason"), "bridge_error");
+      assert.equal(
+        booleanField(recordField(details, "completionClaim"), "claimed"),
+        false,
+      );
+      assert.equal(
+        stringField(recordField(details, "cleanup"), "taskTab"),
+        "closed",
+      );
+      assert.match(stringField(details, "diagnostic"), /exited abnormally/i);
+    },
+  );
+});
+
+test("completion-only retention leaves the identified tab but reaps the bridge", async () => {
+  await withFakeExternalInteractions("click_done", async (harnessHome) => {
+    const targetMarker = join(harnessHome, "target-events");
+    process.env.RLCD_TEST_TARGET_EVENTS_MARKER = targetMarker;
+
+    const result = await registeredTool().execute(
+      "retain-completed-tab",
+      baseInput({ retainTab: true }),
+      new AbortController().signal,
+    );
+    const details = detailsOf(result);
+    const ownership = recordField(details, "ownership");
+
+    assert.equal(stringField(details, "status"), "completion_claim");
+    assert.equal(
+      stringField(recordField(details, "cleanup"), "taskTab"),
+      "retained",
+    );
+    assert.deepEqual(await targetEvents(targetMarker), [
+      "created:rlcd-owned-target",
+    ]);
+    const bridgePid = numberField(ownership, "bridgePid");
+    assert.throws(
+      () => process.kill(bridgePid, 0),
+      (error: unknown) =>
+        error instanceof Error && "code" in error && error.code === "ESRCH",
+    );
+  });
+});
+
+test("expiry after a retention claim still cleans up the reported tab", async () => {
+  await withFakeExternalInteractions(
+    "retained_terminal_hang",
+    async (harnessHome) => {
+      const targetMarker = join(harnessHome, "target-events");
+      process.env.RLCD_TEST_TARGET_EVENTS_MARKER = targetMarker;
+
+      const result = await registeredTool().execute(
+        "expired-retention-claim",
+        baseInput({ maxSeconds: 1, retainTab: true }),
+        new AbortController().signal,
+      );
+      const details = detailsOf(result);
+
+      assert.equal(stringField(details, "status"), "stopped");
+      assert.equal(stringField(details, "stopReason"), "time_budget");
+      assert.equal(
+        booleanField(recordField(details, "completionClaim"), "claimed"),
+        false,
+      );
+      assert.equal(
+        stringField(recordField(details, "cleanup"), "taskTab"),
+        "closed",
+      );
+      assert.deepEqual(await targetEvents(targetMarker), [
+        "created:rlcd-owned-target",
+        "close:rlcd-owned-target",
+      ]);
+    },
+  );
+});
+
+test("retention requests do not retain failed runs", async () => {
+  await withFakeExternalInteractions(
+    "provider_secret_error",
+    async (harnessHome) => {
+      const targetMarker = join(harnessHome, "target-events");
+      process.env.RLCD_TEST_TARGET_EVENTS_MARKER = targetMarker;
+
+      const result = await registeredTool().execute(
+        "failed-retention-request",
+        baseInput({ retainTab: true }),
+        new AbortController().signal,
+      );
+      const details = detailsOf(result);
+
+      assert.equal(stringField(details, "status"), "error");
+      assert.equal(
+        stringField(recordField(details, "cleanup"), "taskTab"),
+        "closed",
+      );
+      assert.deepEqual(await targetEvents(targetMarker), [
+        "created:rlcd-owned-target",
+        "close:rlcd-owned-target",
+      ]);
+    },
+  );
+});
+
+test("wall expiry bounds non-cooperative cleanup, reaps the child, and reports overrun", async () => {
+  await withFakeExternalInteractions(
+    "slow_primary_cleanup",
+    async (harnessHome) => {
+      const targetMarker = join(harnessHome, "target-events");
+      process.env.RLCD_TEST_TARGET_EVENTS_MARKER = targetMarker;
+      const startedAt = Date.now();
+
+      const result = await registeredTool().execute(
+        "wall-expiry-slow-cleanup",
+        baseInput({ maxSeconds: 1 }),
+        new AbortController().signal,
+      );
+      const outerElapsedMs = Date.now() - startedAt;
+      const details = detailsOf(result);
+      const timing = recordField(details, "timing");
+      const ownership = recordField(details, "ownership");
+
+      assert.equal(stringField(details, "status"), "stopped");
+      assert.equal(stringField(details, "stopReason"), "time_budget");
+      assert.equal(
+        stringField(recordField(details, "cleanup"), "taskTab"),
+        "closed",
+      );
+      assert.ok(numberField(timing, "cleanupElapsedMs") >= 1_400);
+      assert.ok(numberField(timing, "cleanupOverrunMs") >= 1_400);
+      assert.ok(outerElapsedMs < 4_000, `shutdown took ${outerElapsedMs}ms`);
+      assert.deepEqual(await targetEvents(targetMarker), [
+        "created:rlcd-owned-target",
+        "close:rlcd-owned-target",
+        "close:rlcd-owned-target",
+      ]);
+      const bridgePid = numberField(ownership, "bridgePid");
+      assert.throws(
+        () => process.kill(bridgePid, 0),
+        (error: unknown) =>
+          error instanceof Error && "code" in error && error.code === "ESRCH",
+      );
+    },
+  );
 });
 
 test("wall budget includes model work and returns partial observed evidence", async () => {

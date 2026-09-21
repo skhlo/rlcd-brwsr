@@ -49,6 +49,12 @@ export const rlcdBrwsrParameters = Type.Object(
         maximum: MAX_SECONDS,
       }),
     ),
+    retainTab: Type.Optional(
+      Type.Boolean({
+        description:
+          "Keep the owned tab only after a completion claim; failed, stopped, and cancelled runs still clean up",
+      }),
+    ),
   },
   { additionalProperties: false },
 );
@@ -89,6 +95,7 @@ interface Usage {
     decisions: ModelMeasurement[];
     decisionsTruncated?: boolean;
     providerHttpAttempts: Measurement;
+    providerRetries: Measurement;
     providerCost: Measurement;
   };
   textHelper: {
@@ -97,6 +104,7 @@ interface Usage {
     calls: ModelMeasurement[];
     callsTruncated?: boolean;
     providerHttpAttempts: Measurement;
+    providerRetries: Measurement;
     providerCost: Measurement;
   };
 }
@@ -115,6 +123,8 @@ export interface RlcdRunResult {
   timing: {
     elapsedMs: number;
     wallBudgetMs: number;
+    cleanupElapsedMs: Measurement;
+    cleanupOverrunMs: number;
   };
   ownership: {
     targetId: string | null;
@@ -124,7 +134,7 @@ export interface RlcdRunResult {
   mutationOutcome: "not_in_flight" | "unknown";
   diagnostic: string | null;
   cleanup: {
-    taskTab: "not_created" | "closed" | "unconfirmed";
+    taskTab: "not_created" | "closed" | "retained" | "unconfirmed";
     bridgeProcess: "reaped" | "unconfirmed";
     sharedDaemon: "retained";
   };
@@ -210,6 +220,9 @@ function validateInput(value: RlcdRunInput): string | undefined {
   ) {
     return `maxSeconds must be an integer from 1 through ${MAX_SECONDS}`;
   }
+  if (value.retainTab !== undefined && typeof value.retainTab !== "boolean") {
+    return "retainTab must be a boolean";
+  }
   return undefined;
 }
 
@@ -236,6 +249,7 @@ function basicResult(
         configuredModel: runtimeConfig.jevModel,
         decisions: [],
         providerHttpAttempts: "unavailable",
+        providerRetries: "unavailable",
         providerCost: "unavailable",
       },
       textHelper: {
@@ -243,10 +257,16 @@ function basicResult(
         configuredModel: "unknown",
         calls: [],
         providerHttpAttempts: "unavailable",
+        providerRetries: "unavailable",
         providerCost: "unavailable",
       },
     },
-    timing: { elapsedMs, wallBudgetMs: maxSeconds * 1_000 },
+    timing: {
+      elapsedMs,
+      wallBudgetMs: maxSeconds * 1_000,
+      cleanupElapsedMs: 0,
+      cleanupOverrunMs: Math.max(0, elapsedMs - maxSeconds * 1_000),
+    },
     ownership: { targetId: null, bridgePid: null, daemon },
     mutationOutcome: "not_in_flight",
     diagnostic,
@@ -362,6 +382,30 @@ function normalizedMeasurement(value: unknown): Measurement | undefined {
     : undefined;
 }
 
+function normalizedModelMeasurement(
+  value: unknown,
+  credentials: readonly string[],
+): ModelMeasurement | undefined {
+  if (
+    !isRecord(value) ||
+    typeof value.reportedModel !== "string" ||
+    (value.field !== undefined && typeof value.field !== "string") ||
+    (value.latencyMs !== "unavailable" && !isNonnegativeFinite(value.latencyMs))
+  ) {
+    return undefined;
+  }
+  const usage = sanitizedJson(value.usage, credentials);
+  if (usage === undefined) return undefined;
+  return {
+    reportedModel: redactText(value.reportedModel, credentials),
+    ...(typeof value.field === "string"
+      ? { field: redactText(value.field, credentials) }
+      : {}),
+    latencyMs: value.latencyMs,
+    usage,
+  };
+}
+
 function normalizedModelMeasurements(
   value: unknown,
   credentials: readonly string[],
@@ -369,24 +413,9 @@ function normalizedModelMeasurements(
   if (!Array.isArray(value)) return undefined;
   const output: ModelMeasurement[] = [];
   for (const item of value) {
-    if (
-      !isRecord(item) ||
-      typeof item.reportedModel !== "string" ||
-      (item.field !== undefined && typeof item.field !== "string") ||
-      (item.latencyMs !== "unavailable" && !isNonnegativeFinite(item.latencyMs))
-    ) {
-      return undefined;
-    }
-    const usage = sanitizedJson(item.usage, credentials);
-    if (usage === undefined) return undefined;
-    output.push({
-      reportedModel: redactText(item.reportedModel, credentials),
-      ...(typeof item.field === "string"
-        ? { field: redactText(item.field, credentials) }
-        : {}),
-      latencyMs: item.latencyMs,
-      usage,
-    });
+    const measurement = normalizedModelMeasurement(item, credentials);
+    if (!measurement) return undefined;
+    output.push(measurement);
   }
   return output;
 }
@@ -407,17 +436,21 @@ function normalizedUsage(
     credentials,
   );
   const jevAttempts = normalizedMeasurement(value.jev.providerHttpAttempts);
+  const jevRetries = normalizedMeasurement(value.jev.providerRetries);
   const jevCost = normalizedMeasurement(value.jev.providerCost);
   const textAttempts = normalizedMeasurement(
     value.textHelper.providerHttpAttempts,
   );
+  const textRetries = normalizedMeasurement(value.textHelper.providerRetries);
   const textCost = normalizedMeasurement(value.textHelper.providerCost);
   if (
     decisions === undefined ||
     calls === undefined ||
     jevAttempts === undefined ||
+    jevRetries === undefined ||
     jevCost === undefined ||
     textAttempts === undefined ||
+    textRetries === undefined ||
     textCost === undefined ||
     typeof value.jev.configuredModel !== "string" ||
     typeof value.textHelper.configured !== "boolean" ||
@@ -438,6 +471,7 @@ function normalizedUsage(
         ? { decisionsTruncated: value.jev.decisionsTruncated }
         : {}),
       providerHttpAttempts: jevAttempts,
+      providerRetries: jevRetries,
       providerCost: jevCost,
     },
     textHelper: {
@@ -451,6 +485,7 @@ function normalizedUsage(
         ? { callsTruncated: value.textHelper.callsTruncated }
         : {}),
       providerHttpAttempts: textAttempts,
+      providerRetries: textRetries,
       providerCost: textCost,
     },
   };
@@ -483,6 +518,8 @@ function normalizedBridgeResult(
     !isRecord(value.timing) ||
     !isNonnegativeFinite(value.timing.elapsedMs) ||
     !isNonnegativeFinite(value.timing.wallBudgetMs) ||
+    normalizedMeasurement(value.timing.cleanupElapsedMs) === undefined ||
+    !isNonnegativeFinite(value.timing.cleanupOverrunMs) ||
     !isRecord(value.ownership) ||
     (value.ownership.targetId !== null &&
       typeof value.ownership.targetId !== "string") ||
@@ -495,7 +532,7 @@ function normalizedBridgeResult(
       value.mutationOutcome !== "unknown") ||
     (value.diagnostic !== null && typeof value.diagnostic !== "string") ||
     !isRecord(value.cleanup) ||
-    !["not_created", "closed", "unconfirmed"].includes(
+    !["not_created", "closed", "retained", "unconfirmed"].includes(
       String(value.cleanup.taskTab),
     ) ||
     value.cleanup.sharedDaemon !== "retained"
@@ -512,6 +549,7 @@ function normalizedBridgeResult(
   if (
     taskTab !== "not_created" &&
     taskTab !== "closed" &&
+    taskTab !== "retained" &&
     taskTab !== "unconfirmed"
   ) {
     return undefined;
@@ -530,6 +568,8 @@ function normalizedBridgeResult(
     timing: {
       elapsedMs: value.timing.elapsedMs,
       wallBudgetMs: value.timing.wallBudgetMs,
+      cleanupElapsedMs: value.timing.cleanupElapsedMs as Measurement,
+      cleanupOverrunMs: value.timing.cleanupOverrunMs,
     },
     ownership: {
       targetId:
@@ -609,7 +649,9 @@ function normalizedProgressRecord(
   }
   if (value.type !== "progress") return undefined;
   if (
-    !["observation", "prediction", "action"].includes(String(value.phase)) ||
+    !["observation", "prediction", "dispatch", "action"].includes(
+      String(value.phase),
+    ) ||
     !Number.isInteger(value.executedActions) ||
     !isNonnegativeFinite(value.executedActions)
   ) {
@@ -636,9 +678,14 @@ function normalizedProgressRecord(
   const key = value.phase === "prediction" ? "decision" : "action";
   const entry = normalizedTraceEntry(value[key], credentials);
   if (!entry) return undefined;
+  const measurement =
+    value.phase === "prediction"
+      ? normalizedModelMeasurement(value.measurement, credentials)
+      : undefined;
+  if (value.phase === "prediction" && !measurement) return undefined;
   return {
     type: "progress",
-    phase: value.phase === "prediction" ? "prediction" : "action",
+    phase: String(value.phase),
     [key]: {
       step: entry.step,
       operation: entry.operation,
@@ -647,6 +694,18 @@ function normalizedProgressRecord(
       elapsedMs: entry.elapsedMs,
       ...(entry.url === undefined ? {} : { url: entry.url }),
     },
+    ...(measurement
+      ? {
+          measurement: {
+            reportedModel: measurement.reportedModel,
+            ...(measurement.field === undefined
+              ? {}
+              : { field: measurement.field }),
+            latencyMs: measurement.latencyMs,
+            usage: measurement.usage,
+          },
+        }
+      : {}),
     executedActions: value.executedActions,
   };
 }
@@ -700,27 +759,330 @@ function asToolResult(result: RlcdRunResult): ToolResult {
   };
 }
 
+interface PartialBridgeState {
+  daemon: string | null;
+  targetId: string | null;
+  ownershipReported: boolean;
+  bridgePid: number | null;
+  lastObservation: Observation | null;
+  trace: TraceEntry[];
+  traceTruncated: boolean;
+  decisions: ModelMeasurement[];
+  decisionsTruncated: boolean;
+  textHelperConfigured: boolean | "unknown";
+  textHelperConfiguredModel: string | null | "unknown";
+  mutationOutcome: "not_in_flight" | "unknown";
+}
+
+interface ClosedProcess {
+  code: number | null;
+  signal: NodeJS.Signals | null;
+  spawnError?: Error;
+}
+
+interface TargetedCleanupResult {
+  confirmed: boolean;
+  elapsedMs: number;
+  diagnostic: string | null;
+}
+
+function boundedDiagnostic(
+  parts: Array<string | null | undefined>,
+): string | null {
+  const joined = parts
+    .filter((part): part is string => Boolean(part))
+    .join("; ");
+  if (!joined) return null;
+  if (joined.length <= MAX_STDERR_CHARS) return joined;
+  const suffix = ` [diagnostic truncated from ${joined.length} characters]`;
+  return `${joined.slice(0, MAX_STDERR_CHARS - suffix.length)}${suffix}`;
+}
+
+function partialBridgeResult(
+  state: PartialBridgeState,
+  stopReason: string,
+  diagnostic: string,
+  status: RlcdRunResult["status"],
+  elapsedMs: number,
+  maxSeconds: number,
+): RlcdRunResult {
+  const result = basicResult(
+    stopReason,
+    diagnostic,
+    elapsedMs,
+    maxSeconds,
+    state.daemon,
+    status,
+  );
+  result.lastObservation = state.lastObservation;
+  result.trace = state.trace;
+  result.traceTruncated = state.traceTruncated;
+  result.usage.jev.decisions = state.decisions;
+  result.usage.jev.decisionsTruncated = state.decisionsTruncated;
+  result.usage.textHelper.configured = state.textHelperConfigured;
+  result.usage.textHelper.configuredModel = state.textHelperConfiguredModel;
+  result.ownership = {
+    targetId: state.targetId,
+    bridgePid: state.bridgePid,
+    daemon: state.daemon,
+  };
+  result.mutationOutcome = state.mutationOutcome;
+  result.cleanup.taskTab = "unconfirmed";
+  result.timing.cleanupElapsedMs = "unavailable";
+  return result;
+}
+
+function upsertTrace(state: PartialBridgeState, entry: TraceEntry): void {
+  const existing = state.trace.findIndex((item) => item.step === entry.step);
+  if (existing >= 0) {
+    state.trace[existing] = entry;
+    return;
+  }
+  if (state.trace.length === 24) {
+    state.trace.shift();
+    state.traceTruncated = true;
+  }
+  state.trace.push(entry);
+}
+
+function applyProgressRecord(
+  state: PartialBridgeState,
+  record: { [key: string]: JsonValue },
+): void {
+  if (record.type === "ready") {
+    state.daemon = String(record.daemon);
+    const capabilities = record.capabilities;
+    if (isRecord(capabilities)) {
+      state.textHelperConfigured = Boolean(capabilities.textHelperConfigured);
+      state.textHelperConfiguredModel =
+        typeof capabilities.textHelperConfiguredModel === "string"
+          ? capabilities.textHelperConfiguredModel
+          : null;
+    }
+    return;
+  }
+  if (record.type === "ownership") {
+    state.ownershipReported = true;
+    state.targetId =
+      typeof record.targetId === "string" ? record.targetId : null;
+    return;
+  }
+  if (record.type !== "progress") return;
+  if (record.phase === "observation") {
+    if (isRecord(record.observation)) {
+      state.lastObservation = {
+        url: String(record.observation.url),
+        title: String(record.observation.title),
+        evidence: String(record.observation.evidence),
+        evidenceTruncated: Boolean(record.observation.evidenceTruncated),
+      };
+      state.mutationOutcome = "not_in_flight";
+    }
+    return;
+  }
+
+  const rawEntry =
+    record.phase === "prediction" ? record.decision : record.action;
+  if (isRecord(rawEntry)) {
+    const entry: TraceEntry = {
+      step: Number(rawEntry.step),
+      operation: String(rawEntry.operation),
+      action: String(rawEntry.action),
+      outcome: String(rawEntry.outcome),
+      elapsedMs: Number(rawEntry.elapsedMs),
+      ...(typeof rawEntry.url === "string" ? { url: rawEntry.url } : {}),
+    };
+    upsertTrace(state, entry);
+  }
+  if (record.phase === "prediction" && isRecord(record.measurement)) {
+    const measurement: ModelMeasurement = {
+      reportedModel: String(record.measurement.reportedModel),
+      ...(typeof record.measurement.field === "string"
+        ? { field: record.measurement.field }
+        : {}),
+      latencyMs:
+        record.measurement.latencyMs === "unavailable"
+          ? "unavailable"
+          : Number(record.measurement.latencyMs),
+      usage: record.measurement.usage as JsonValue,
+    };
+    if (state.decisions.length === 24) {
+      state.decisions.shift();
+      state.decisionsTruncated = true;
+    }
+    state.decisions.push(measurement);
+  }
+  if (record.phase === "dispatch") state.mutationOutcome = "unknown";
+  if (record.phase === "action") state.mutationOutcome = "not_in_flight";
+}
+
+function progressToolResult(
+  record: { [key: string]: JsonValue },
+  state: PartialBridgeState,
+  startedAt: number,
+  maxSeconds: number,
+): ToolResult {
+  const serialized = JSON.stringify(record);
+  const text =
+    serialized.length <= 2_000
+      ? serialized
+      : JSON.stringify({
+          type: record.type,
+          phase: record.phase ?? null,
+          truncated: true,
+          maxChars: 2_000,
+        });
+  return {
+    content: [{ type: "text", text }],
+    details: partialBridgeResult(
+      state,
+      "running",
+      "Bridge run in progress",
+      "stopped",
+      Date.now() - startedAt,
+      maxSeconds,
+    ),
+  };
+}
+
+async function waitForClose(
+  child: ChildProcessWithoutNullStreams,
+): Promise<ClosedProcess> {
+  return new Promise((resolveClose) => {
+    let spawnError: Error | undefined;
+    child.once("error", (error) => {
+      spawnError = error;
+    });
+    child.once("close", (code, signal) => {
+      resolveClose({
+        code,
+        signal,
+        ...(spawnError ? { spawnError } : {}),
+      });
+    });
+  });
+}
+
+async function targetedCleanup(
+  targetId: string,
+  childEnvironment: NodeJS.ProcessEnv,
+  credentials: readonly string[],
+): Promise<TargetedCleanupResult> {
+  const startedAt = Date.now();
+  const child = spawn(pythonExecutable, [bridgeExecutable], {
+    cwd: projectRoot,
+    env: childEnvironment,
+    shell: false,
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+  let stdout = "";
+  let stderr = "";
+  let stderrOmitted = 0;
+  let forced = false;
+  child.stdout.setEncoding("utf8");
+  child.stdout.on("data", (chunk: string) => {
+    if (stdout.length < MAX_PROTOCOL_LINE_CHARS + 1) {
+      stdout += chunk.slice(0, MAX_PROTOCOL_LINE_CHARS + 1 - stdout.length);
+    }
+  });
+  child.stderr.setEncoding("utf8");
+  child.stderr.on("data", (chunk: string) => {
+    const available = Math.max(0, MAX_STDERR_CHARS - stderr.length);
+    stderr += chunk.slice(0, available);
+    stderrOmitted += Math.max(0, chunk.length - available);
+  });
+  child.stdin.end(
+    `${JSON.stringify({ requestType: "cleanup_target", targetId })}\n`,
+  );
+
+  const stopTimer = setTimeout(() => child.kill("SIGTERM"), STOP_GRACE_MS);
+  stopTimer.unref();
+  const forceTimer = setTimeout(() => {
+    if (child.exitCode === null && child.signalCode === null) {
+      forced = true;
+      child.kill("SIGKILL");
+    }
+  }, STOP_GRACE_MS + 250);
+  forceTimer.unref();
+  const closed = await waitForClose(child);
+  clearTimeout(stopTimer);
+  clearTimeout(forceTimer);
+
+  let record: Record<string, unknown> | undefined;
+  const lines = stdout.trim().split("\n").filter(Boolean);
+  if (lines.length === 1 && lines[0]!.length <= MAX_PROTOCOL_LINE_CHARS) {
+    try {
+      const parsed: unknown = JSON.parse(lines[0]!);
+      if (isRecord(parsed)) record = parsed;
+    } catch {
+      record = undefined;
+    }
+  }
+  const confirmed =
+    !forced &&
+    closed.code === 0 &&
+    closed.signal === null &&
+    record?.type === "cleanup" &&
+    record.targetId === targetId &&
+    record.closed === true;
+  const protocolDiagnostic =
+    typeof record?.diagnostic === "string"
+      ? redactText(record.diagnostic, credentials)
+      : null;
+  const stderrDiagnostic = stderr.trim()
+    ? `cleanup stderr: ${redactText(stderr.trim(), credentials)}${stderrOmitted ? ` [${stderrOmitted} chars omitted]` : ""}`
+    : null;
+  const exitDiagnostic = confirmed
+    ? null
+    : `targeted cleanup unconfirmed (code ${String(closed.code)}, signal ${String(closed.signal)})`;
+  return {
+    confirmed,
+    elapsedMs: Date.now() - startedAt,
+    diagnostic: boundedDiagnostic([
+      protocolDiagnostic,
+      stderrDiagnostic,
+      exitDiagnostic,
+    ]),
+  };
+}
+
 async function waitForBridge(
   child: ChildProcessWithoutNullStreams,
+  childEnvironment: NodeJS.ProcessEnv,
   input: Required<RlcdRunInput>,
   signal: AbortSignal | undefined,
   onUpdate: ((result: ToolResult) => void) | undefined,
   startedAt: number,
-  daemon: string | null,
 ): Promise<RlcdRunResult> {
   const credentials = knownCredentials();
+  const state: PartialBridgeState = {
+    daemon: null,
+    targetId: null,
+    ownershipReported: false,
+    bridgePid: child.pid ?? null,
+    lastObservation: null,
+    trace: [],
+    traceTruncated: false,
+    decisions: [],
+    decisionsTruncated: false,
+    textHelperConfigured: "unknown",
+    textHelperConfiguredModel: "unknown",
+    mutationOutcome: "not_in_flight",
+  };
   let stdoutBuffer = "";
   let stderr = "";
+  let stderrOmitted = 0;
   let protocolError: string | undefined;
   let terminal: RlcdRunResult | undefined;
   let requestedStop: "cancelled" | "time_budget" | undefined;
+  let shutdownStartedAt: number | undefined;
   let forced = false;
   let graceTimer: NodeJS.Timeout | undefined;
 
-  const requestStop = (reason: "cancelled" | "time_budget") => {
-    if (requestedStop) return;
-    requestedStop = reason;
+  const stopChild = () => {
+    shutdownStartedAt ??= Date.now();
     child.kill("SIGTERM");
+    if (graceTimer) return;
     graceTimer = setTimeout(() => {
       if (child.exitCode === null && child.signalCode === null) {
         forced = true;
@@ -728,6 +1090,14 @@ async function waitForBridge(
       }
     }, STOP_GRACE_MS);
     graceTimer.unref();
+  };
+  const requestStop = (reason: "cancelled" | "time_budget") => {
+    requestedStop ??= reason;
+    stopChild();
+  };
+  const failProtocol = (diagnostic: string) => {
+    protocolError ??= diagnostic;
+    stopChild();
   };
 
   const onAbort = () => requestStop("cancelled");
@@ -741,60 +1111,48 @@ async function waitForBridge(
   const handleLine = (rawLine: string) => {
     if (!rawLine || protocolError) return;
     if (rawLine.length > MAX_PROTOCOL_LINE_CHARS) {
-      protocolError = `bridge emitted a line longer than ${MAX_PROTOCOL_LINE_CHARS} characters`;
-      requestStop("cancelled");
+      failProtocol(
+        `bridge emitted a line longer than ${MAX_PROTOCOL_LINE_CHARS} characters`,
+      );
       return;
     }
     let parsed: unknown;
     try {
       parsed = JSON.parse(rawLine);
     } catch {
-      protocolError = "bridge stdout contained a non-JSON protocol line";
-      requestStop("cancelled");
+      failProtocol("bridge stdout contained a non-JSON protocol line");
       return;
     }
     if (!isRecord(parsed) || typeof parsed.type !== "string") {
-      protocolError = "bridge emitted an invalid protocol record";
-      requestStop("cancelled");
+      failProtocol("bridge emitted an invalid protocol record");
       return;
     }
     if (parsed.type === "result") {
       if (terminal) {
-        protocolError = "bridge emitted more than one terminal result";
+        failProtocol("bridge emitted more than one terminal result");
       } else {
         terminal = normalizedBridgeResult(parsed.result, credentials);
         if (!terminal)
-          protocolError = "bridge emitted an invalid terminal result";
+          failProtocol("bridge emitted an invalid terminal result");
       }
-      if (protocolError) requestStop("cancelled");
       return;
     }
     const safeRecord = normalizedProgressRecord(parsed, credentials);
     if (!safeRecord) {
-      protocolError = `bridge emitted an invalid ${JSON.stringify(parsed.type)} record`;
-      requestStop("cancelled");
+      failProtocol(
+        `bridge emitted an invalid ${JSON.stringify(parsed.type)} record`,
+      );
       return;
     }
-    onUpdate?.({
-      content: [
-        {
-          type: "text",
-          text: boundedText(JSON.stringify(safeRecord), 2_000),
-        },
-      ],
-      details: basicResult(
-        "running",
-        "Bridge run in progress",
-        Date.now() - startedAt,
-        input.maxSeconds,
-        daemon,
-        "stopped",
-      ),
-    });
+    applyProgressRecord(state, safeRecord);
+    onUpdate?.(
+      progressToolResult(safeRecord, state, startedAt, input.maxSeconds),
+    );
   };
 
   child.stdout.setEncoding("utf8");
   child.stdout.on("data", (chunk: string) => {
+    if (protocolError) return;
     stdoutBuffer += chunk;
     let newline = stdoutBuffer.indexOf("\n");
     while (newline >= 0) {
@@ -803,87 +1161,129 @@ async function waitForBridge(
       newline = stdoutBuffer.indexOf("\n");
     }
     if (stdoutBuffer.length > MAX_PROTOCOL_LINE_CHARS) {
-      protocolError = `bridge emitted a line longer than ${MAX_PROTOCOL_LINE_CHARS} characters`;
-      requestStop("cancelled");
+      stdoutBuffer = stdoutBuffer.slice(0, MAX_PROTOCOL_LINE_CHARS + 1);
+      failProtocol(
+        `bridge emitted a line longer than ${MAX_PROTOCOL_LINE_CHARS} characters`,
+      );
     }
   });
   child.stderr.setEncoding("utf8");
   child.stderr.on("data", (chunk: string) => {
-    stderr = boundedText(stderr + chunk, MAX_STDERR_CHARS);
+    const available = Math.max(0, MAX_STDERR_CHARS - stderr.length);
+    stderr += chunk.slice(0, available);
+    stderrOmitted += Math.max(0, chunk.length - available);
   });
 
-  const closed = await new Promise<{
-    code: number | null;
-    signal: NodeJS.Signals | null;
-    spawnError?: Error;
-  }>((resolveClose) => {
-    let spawnError: Error | undefined;
-    child.once("error", (error) => {
-      spawnError = error;
-    });
-    child.once("close", (code, closeSignal) => {
-      resolveClose({
-        code,
-        signal: closeSignal,
-        ...(spawnError ? { spawnError } : {}),
-      });
-    });
-  });
-
+  const closed = await waitForClose(child);
   clearTimeout(deadline);
   if (graceTimer) clearTimeout(graceTimer);
   signal?.removeEventListener("abort", onAbort);
-  if (stdoutBuffer.trim()) handleLine(stdoutBuffer.trim());
+  if (stdoutBuffer.trim() && !protocolError) handleLine(stdoutBuffer.trim());
 
-  const elapsed = Date.now() - startedAt;
-  if (protocolError) {
-    return basicResult(
-      "protocol_error",
-      protocolError,
-      elapsed,
+  const abnormalExit =
+    closed.spawnError !== undefined ||
+    closed.code !== 0 ||
+    closed.signal !== null;
+  const terminalTrusted = Boolean(terminal && !protocolError && !abnormalExit);
+  const exitDiagnostic = closed.spawnError
+    ? `bridge could not start: ${closed.spawnError.message}`
+    : abnormalExit
+      ? `bridge exited abnormally (code ${String(closed.code)}, signal ${String(closed.signal)})`
+      : !terminal
+        ? "bridge exited without a terminal result"
+        : null;
+  const stderrDiagnostic = stderr.trim()
+    ? `stderr: ${redactText(stderr.trim(), credentials)}${stderrOmitted ? ` [${stderrOmitted} chars omitted]` : ""}`
+    : null;
+
+  let result: RlcdRunResult;
+  if (terminalTrusted && terminal) {
+    result = terminal;
+  } else {
+    const stopReason = protocolError
+      ? "protocol_error"
+      : (requestedStop ?? "bridge_error");
+    result = partialBridgeResult(
+      state,
+      stopReason,
+      boundedDiagnostic([protocolError, exitDiagnostic]) ?? stopReason,
+      requestedStop && !protocolError ? "stopped" : "error",
+      Date.now() - startedAt,
       input.maxSeconds,
-      daemon,
     );
   }
-  if (!terminal) {
-    const diagnostic = closed.spawnError
-      ? `bridge could not start: ${closed.spawnError.message}`
-      : `bridge exited without a terminal result (code ${String(closed.code)}, signal ${String(closed.signal)})`;
-    const result = basicResult(
-      requestedStop ?? "bridge_error",
-      diagnostic,
-      elapsed,
-      input.maxSeconds,
-      daemon,
-      requestedStop ? "stopped" : "error",
-    );
-    result.cleanup.bridgeProcess = "reaped";
-    result.cleanup.taskTab = forced ? "unconfirmed" : "not_created";
-    return result;
-  }
 
-  const safeTerminal = terminal;
-  safeTerminal.cleanup = {
-    taskTab: safeTerminal.cleanup.taskTab,
-    bridgeProcess: "reaped",
-    sharedDaemon: "retained",
-  };
   if (requestedStop) {
-    safeTerminal.status = "stopped";
-    safeTerminal.stopReason = requestedStop;
-    safeTerminal.completionClaim.claimed = false;
-    if (forced) safeTerminal.cleanup.taskTab = "unconfirmed";
+    result.status = "stopped";
+    result.stopReason = requestedStop;
+    result.completionClaim.claimed = false;
   }
-  const safeStderr = redactText(stderr.trim(), credentials);
-  if (safeStderr) {
-    safeTerminal.diagnostic = boundedText(
-      safeTerminal.diagnostic
-        ? `${safeTerminal.diagnostic}; stderr: ${safeStderr}`
-        : `stderr: ${safeStderr}`,
-      MAX_STDERR_CHARS,
+  if (protocolError) {
+    result.status = "error";
+    result.stopReason = "protocol_error";
+    result.completionClaim.claimed = false;
+  } else if (abnormalExit) {
+    result.status = requestedStop ? "stopped" : "error";
+    result.stopReason = requestedStop ?? "bridge_error";
+    result.completionClaim.claimed = false;
+  }
+
+  const trustedRetainedTab =
+    terminalTrusted &&
+    !requestedStop &&
+    result.status === "completion_claim" &&
+    input.retainTab &&
+    result.cleanup.taskTab === "retained";
+  let needsTargetedCleanup =
+    !trustedRetainedTab &&
+    state.ownershipReported &&
+    state.targetId !== null &&
+    (!terminalTrusted ||
+      result.cleanup.taskTab === "unconfirmed" ||
+      (result.cleanup.taskTab === "retained" && !trustedRetainedTab));
+  if (forced) needsTargetedCleanup = state.targetId !== null;
+
+  let targeted: TargetedCleanupResult | undefined;
+  if (needsTargetedCleanup && state.targetId) {
+    targeted = await targetedCleanup(
+      state.targetId,
+      childEnvironment,
+      credentials,
     );
+    result.cleanup.taskTab = targeted.confirmed ? "closed" : "unconfirmed";
+  } else if (!terminalTrusted && !trustedRetainedTab) {
+    result.cleanup.taskTab = closed.spawnError ? "not_created" : "unconfirmed";
   }
-  return safeTerminal;
+
+  const elapsedMs = Date.now() - startedAt;
+  let cleanupElapsedMs = result.timing.cleanupElapsedMs;
+  if (shutdownStartedAt !== undefined) {
+    cleanupElapsedMs = Date.now() - shutdownStartedAt;
+  } else if (
+    targeted &&
+    typeof result.timing.cleanupElapsedMs === "number" &&
+    terminalTrusted
+  ) {
+    cleanupElapsedMs = result.timing.cleanupElapsedMs + targeted.elapsedMs;
+  } else if (targeted && !terminalTrusted) {
+    cleanupElapsedMs = "unavailable";
+  }
+  result.timing = {
+    elapsedMs,
+    wallBudgetMs: input.maxSeconds * 1_000,
+    cleanupElapsedMs,
+    cleanupOverrunMs: Math.max(0, elapsedMs - input.maxSeconds * 1_000),
+  };
+  result.cleanup.bridgeProcess = "reaped";
+  result.cleanup.sharedDaemon = "retained";
+  result.diagnostic = boundedDiagnostic([
+    result.diagnostic,
+    protocolError,
+    exitDiagnostic,
+    stderrDiagnostic,
+    targeted?.diagnostic,
+  ]);
+  return result;
 }
 
 async function runRegisteredTool(
@@ -949,6 +1349,7 @@ async function runRegisteredTool(
     goal: params.goal.trim(),
     maxActions: params.maxActions ?? DEFAULT_MAX_ACTIONS,
     maxSeconds,
+    retainTab: params.retainTab ?? false,
   };
   const childEnvironment: NodeJS.ProcessEnv = {
     ...process.env,
@@ -962,7 +1363,14 @@ async function runRegisteredTool(
   });
   child.stdin.end(`${JSON.stringify(input)}\n`);
   return asToolResult(
-    await waitForBridge(child, input, signal, onUpdate, startedAt, daemon),
+    await waitForBridge(
+      child,
+      childEnvironment,
+      input,
+      signal,
+      onUpdate,
+      startedAt,
+    ),
   );
 }
 
@@ -970,7 +1378,7 @@ export default function rlcdBrwsrExtension(pi: ExtensionAPI): void {
   pi.registerTool({
     name: "rlcd_brwsr_run",
     label: "RLCD Browser",
-    description: `Run one bounded Jev Ultrafast browser task in an owned tab. Defaults: ${DEFAULT_MAX_ACTIONS} executed actions and ${DEFAULT_MAX_SECONDS} seconds; maxima: ${MAX_ACTIONS} actions and ${MAX_SECONDS} seconds. Browser Harness natively selects the required existing local daemon, which the tool preserves along with unrelated tabs. A completion claim requires independent verification. Output is bounded to ${MAX_TOOL_CONTENT_CHARS} model-visible characters.`,
+    description: `Run one bounded Jev Ultrafast browser task in an owned tab. Defaults: ${DEFAULT_MAX_ACTIONS} executed actions and ${DEFAULT_MAX_SECONDS} seconds; maxima: ${MAX_ACTIONS} actions and ${MAX_SECONDS} seconds. Set retainTab only to keep a completion-claimed tab for inspection; other outcomes still attempt cleanup. Browser Harness natively selects the required existing local daemon, which the tool preserves along with unrelated tabs. A completion claim requires independent verification. Output is bounded to ${MAX_TOOL_CONTENT_CHARS} model-visible characters.`,
     promptSnippet:
       "Delegate one already-authorized benign browser task to the bounded Jev Ultrafast loop",
     promptGuidelines: [
