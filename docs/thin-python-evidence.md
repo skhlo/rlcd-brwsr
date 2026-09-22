@@ -2,7 +2,9 @@
 
 Tested implementation: `b3b42036685eba64f3e7bc8ccc296e16b9910fe9`.
 The initial rewrite is `3f984e54`; the corrected implementation was checked again,
-not accepted solely on the earlier candidate's results.
+not accepted solely on the earlier candidate's results. These runs preceded
+checkout consolidation: their `artifacts/` paths resolve under the retained
+`rlcd-brwsr-jev-ultrafast` checkout, as recorded in the [archive index](archive.md).
 
 ## Automated and review checks
 

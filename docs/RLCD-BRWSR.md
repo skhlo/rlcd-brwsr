@@ -265,6 +265,11 @@ acceptance, compatibility across providers/configurations, or delivery.
 
 ## Evidence and history
 
+The canonical development checkout is now `~/Repositories/rlcd-brwsr/`. The
+[archive index](archive.md) owns historical branch/backup locations and explains
+why the former implementation checkout remains for test resources. Pre-consolidation
+raw artifact paths below resolve under that retained checkout.
+
 - [Thin rewrite verification and limits](thin-python-evidence.md).
 - [Feasibility source/probe record](thin-python-feasibility.md).
 - [Selected OpenRouter helper evidence](openrouter-ling-3.0-flash.md).
@@ -279,5 +284,7 @@ acceptance, compatibility across providers/configurations, or delivery.
 GitHub issues #9-#13 still describe the prior implementation and have not been
 rewritten by this local implementation task. The approved direction and this
 current implementation must be reconciled with those issues before the work is
-presented as satisfying them. PR #8 and the sibling experiment checkout remain
-untouched.
+presented as satisfying them. PR #8 and historical research commits remain
+unchanged. The user's later checkout-consolidation request replaced the visible
+experimental working tree with the current implementation while preserving the
+research branches and a verified archive.
