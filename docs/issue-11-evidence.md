@@ -2,6 +2,10 @@
 
 Base: `f103e64571d93ce8a1cb26546f78eacc1936dc85`.
 
+The original evidence below records the then-approved API-key helper. The
+**Pi-native ownership revision** at the end supersedes that helper setup while
+retaining the upstream field-context/value-validation evidence.
+
 The generated field-value slice runs through the registered Pi tool, real
 TypeScript extension, real Python bridge, pinned upstream Agent, Browser Harness
 0.1.13, and the approved isolated Chrome. Tests and TUI acceptance replaced only
@@ -94,3 +98,62 @@ run stopped its fixture and three task-owned Paseo terminals. Chrome PIDs 69653,
 census, so the correction run took no action on it. The final `pnpm check`
 passed formatting, TypeScript, all 25 registered-tool/production-load tests, and
 Python compilation; `pnpm-lock.yaml` and `uv.lock` hashes were unchanged.
+
+## Pi-native ownership revision
+
+The later approved simplification removes the separate API-key/helper endpoint
+and makes Pi the sole owner of text-helper model lookup, existing login, OAuth
+refresh, and completion. The fixed helper is
+`openai-codex/gpt-5.6-luna` at high reasoning. Python receives no OAuth material
+or model choice; its narrow pinned interception relays only upstream's unchanged
+system/user prompt and a bounded response with available token usage over the
+existing bridge. Internal nonsecret sentinels satisfy upstream's fixed
+API-key-shaped call and cannot fall through to HTTP. Standalone Python preflight
+now reports helper capability/model as unknown.
+
+The registered-tool tracer failed before implementation because no Pi
+completion was called (`0 !== 1`), then passed through the real extension,
+bridge, and pinned Agent. Offline coverage now proves the prompt/reply round
+trip, Luna/high selection, upstream exact-`{text}`/nonempty/2,000-character
+validation, malformed and bounded oversized replies, provider failure, missing
+model/login, click-only no-call behavior, cancellation/deadline while waiting,
+late-reply suppression across a later run, process/tab cleanup, bounded output,
+child-loaded Jev-secret redaction, and absence of synthetic OAuth material from
+bridge stdin, arguments, and tool results. External Pi completion, Jev, and
+browser dependencies are synthetic in these tests; no provider call was made.
+
+Fresh visible Pi TUI acceptance then exercised the new relay with the real
+pinned Agent, Browser Harness, and approved isolated Chrome profile. A test-only
+Pi extension replaced only the external Luna completion; the existing fixture
+replacement supplied Jev choices. The tool returned
+`completion_claim`/`done_claim` after `TYPE_TEXT` and `DONE`, reported fixed
+`openai-codex/gpt-5.6-luna`, high reasoning in the responder record, one helper
+call with available token usage, retained target
+`E72E617C16C3CE6291564D21E3222932`, and reaped bridge PID `63823`. A separate
+direct-CDP observer inspected that exact retained target and read `Busan` plus
+the visible `FIELD-41` marker. The target was then closed by exact identifier;
+the final target set matched the four-target post-provision baseline.
+
+The previously approved Chrome PID `89627` was absent and endpoint `63729` was
+initially down. The same approved profile was restarted explicitly on that
+loopback endpoint as PID `63031`; no personal or other profile was selected.
+The retained Harness PID `89979` then failed its CDP health check, so the
+project's explicit provisioning path replaced only that named task daemon with
+healthy PID `63344` against unchanged native configuration. Both approved setup
+resources remain. The fixture, Pi, and observer Paseo terminals were stopped;
+pre-existing Paseo terminals `7d560f42-...` and `80ded321-...` remain. Raw
+ignored TUI, responder, observer, preflight, and census evidence is under
+`artifacts/pi-native-text-helper-tui-20260922T022749Z/`; the initial Chrome
+restart log also remains under the earlier
+`artifacts/pi-native-text-helper-tui-20260922T000000Z/` directory.
+
+No live Jev or Luna completion, provider credential setup, helper HTTP request,
+or paid #13 acceptance was performed. The ordinary outer Pi model turn used to
+invoke the tool was authorized. Live combined acceptance remains deferred to
+issue #13.
+
+Candidate verification passed `pnpm check`: repository formatting, TypeScript,
+all 40 registered-tool/production-load tests, and Python compilation. The
+project also passed shell syntax checks and `git diff --check`. Lockfiles stayed
+stable at `078dfa074e7244bb461ecb0906d0b5570280a917` (`pnpm-lock.yaml`) and
+`07c18ae06e215cf23e6391e52e28a6fb0df29ecf` (`uv.lock`).

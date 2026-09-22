@@ -14,5 +14,5 @@
     "target": "ES2023",
     "verbatimModuleSyntax": true
   },
-  "include": ["config/**/*.ts", "test/**/*.ts"]
+  "include": ["config/**/*.ts", "fixtures/**/*.ts", "test/**/*.ts"]
 }

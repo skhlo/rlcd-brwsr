@@ -16,17 +16,23 @@ from runtime_support import (
     JEV_MODEL,
     require_existing_local_daemon,
     resolved_local_daemon_name,
-    resolved_text_helper_configuration,
 )
 
-PROTOCOL_VERSION = 1
+PROTOCOL_VERSION = 2
 MAX_REQUEST_BYTES = 8_192
+MAX_HELPER_REPLY_BYTES = 16_000
 MAX_PROTOCOL_LINE_CHARS = 32_000
 MAX_EVIDENCE_CHARS = 4_000
 MAX_PROGRESS_EVIDENCE_CHARS = 1_200
 MAX_TRACE_ENTRIES = 24
 MAX_DIAGNOSTIC_CHARS = 600
 MAX_USAGE_CHARS = 600
+_INTERNAL_HELPER_KEY = "rlcd-pi-native-helper"
+_INTERNAL_HELPER_BASE_URL = "rlcd-pi-helper://bridge"
+_INTERNAL_HELPER_MODEL = "pi-native-text-helper"
+_helper_request_id = 0
+_helper_waiting = False
+_helper_wait_interrupted = False
 
 
 class RunCancelled(Exception):
@@ -46,7 +52,6 @@ def _refresh_known_credentials() -> None:
     values = (
         *_known_credentials,
         os.environ.get("TYPESAFE_API_KEY", ""),
-        os.environ.get("TEXT_MODEL_API_KEY", ""),
     )
     _known_credentials = tuple(dict.fromkeys(value for value in values if value))
 
@@ -91,8 +96,9 @@ class _RedactingDiagnosticStream:
 
 
 def _handle_stop(_signum: int, _frame: object) -> None:
-    global _cancel_reason
+    global _cancel_reason, _helper_wait_interrupted
     _cancel_reason = _cancel_reason or "cancelled"
+    _helper_wait_interrupted = _helper_waiting
     raise RunCancelled(_cancel_reason)
 
 
@@ -111,12 +117,94 @@ def _emit(record: dict[str, Any]) -> None:
     sys.stdout.flush()
 
 
+def _read_helper_reply(request_id: int) -> dict[str, Any]:
+    raw = sys.stdin.buffer.readline(MAX_HELPER_REPLY_BYTES + 1)
+    if not raw:
+        raise RuntimeError("Pi text helper reply stream closed before a response")
+    if len(raw) > MAX_HELPER_REPLY_BYTES:
+        raise RuntimeError(
+            f"Pi text helper reply exceeded {MAX_HELPER_REPLY_BYTES} bytes"
+        )
+    try:
+        reply = json.loads(raw)
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise RuntimeError("Pi text helper reply was not valid JSON") from error
+    if not isinstance(reply, dict):
+        raise RuntimeError("Pi text helper reply must be a JSON object")
+    if reply.get("type") != "text_helper_response":
+        raise RuntimeError("Pi text helper reply had an unexpected type")
+    if reply.get("requestId") != request_id:
+        raise RuntimeError("Pi text helper reply did not match the active request")
+    error = reply.get("error")
+    if error is not None:
+        if not isinstance(error, str) or not error.strip():
+            raise RuntimeError("Pi text helper returned an invalid error")
+        raise RuntimeError(_bounded_text(error, MAX_DIAGNOSTIC_CHARS))
+    response = reply.get("response")
+    usage = reply.get("usage")
+    if not isinstance(response, str):
+        raise RuntimeError("Pi text helper returned no response text")
+    if not isinstance(usage, dict):
+        usage = {}
+    return {
+        "response": response,
+        "usage": usage,
+    }
+
+
+def _install_pi_text_helper(upstream_model: Any) -> None:
+    """Route only upstream's helper-shaped call over the existing bridge."""
+    original_post_json = upstream_model.post_json
+
+    def post_json(url: object, key: object, body: object) -> Any:
+        if key != _INTERNAL_HELPER_KEY:
+            return original_post_json(url, key, body)
+        if url != f"{_INTERNAL_HELPER_BASE_URL}/chat/completions":
+            raise RuntimeError("internal Pi text helper endpoint mismatch")
+        if not isinstance(body, dict):
+            raise RuntimeError("upstream text helper request was not an object")
+        messages = body.get("messages")
+        if (
+            not isinstance(messages, list)
+            or len(messages) != 2
+            or not all(isinstance(message, dict) for message in messages)
+        ):
+            raise RuntimeError("upstream text helper prompt had an unexpected shape")
+        system_prompt = messages[0].get("content")
+        user_prompt = messages[1].get("content")
+        if not isinstance(system_prompt, str) or not isinstance(user_prompt, str):
+            raise RuntimeError("upstream text helper prompt was not textual")
+
+        global _helper_request_id, _helper_waiting
+        _helper_request_id += 1
+        request_id = _helper_request_id
+        _emit(
+            {
+                "type": "text_helper_request",
+                "requestId": request_id,
+                "prompt": {
+                    "system": system_prompt,
+                    "user": user_prompt,
+                },
+            }
+        )
+        _helper_waiting = True
+        try:
+            reply = _read_helper_reply(request_id)
+        finally:
+            _helper_waiting = False
+        return {
+            "choices": [{"message": {"content": reply["response"]}}],
+            "usage": reply["usage"],
+        }
+
+    upstream_model.post_json = post_json
+
+
 def _read_request() -> dict[str, Any]:
     raw = sys.stdin.buffer.readline(MAX_REQUEST_BYTES + 1)
     if len(raw) > MAX_REQUEST_BYTES:
         raise InputError(f"request exceeds {MAX_REQUEST_BYTES} bytes")
-    if sys.stdin.buffer.read(1):
-        raise InputError("bridge accepts exactly one request line")
     try:
         value = json.loads(raw)
     except (UnicodeDecodeError, json.JSONDecodeError) as error:
@@ -127,6 +215,8 @@ def _read_request() -> dict[str, Any]:
     url = value.get("url")
     goal = value.get("goal")
     if value.get("requestType") == "cleanup_target":
+        if sys.stdin.buffer.read(1):
+            raise InputError("cleanup bridge accepts exactly one request line")
         target_id = value.get("targetId")
         if (
             not isinstance(target_id, str)
@@ -143,6 +233,8 @@ def _read_request() -> dict[str, Any]:
     max_actions = value.get("maxActions")
     max_seconds = value.get("maxSeconds")
     retain_tab = value.get("retainTab", False)
+    text_helper_available = value.get("textHelperAvailable")
+    text_helper_unavailable_reason = value.get("textHelperUnavailableReason")
     if not isinstance(url, str) or not url.strip() or len(url) > 2_048:
         raise InputError("url must be a non-empty string of at most 2048 characters")
     parsed = urlsplit(url)
@@ -166,12 +258,33 @@ def _read_request() -> dict[str, Any]:
         raise InputError("maxSeconds must be an integer from 1 through 120")
     if not isinstance(retain_tab, bool):
         raise InputError("retainTab must be a boolean")
+    if not isinstance(text_helper_available, bool):
+        raise InputError("textHelperAvailable must be a boolean")
+    if (
+        text_helper_unavailable_reason is not None
+        and (
+            not isinstance(text_helper_unavailable_reason, str)
+            or not text_helper_unavailable_reason.strip()
+            or len(text_helper_unavailable_reason) > MAX_DIAGNOSTIC_CHARS
+        )
+    ):
+        raise InputError(
+            "textHelperUnavailableReason must be null or a non-empty bounded string"
+        )
+    if text_helper_available and text_helper_unavailable_reason is not None:
+        raise InputError(
+            "available text helper must not include an unavailable reason"
+        )
+    if not text_helper_available and text_helper_unavailable_reason is None:
+        raise InputError("unavailable text helper must include a reason")
     return {
         "url": url,
         "goal": goal.strip(),
         "maxActions": max_actions,
         "maxSeconds": max_seconds,
         "retainTab": retain_tab,
+        "textHelperAvailable": text_helper_available,
+        "textHelperUnavailableReason": text_helper_unavailable_reason,
     }
 
 
@@ -283,8 +396,7 @@ def _terminal(
     stop_reason: str,
     started_at: float,
     max_seconds: int,
-    text_helper_configured: bool,
-    text_helper_configured_model: str | None,
+    text_helper_available: bool,
     daemon_name: str | None,
     agent: object | None,
     target_id: str | None,
@@ -329,8 +441,8 @@ def _terminal(
                 "providerCost": "unavailable",
             },
             "textHelper": {
-                "configured": text_helper_configured,
-                "configuredModel": text_helper_configured_model,
+                "availability": "available" if text_helper_available else "unavailable",
+                "model": None,
                 "calls": text_usage[-MAX_TRACE_ENTRIES:],
                 **(
                     {"callsTruncated": True}
@@ -363,10 +475,8 @@ def _terminal(
 
 def _run(request: dict[str, Any], started_at: float) -> tuple[dict[str, Any], object | None]:
     daemon_name: str | None = None
-    text_helper_configured = False
-    text_helper_configured_model: str | None = None
-    text_helper_configuration_error: str | None = None
-    text_helper_configuration_status = "absent"
+    text_helper_available = request["textHelperAvailable"]
+    text_helper_unavailable_reason = request["textHelperUnavailableReason"]
     trace: list[dict[str, Any]] = []
     decisions: list[dict[str, Any]] = []
     agent: object | None = None
@@ -389,8 +499,7 @@ def _run(request: dict[str, Any], started_at: float) -> tuple[dict[str, Any], ob
             stop_reason=stop_reason,
             started_at=started_at,
             max_seconds=request["maxSeconds"],
-            text_helper_configured=text_helper_configured,
-            text_helper_configured_model=text_helper_configured_model,
+            text_helper_available=text_helper_available,
             daemon_name=daemon_name,
             agent=agent,
             target_id=target_id,
@@ -410,11 +519,6 @@ def _run(request: dict[str, Any], started_at: float) -> tuple[dict[str, Any], ob
 
         _refresh_known_credentials()
         daemon_name = resolved_local_daemon_name()
-        text_helper_configuration = resolved_text_helper_configuration()
-        text_helper_configured = text_helper_configuration.configured
-        text_helper_configured_model = text_helper_configuration.model
-        text_helper_configuration_error = text_helper_configuration.error
-        text_helper_configuration_status = text_helper_configuration.status
         if not os.environ.get("TYPESAFE_API_KEY", "").strip():
             return finish(
                 "error",
@@ -424,7 +528,15 @@ def _run(request: dict[str, Any], started_at: float) -> tuple[dict[str, Any], ob
 
         os.environ["TYPESAFE_MODEL"] = JEV_MODEL
 
+        os.environ["TEXT_MODEL_API_KEY"] = _INTERNAL_HELPER_KEY
+        os.environ["TEXT_MODEL_BASE_URL"] = _INTERNAL_HELPER_BASE_URL
+        os.environ["TEXT_MODEL"] = _INTERNAL_HELPER_MODEL
+
         import jev_ultrafast.browser as upstream_browser
+        import jev_ultrafast.model as upstream_model
+
+        _install_pi_text_helper(upstream_model)
+
         from jev_ultrafast import Agent
         from jev_ultrafast.browser import StalePage
 
@@ -436,9 +548,9 @@ def _run(request: dict[str, Any], started_at: float) -> tuple[dict[str, Any], ob
                 "protocolVersion": PROTOCOL_VERSION,
                 "daemon": daemon_name,
                 "capabilities": {
-                    "textHelperConfigured": text_helper_configured,
-                    "textHelperConfiguration": text_helper_configuration_status,
-                    "textHelperConfiguredModel": text_helper_configured_model,
+                    "textHelperAvailability": (
+                        "available" if text_helper_available else "unavailable"
+                    ),
                 },
             }
         )
@@ -513,16 +625,15 @@ def _run(request: dict[str, Any], started_at: float) -> tuple[dict[str, Any], ob
                 if (
                     action is not None
                     and action.get("kind") == "fill"
-                    and not text_helper_configured
+                    and not text_helper_available
                 ):
                     entry["outcome"] = "needs_text"
                     return finish(
                         "stopped",
                         "needs_text",
-                        text_helper_configuration_error
-                        or "TYPE_TEXT needs explicit TEXT_MODEL_API_KEY, "
-                        "TEXT_MODEL_BASE_URL, and TEXT_MODEL; no helper request "
-                        "or field mutation was made",
+                        text_helper_unavailable_reason
+                        or "Pi text helper is unavailable; no helper request or "
+                        "field mutation was made",
                     ), agent
 
                 fill_was_selected = (
@@ -618,7 +729,11 @@ def _run(request: dict[str, Any], started_at: float) -> tuple[dict[str, Any], ob
         return finish(
             "stopped",
             _cancel_reason or "cancelled",
-            mutation_outcome="unknown" if phase == "mutation" else "not_in_flight",
+            mutation_outcome=(
+                "unknown"
+                if phase == "mutation" and not _helper_wait_interrupted
+                else "not_in_flight"
+            ),
         ), agent
     except Exception as error:
         current_text_calls = state.get("text_calls", []) if agent is not None else []
@@ -704,8 +819,7 @@ def main() -> int:
             stop_reason=_cancel_reason or "cancelled",
             started_at=started_at,
             max_seconds=1,
-            text_helper_configured=False,
-            text_helper_configured_model=None,
+            text_helper_available=False,
             daemon_name=None,
             agent=agent,
             target_id=None,
@@ -718,8 +832,7 @@ def main() -> int:
             stop_reason="invalid_input",
             started_at=started_at,
             max_seconds=1,
-            text_helper_configured=False,
-            text_helper_configured_model=None,
+            text_helper_available=False,
             daemon_name=None,
             agent=None,
             target_id=None,
@@ -733,8 +846,7 @@ def main() -> int:
             stop_reason="bridge_error",
             started_at=started_at,
             max_seconds=1,
-            text_helper_configured=False,
-            text_helper_configured_model=None,
+            text_helper_available=False,
             daemon_name=None,
             agent=agent,
             target_id=None,

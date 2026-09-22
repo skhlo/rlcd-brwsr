@@ -1,5 +1,6 @@
 const endpoint = process.env.RLCD_ACCEPTANCE_CDP_URL;
 const taskUrl = "http://127.0.0.1:43113/text-entry.html";
+const requestedTargetId = process.env.RLCD_ACCEPTANCE_TARGET_ID;
 const timeoutMs = Number.parseInt(
   process.env.RLCD_ACCEPTANCE_OBSERVER_TIMEOUT_MS ?? "120000",
   10,
@@ -71,6 +72,7 @@ while (Date.now() < deadline && !observed) {
   const target = targets.find(
     (entry) =>
       entry.type === "page" &&
+      (!requestedTargetId || entry.id === requestedTargetId) &&
       entry.url.startsWith(taskUrl) &&
       entry.webSocketDebuggerUrl,
   );
@@ -117,12 +119,14 @@ if (!observed) {
 console.log(
   JSON.stringify(
     {
-      observer: "independent direct Chrome CDP during tool execution",
+      observer: "independent direct Chrome CDP",
       targetId: observedTargetId,
       ...observed,
       fieldVerified: true,
       markerVerified: true,
-      targetLeftForRunOwnedCleanup: true,
+      ...(requestedTargetId
+        ? { targetLeftForCallerCleanup: true }
+        : { targetLeftForRunOwnedCleanup: true }),
     },
     null,
     2,

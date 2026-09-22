@@ -1,14 +1,11 @@
-"""Deterministic external replies for the real-browser #11 acceptance run.
+"""Deterministic Jev replies for the real-browser text-entry acceptance run.
 
-This replaces only paid Jev and text-helper HTTP responses. The pinned upstream
+A separate test-only Pi extension replaces external Luna completion. The pinned
 Agent, its field-context construction and value validation, Browser Harness,
 and Chrome remain real.
 """
 
-import json
-import os
 import time
-from pathlib import Path
 
 from jev_ultrafast import model
 
@@ -21,47 +18,7 @@ def _choice(criteria, selected):
     }
 
 
-def _record_helper_summary(url, body, context):
-    path = os.environ.get("RLCD_ACCEPTANCE_HELPER_MARKER")
-    if not path:
-        return
-    Path(path).write_text(
-        json.dumps(
-            {
-                "externalReply": "synthetic deterministic text helper",
-                "endpoint": url,
-                "configuredModel": body.get("model"),
-                "field": context.get("field", {}).get("label"),
-                "goal": context.get("goal"),
-                "returnedValue": "Busan",
-            },
-            indent=2,
-        ),
-        encoding="utf-8",
-    )
-
-
-def _deterministic_post_json(url, _key, body):
-    if "messages" in body:
-        context = json.loads(body["messages"][1]["content"])
-        field = context.get("field", {}).get("label", "")
-        goal = context.get("goal", "")
-        page_text = context.get("page", {}).get("text", "")
-        if (
-            not field.startswith("Destination city")
-            or "second-largest city" not in goal
-            or "Waiting for a valid destination" not in page_text
-        ):
-            raise RuntimeError("upstream field context was not preserved")
-        _record_helper_summary(url, body, context)
-        return {
-            "model": "synthetic-helper-provider-reported-id",
-            "choices": [
-                {"message": {"content": json.dumps({"text": "Busan"})}}
-            ],
-            "usage": {"prompt_tokens": 23, "completion_tokens": 4},
-        }
-
+def _deterministic_post_json(_url, _key, body):
     questions = body["questions"]
     operations = questions["operation"]["criteria"]
     page = body["state"]["page"]

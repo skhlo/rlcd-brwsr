@@ -7,7 +7,8 @@ RLCD-brwsr will expose `browser-use/jev-ultrafast` at commit
 small Python bridge. Upstream owns observation, indexed action candidates,
 selection, text-helper handoff, stale-state checks, and execution through its
 Browser Harness `0.1.13` dependency. The wrapper owns validation, finite
-budgets, cancellation, bounded JSONL progress/results, and run-owned cleanup.
+budgets, cancellation, bounded JSONL progress/results, Pi-native text completion,
+and run-owned cleanup.
 
 The bridge uses upstream's prediction/action/state integration seam at that
 exact revision to report progress and enforce wrapper budgets. This seam is not
@@ -34,6 +35,31 @@ This intentionally removes the independent same-browser target identity
 guarantee. Because Harness consumes connection settings at daemon startup, an
 operator changing them must explicitly stop/restart and reprovision Harness; the
 wrapper does not detect a same-named local daemon still using older settings.
+
+## Pi-native text-helper amendment
+
+Issue #11 initially enabled upstream's generic OpenAI-compatible helper through
+an explicit API-key/endpoint/model tuple. The user's later approved
+simplification supersedes that helper backend and setup.
+
+The only text-helper model is now Pi-native
+`openai-codex/gpt-5.6-luna` at high reasoning. The extension uses the current
+`ExtensionContext` model registry, so Pi owns model lookup, existing login,
+OAuth refresh, and completion without exposing auth material to Python or tool
+arguments. This does not select or modify the session's main model or thinking
+level. Missing Luna or Pi login remains an optional-capability stop only when
+`TYPE_TEXT` is selected; click-only work remains available.
+
+The pinned upstream `field_context()` and `field_text()` prompt construction and
+`{text}` value validation remain authoritative. A narrow, revision-pinned
+Python transport interception catches only the helper-shaped `post_json` call,
+uses nonsecret sentinel values that cannot fall through to HTTP, and relays one
+bounded prompt/reply exchange over the bridge's existing stdin/stdout. The
+TypeScript side translates upstream's generic low reasoning request to the
+fixed high-effort Pi call. There is no second generator, helper backend selector,
+server, daemon, credential store, framework, or new runtime dependency.
+Standalone Python preflight reports helper capability as unknown because it
+cannot assess Pi's login.
 
 ## Interrupted-run and retention amendment
 
@@ -91,11 +117,10 @@ capability; Chrome DevTools CLI is not a fallback.
   cloud/remote settings and live cloud daemons fail closed. Runs preserve the
   selected Chrome, daemon, and unrelated tabs.
 - The Pi tool remains one deep interface and is sequential only within Pi.
-- The optional upstream text helper remains upstream-owned and is not replaced
-  by custom extraction or the main Pi model. It is enabled only when native
-  `TEXT_MODEL_API_KEY`, `TEXT_MODEL_BASE_URL`, and `TEXT_MODEL` settings form an
-  explicit coherent configuration; partial settings never activate upstream's
-  default endpoint/model.
+- Upstream remains the sole owner of field context and generated-value
+  validation. Pi owns the fixed Luna/high text completion and its existing
+  login; the wrapper owns only the bounded bridge relay. No separate helper
+  credential or endpoint configuration remains.
 - Historical custom-loop evidence remains in PR #8 at `5dafb11` and sibling
   experiment commit `6df4b4b0f8b17420f9c9bc0a8176072312ec6de3`.
 - No maintained upstream fork, TypeScript port, custom extractor, site scripts,

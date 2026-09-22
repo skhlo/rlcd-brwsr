@@ -7,7 +7,8 @@ outer agent supplies a starting URL, a natural-language goal, and finite
 execution budgets. Jev Ultrafast owns browser observation, indexed action
 candidates, action selection, text-helper handoff, stale-state checks, and
 execution through Browser Harness. RLCD-brwsr owns the Pi-facing contract,
-process bounds, progress capture, normalized result, and run-owned cleanup.
+process bounds, progress capture, normalized result, Pi-native text completion,
+and run-owned cleanup.
 
 This optimizes browser work that Pi has already authorized. It is not a new
 authorization system, a global browser lock, or proof that model-selected page
@@ -56,10 +57,12 @@ requested outcome independently.
 ```text
 Pi calls rlcd_brwsr_run(url, goal, budgets)
   -> TypeScript validates input and project-local runtime availability
+  -> TypeScript resolves fixed Luna availability through Pi's model registry
   -> TypeScript starts one project-local Python bridge with fixed argv
   -> bridge requires the configured existing Browser Harness daemon
   -> bridge constructs the pinned upstream Agent
   -> upstream observes, predicts, and executes through Browser Harness
+  -> TYPE_TEXT relays the unchanged upstream helper prompt to Pi over the bridge
   -> bridge emits bounded JSONL ownership, progress, and terminal records
   -> TypeScript enforces the wall deadline/cancellation and normalizes output
   -> bridge closes its run-owned tab unless a completion-only retention request applies
@@ -79,8 +82,9 @@ as `jev-1.13.0`, not a moving alias.
 The integration deliberately uses upstream's revision-pinned
 prediction/action/state seam so the wrapper can enforce a smaller action budget
 and emit progress after each observation or execution. Observation, candidate
-construction, selection, stale checks, text generation, and execution remain
-upstream code. Compatibility tests are required before any upstream pin update.
+construction, selection, stale checks, helper prompt/value validation, and
+execution remain upstream code; Pi owns the helper completion itself.
+Compatibility tests are required before any upstream pin update.
 
 ## Browser setup and ownership
 
@@ -132,18 +136,30 @@ Upstream validates the selected operation and operation-specific target before
 execution. Model output never becomes a selector, coordinate, URL, shell
 command, or executable JavaScript.
 
-The OpenAI-compatible text helper is optional for a click-only run. It is
-configured only when native upstream `TEXT_MODEL_API_KEY`,
-`TEXT_MODEL_BASE_URL`, and `TEXT_MODEL` values are all explicit and coherent.
-The endpoint must use HTTPS, or loopback HTTP for a local responder, without
-embedded credentials, a query, or a fragment. A lone key cannot select
-upstream's default endpoint/model. The Python bridge classifies this native
-resolved configuration and advertises absent, incomplete, invalid, or
-configured status; before the bridge reports it, the parent reports capability
-and model status as unknown. If upstream first selects `TYPE_TEXT` without a
-configured helper, the run stops before a helper request or field mutation and
-returns `needs_text` with prior progress. The outer agent must not silently
-substitute its own model.
+The only text helper is Pi-native `openai-codex/gpt-5.6-luna` at high
+reasoning. The TypeScript extension resolves that exact model from the current
+tool context and calls `ctx.modelRegistry.complete()`. Pi owns its existing
+login, OAuth refresh, provider transport, and completion. RLCD-brwsr neither
+reads/copies OAuth material nor changes the session's main model or thinking
+level. There is no helper endpoint, API-key setup, backend selector, daemon,
+credential store, or fallback model in this project.
+
+The helper remains optional for click-only work. Before bridge readiness, and in
+standalone Python preflight, helper capability/model are `unknown`. During a
+tool run the bridge receives only Pi's available/unavailable judgment. If
+upstream first selects `TYPE_TEXT` while the model or Pi login is unavailable,
+the run stops before a helper request or field mutation and returns `needs_text`
+with prior progress.
+
+At the pinned upstream seam, Python installs a narrow transport interception for
+only the API-key-shaped call made by `field_text()`. Internal nonsecret sentinel
+values satisfy that fixed upstream interface and cannot reach HTTP. The bridge
+relays the exact upstream system and user prompt over its existing stdin/stdout;
+TypeScript translates upstream's generic low-effort request to the one approved
+high-effort Luna call. The response and available token usage return over the
+same single-inflight exchange. Upstream remains the sole owner of
+`field_context()`, prompt construction, and validation that the response is
+exactly `{text}` with a nonempty string of at most 2,000 characters.
 
 ## First vertical slice
 
@@ -162,12 +178,13 @@ The slice provides:
 - normal task-tab and bridge cleanup; and
 - a missing-text-helper capability handoff.
 
-Issue #11 adds the configured text-entry journey through the same tool. It
-keeps upstream's field-context construction, helper request, generated-value
-validation, and browser fill. The wrapper adds only coherent optional-capability
-validation, bounded failure classification, and normalized helper evidence. It
-does not add prepared values, a second generator, page cleanup, or site
-planning.
+Issue #11 added the text-entry journey through the same tool. The later
+Pi-native ownership revision keeps its upstream field-context construction,
+generated-value validation, and browser fill while replacing the separate
+OpenAI-compatible helper configuration with fixed Luna/high completion through
+Pi. The wrapper adds only capability handoff, a bounded single-inflight relay,
+bounded failure classification, and normalized helper evidence. It does not add
+prepared values, a second generator, page cleanup, or site planning.
 
 Issue #12 extends the same registered-tool/real-bridge seam with in-flight
 interruption, abnormal-exit cleanup, and completion-only retained tabs. It does
@@ -198,7 +215,7 @@ stricter limits.
 The first slice stops for:
 
 - a Jev `DONE` completion claim or upstream `BLOCKED` state;
-- missing optional text-helper configuration when text entry is selected;
+- unavailable Luna model or Pi login when text entry is selected;
 - the configured action or wall-clock budget;
 - Pi cancellation;
 - stale/invalid upstream state, provider failure, or uncertain execution; or
@@ -217,16 +234,25 @@ is reported as confirmed or unconfirmed rather than inferred.
 ## Protocol and result bounds
 
 The extension starts a fixed project-local Python executable with a fixed bridge
-path. It sends one structured JSON request on stdin. URL, goal, page text, and
-model output are data and never enter a shell command.
+path. It sends one structured run request on stdin, followed only by correlated
+text-helper replies when requested. URL, goal, page text, and model output are
+data and never enter a shell command.
 
 Standard output is protocol-only JSON Lines:
 
-1. one readiness record, including optional-capability status;
+1. one readiness record, including Pi-helper availability;
 2. ownership as soon as a task target exists;
 3. bounded progress after observations, predictions, mutation dispatch, and
-   executions; and
-4. exactly one terminal result on a normal bridge path.
+   executions;
+4. at most one in-flight text-helper request, correlated with one bounded reply
+   on stdin; and
+5. exactly one terminal result on a normal bridge path.
+
+The parent keeps task-run stdin open only for that sequential helper exchange;
+targeted standalone cleanup retains its one-line-plus-EOF contract.
+Cancellation, wall expiry, protocol failure, and child EOF abort a waiting Pi
+completion and prevent a late reply from being written into a closed or later
+exchange.
 
 Diagnostics use standard error. The parent bounds each protocol line to 32,000
 characters and streams validated progress without retaining an unbounded record
@@ -237,12 +263,12 @@ configuration resolution, the child redacts its known credentials from every
 protocol record and diagnostic stream before emission. The parent separately
 retains its defense for values it knows. Redaction therefore covers retained
 errors, progress, tool content, and details without serializing child-only
-secrets to the parent. Measurements name configured Jev/helper models separately
-from provider-reported identities.
-The pinned helper retains its configured model, latency, field label, and usage
-but not the provider response's model ID, so that reported identity is
-`unavailable`. Provider attempt, retry, and cost counts that upstream does not
-expose are also `unavailable`, not zero. Cleanup elapsed time remains unavailable
+secrets to the parent. Measurements name the configured Jev model and fixed Pi
+helper separately from provider-reported identities. Helper latency and
+available Pi token usage are reported for completed responses; a response model
+is reported only when Pi supplies one. Provider attempt, retry,
+subscription-spend, and cost counts that are not exposed remain `unavailable`,
+not zero. Cleanup elapsed time remains unavailable
 when an abnormal exit prevents measuring the whole interval; total elapsed time
 and any overrun beyond the wall budget remain parent-observed. The Jev model
 identifier has one executable owner in `config/runtime.json`, which the
@@ -257,17 +283,17 @@ incidental call order.
 
 The first slice covers inert loading, invalid input, explicit preflight,
 click-only completion, basic action/time/cancellation bounds, missing text-helper
-handoff, bounded/redacted failure output, and owned-resource cleanup. The second
-slice adds generated text entry, coherent/partial helper configuration,
-malformed and empty generation, provider/status failures, a pre-helper browser
-freshness transport failure, separate model and usage reporting, and
-synthetic-secret redaction through progress/results and retained test evidence.
-The helper-secret regression loads its synthetic tuple only through an isolated
-Harness workspace `.env` and checks the raw child protocol as well as parent and
-retained surfaces. Focused regressions cross the executable setup, executable
-preflight, and registered-tool seams while letting real Browser Harness
-import-time workspace `.env` loading resolve synthetic local and conflicting
-cloud settings. Cheap guards are proven red before implementation. Issue #12 adds interruption
+handoff, bounded/redacted failure output, and owned-resource cleanup. The
+Pi-native text slice covers a complete request/reply round trip through the
+registered tool and real bridge; exact upstream prompt/value validation;
+missing model/login; malformed, empty, extra-key, overlong, and oversized
+responses; provider failures; cancellation/deadline while waiting; late reply
+suppression; click-only no-call behavior; separate model/usage reporting; and
+synthetic Jev-secret redaction through raw child, parent, and retained surfaces.
+Focused regressions cross the executable setup, executable preflight, and
+registered-tool seams while letting real Browser Harness import-time workspace
+`.env` loading resolve synthetic local and conflicting cloud settings. Cheap
+guards are proven red before implementation. Issue #12 adds interruption
 at observation/model/dispatched-input phases, missing-terminal partial evidence,
 failed initialization before ownership, malformed/truncated/oversized output,
 abnormal exit, confirmed and unconfirmed targeted cleanup, default closure, and
@@ -278,9 +304,9 @@ reported target identifier. It never lists or reconciles a target set.
 
 Acceptance also uses a fresh actual Pi TUI controlled through Paseo CLI, the
 named Browser Harness daemon, the loopback fixture, and honestly labelled
-deterministic responders. Those responders replace paid model HTTP only; the
-pinned Agent, DOM observation, upstream helper context/value validation, Browser
-Harness, and Chrome remain real. A separate browser observation verifies the
+deterministic responders. Those responders replace external Jev and Pi helper
+completion only; the pinned Agent, DOM observation, upstream helper
+context/value validation, Browser Harness, and Chrome remain real. A separate browser observation verifies the
 click destination or inspects the text field and `FIELD-41` marker on the owned
 target while the text run is still open; `DONE` alone does not pass. Resource
 census records tabs, processes, the named shared daemon, and any run-owned bridge
@@ -306,8 +332,11 @@ path. The issue #10 implementation initially added wrapper-specific
 `RLCD_BRWSR_DAEMON`/`RLCD_BRWSR_CDP_URL` settings and a live target-identity
 binding check. A later user-approved simplification supersedes that connection
 contract: Browser Harness now owns native resolution, while the wrapper retains
-only local-mode validation and existing-daemon-only runtime behavior. Historical
-custom-loop code, tests, reports, and raw observations remain
+only local-mode validation and existing-daemon-only runtime behavior. A further
+user-approved simplification supersedes issue #11's separate API-key helper:
+Pi now solely owns fixed Luna/high model lookup, login, refresh, and completion;
+the Python side retains only the pinned upstream prompt/validation seam and a
+bounded relay. Historical custom-loop code, tests, reports, and raw observations remain
 in open PR #8 at `5dafb11` and in the sibling experiment history through
 `6df4b4b0f8b17420f9c9bc0a8176072312ec6de3`. They are references, not a branch
 to merge and not results from this wrapper.

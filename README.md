@@ -26,10 +26,8 @@ scripts/setup-runtime.sh
 
 export TYPESAFE_API_KEY=... # host-local; never commit it
 
-# Optional text helper. Set all three explicitly or leave all three absent.
-export TEXT_MODEL_API_KEY=... # host-local; never commit it
-export TEXT_MODEL_BASE_URL=https://provider.example/v1
-export TEXT_MODEL=provider-model-id
+# Text entry uses Pi's existing OpenAI Codex login. RLCD-brwsr does not
+# configure or copy that login.
 
 scripts/provision-browser.sh
 scripts/preflight-runtime.sh
@@ -57,25 +55,30 @@ configuration change. Preflight never creates or synchronizes `.venv`. If Chrome
 asks for remote-debugging permission during explicit provisioning, the operator
 must approve it; the script does not automate permission.
 
-The upstream OpenAI-compatible helper settings are optional for click-only
-work, but enabling the helper requires explicit, coherent
-`TEXT_MODEL_API_KEY`, `TEXT_MODEL_BASE_URL`, and `TEXT_MODEL` values. The base
-URL must use HTTPS, or loopback HTTP for a local responder, and must not embed
-credentials, a query, or a fragment. A lone key never activates upstream's
-default provider/model. The Python bridge is the sole executable owner of this
-classification after native Harness `.env` resolution; pre-bridge results report
-helper capability and model as unknown. If upstream chooses `TYPE_TEXT` while
-the three-value configuration is absent, incomplete, or invalid, the tool stops
-before a helper request or field mutation and retains the Jev decision and page
-evidence.
+Text entry uses only Pi's native `openai-codex/gpt-5.6-luna` model at high
+reasoning through the extension context's model registry. Pi owns model lookup,
+its existing login, OAuth refresh, and completion. RLCD-brwsr does not read or
+copy Pi credentials, change the session's main model or thinking level, or
+support a separate API-key/helper endpoint. Standalone Python preflight reports
+helper capability as unknown because only a running Pi tool context can assess
+it.
 
-Results identify the configured Jev/helper models separately from model IDs
-reported by providers. The pinned helper does not retain its provider-reported
-model ID, so that field is honestly `unavailable`; available per-call usage and
-latency remain separate, while provider HTTP-attempt counts and costs are also
-`unavailable`. Failures before a fill's helper result remain conservative
-upstream errors because the preceding browser freshness check can fail at the
-same boundary.
+A click-only run remains usable when Luna or its Pi login is unavailable. If
+upstream selects `TYPE_TEXT` in that state, the run returns `needs_text` before
+a helper request or field mutation and retains prior evidence. For an available
+helper, the version-pinned bridge intercepts only upstream's helper-shaped
+transport call and relays its unchanged system/user prompt over the existing
+stdin/stdout channel. Pi returns text and available token usage; upstream still
+performs the sole `{text}` JSON-value validation, including the nonempty
+2,000-character limit, before browser input.
+
+Results identify the configured Jev model separately from the fixed Pi helper
+model and report a provider response model only when Pi supplies one. Available
+per-call token usage and latency remain separate. Provider HTTP-attempt, retry,
+subscription-spend, and cost totals remain `unavailable`; the wrapper does not
+invent them. Failures before a fill's helper result remain conservative upstream
+errors because the preceding browser freshness check can fail at the same
+boundary.
 
 ## Explicit Pi use
 
@@ -112,6 +115,6 @@ pnpm check
 
 The loopback fixture serves both the click-only `ORBIT-27` journey and the
 `/text-entry.html` generated-value journey with marker `FIELD-41`. Deterministic
-acceptance responders under the fixture directories replace only paid model
-HTTP responses; they do not replace the upstream Agent, its text-helper field
-context/value validation, Browser Harness, or Chrome.
+acceptance responders under the fixture directories replace external Jev
+responses and Pi text completion only; they do not replace the upstream Agent,
+its text-helper field context/value validation, Browser Harness, or Chrome.

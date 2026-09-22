@@ -6,7 +6,6 @@ import ipaddress
 import json
 import os
 import re
-from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -27,73 +26,6 @@ def _load_jev_model() -> str:
 
 
 JEV_MODEL = _load_jev_model()
-
-
-@dataclass(frozen=True)
-class TextHelperConfiguration:
-    configured: bool
-    status: str
-    model: str | None
-    error: str | None
-
-
-def resolved_text_helper_configuration() -> TextHelperConfiguration:
-    """Classify native upstream TEXT_MODEL_* settings without exposing values."""
-    names = ("TEXT_MODEL_API_KEY", "TEXT_MODEL_BASE_URL", "TEXT_MODEL")
-    raw = {name: os.environ.get(name, "") for name in names}
-    present = {name: bool(value.strip()) for name, value in raw.items()}
-    if not any(present.values()):
-        return TextHelperConfiguration(False, "absent", None, None)
-
-    missing = [name for name in names if not present[name]]
-    if missing:
-        return TextHelperConfiguration(
-            False,
-            "incomplete",
-            None,
-            "TYPE_TEXT needs explicit TEXT_MODEL_API_KEY, TEXT_MODEL_BASE_URL, "
-            f"and TEXT_MODEL; missing {', '.join(missing)}; no helper request or "
-            "field mutation was made",
-        )
-
-    if any(raw[name] != raw[name].strip() for name in names):
-        return TextHelperConfiguration(
-            False,
-            "invalid",
-            None,
-            "TEXT_MODEL_* values must not have leading or trailing whitespace; "
-            "no helper request or field mutation was made",
-        )
-
-    try:
-        parsed = urlsplit(raw["TEXT_MODEL_BASE_URL"])
-        host = parsed.hostname or ""
-        parsed.port
-        local_http = parsed.scheme == "http" and (
-            host == "localhost" or ipaddress.ip_address(host).is_loopback
-        )
-    except ValueError:
-        local_http = False
-        parsed = urlsplit("")
-    if (
-        not parsed.hostname
-        or parsed.scheme not in {"http", "https"}
-        or (parsed.scheme == "http" and not local_http)
-        or parsed.username is not None
-        or parsed.password is not None
-        or bool(parsed.query)
-        or bool(parsed.fragment)
-    ):
-        return TextHelperConfiguration(
-            False,
-            "invalid",
-            None,
-            "TEXT_MODEL_BASE_URL must be an absolute HTTPS endpoint or loopback "
-            "HTTP endpoint without embedded credentials, query, or fragment; no "
-            "helper request or field mutation was made",
-        )
-
-    return TextHelperConfiguration(True, "configured", raw["TEXT_MODEL"], None)
 
 
 def _validate_loopback_cdp_url(raw: str) -> None:

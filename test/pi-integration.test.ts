@@ -16,7 +16,10 @@ import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type {
+  ExtensionAPI,
+  ExtensionContext,
+} from "@earendil-works/pi-coding-agent";
 
 import rlcdBrwsrExtension from "../config/pi/extensions/rlcd-brwsr.ts";
 
@@ -42,6 +45,22 @@ interface RegisteredTool {
     signal: AbortSignal | undefined,
     onUpdate?: (result: ToolResult) => void,
   ): Promise<ToolResult>;
+}
+
+interface HelperCompletionCall {
+  provider: string;
+  model: string;
+  systemPrompt: string | undefined;
+  userPrompt: string;
+  reasoningEffort: unknown;
+  signal: AbortSignal | undefined;
+}
+
+interface RegisteredToolOptions {
+  helperCalls?: HelperCompletionCall[];
+  helperModelAvailable?: boolean;
+  helperAuthAvailable?: boolean;
+  syntheticOAuthMaterial?: string;
 }
 
 const execFileAsync = promisify(execFile);
@@ -108,16 +127,142 @@ function recordValue(value: unknown, label: string): Record<string, unknown> {
   return value;
 }
 
-function registeredTool(): RegisteredTool {
-  let registered: RegisteredTool | undefined;
+function registeredTool(options: RegisteredToolOptions = {}): RegisteredTool {
+  type CapturedTool = Omit<RegisteredTool, "execute"> & {
+    execute(
+      toolCallId: string,
+      params: RlcdInput,
+      signal: AbortSignal | undefined,
+      onUpdate: ((result: ToolResult) => void) | undefined,
+      ctx: ExtensionContext,
+    ): Promise<ToolResult>;
+  };
+
+  let registered: CapturedTool | undefined;
   const pi = {
-    registerTool(tool: RegisteredTool) {
+    registerTool(tool: CapturedTool) {
       registered = tool;
     },
   } as unknown as ExtensionAPI;
   rlcdBrwsrExtension(pi);
   assert.ok(registered);
-  return registered;
+  const captured = registered;
+  const context = {
+    modelRegistry: {
+      syntheticOAuthMaterial: options.syntheticOAuthMaterial,
+      find(provider: string, model: string) {
+        if (
+          options.helperModelAvailable === false ||
+          provider !== "openai-codex" ||
+          model !== "gpt-5.6-luna"
+        ) {
+          return undefined;
+        }
+        return {
+          id: model,
+          provider,
+          api: "openai-codex-responses",
+          reasoning: true,
+        };
+      },
+      hasConfiguredAuth() {
+        return options.helperAuthAvailable !== false;
+      },
+      async complete(
+        model: { id: string; provider: string },
+        completionContext: {
+          systemPrompt?: string;
+          messages: Array<{
+            role: string;
+            content: Array<{ type: string; text: string }>;
+          }>;
+        },
+        completionOptions: {
+          reasoningEffort?: unknown;
+          signal?: AbortSignal;
+        },
+      ) {
+        const userPrompt = completionContext.messages
+          .flatMap((message) => message.content)
+          .filter((part) => part.type === "text")
+          .map((part) => part.text)
+          .join("\n");
+        options.helperCalls?.push({
+          provider: model.provider,
+          model: model.id,
+          systemPrompt: completionContext.systemPrompt,
+          userPrompt,
+          reasoningEffort: completionOptions.reasoningEffort,
+          signal: completionOptions.signal,
+        });
+        const marker = process.env.RLCD_TEST_HELPER_REQUEST_MARKER;
+        if (marker) await writeFile(marker, "called\n", { flag: "a" });
+        const scenario = process.env.RLCD_TEST_SCENARIO;
+        if (scenario === "text_helper_waits") {
+          await delay(30_000, undefined, {
+            signal: completionOptions.signal,
+          });
+        }
+        if (scenario === "text_helper_late") {
+          await delay(1_400);
+        }
+        if (scenario === "text_provider_failure") {
+          throw new Error("Model connection failed; no action executed.");
+        }
+        if (scenario === "text_status_failure") {
+          throw new Error(
+            "Model provider returned HTTP 503; no action executed.",
+          );
+        }
+        const text =
+          scenario === "text_malformed"
+            ? "not-json"
+            : scenario === "text_empty"
+              ? JSON.stringify({ text: " " })
+              : scenario === "text_extra_key"
+                ? JSON.stringify({ text: "Busan", note: "unexpected" })
+                : scenario === "text_value_too_long"
+                  ? JSON.stringify({ text: "x".repeat(2_001) })
+                  : scenario === "text_helper_oversized"
+                    ? "x".repeat(12_001)
+                    : JSON.stringify({ text: "Busan" });
+        return {
+          role: "assistant",
+          content: [{ type: "text", text }],
+          api: "openai-codex-responses",
+          provider: model.provider,
+          model: model.id,
+          responseModel: "gpt-5.6-luna-synthetic-provider",
+          usage: {
+            input: 19,
+            output: 4,
+            cacheRead: 0,
+            cacheWrite: 0,
+            reasoning: 2,
+            totalTokens: 23,
+            cost: {
+              input: 0,
+              output: 0,
+              cacheRead: 0,
+              cacheWrite: 0,
+              total: 0,
+            },
+          },
+          stopReason: "stop",
+          timestamp: Date.now(),
+        };
+      },
+    },
+  } as unknown as ExtensionContext;
+  return {
+    name: captured.name,
+    ...(captured.executionMode === undefined
+      ? {}
+      : { executionMode: captured.executionMode }),
+    execute(toolCallId, params, signal, onUpdate) {
+      return captured.execute(toolCallId, params, signal, onUpdate, context);
+    },
+  };
 }
 
 interface FakeExternalOptions {
@@ -160,11 +305,9 @@ async function withFakeExternalInteractions<T>(
     "RLCD_TEST_PHASE_MARKER",
     "RLCD_TEST_PROTOCOL_MARKER",
     "RLCD_TEST_SCENARIO",
+    "RLCD_TEST_STDIN_MARKER",
     "RLCD_TEST_TARGET_EVENTS_MARKER",
     "TYPESAFE_API_KEY",
-    "TEXT_MODEL_API_KEY",
-    "TEXT_MODEL_BASE_URL",
-    "TEXT_MODEL",
   ] as const;
   const before = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
   for (const key of keys) delete process.env[key];
@@ -243,7 +386,7 @@ test("registered Pi tool loads native Harness workspace configuration and comple
   await withFakeExternalInteractions("click_done", async (harnessHome) => {
     const helperRequestMarker = join(harnessHome, "helper-requested");
     process.env.RLCD_TEST_HELPER_REQUEST_MARKER = helperRequestMarker;
-    const tool = registeredTool();
+    const tool = registeredTool({ helperModelAvailable: false });
     assert.equal(tool.name, "rlcd_brwsr_run");
     assert.equal(tool.executionMode, "sequential");
 
@@ -259,7 +402,9 @@ test("registered Pi tool loads native Harness workspace configuration and comple
     const trace = arrayField(details, "trace").map((entry, index) =>
       recordValue(entry, `trace[${index}]`),
     );
-    const jevUsage = recordField(recordField(details, "usage"), "jev");
+    const usage = recordField(details, "usage");
+    const jevUsage = recordField(usage, "jev");
+    const helperUsage = recordField(usage, "textHelper");
     const decisions = arrayField(jevUsage, "decisions");
     const firstDecision = recordValue(decisions[0], "first Jev decision");
     const cleanup = recordField(details, "cleanup");
@@ -297,22 +442,29 @@ test("registered Pi tool loads native Harness workspace configuration and comple
       (error: unknown) =>
         error instanceof Error && "code" in error && error.code === "ESRCH",
     );
+    assert.equal(helperUsage.availability, "unavailable");
+    assert.equal(helperUsage.model, null);
+    assert.deepEqual(arrayField(helperUsage, "calls"), []);
     assert.match(result.content[0]?.text ?? "", /completion_claim/);
     await assert.rejects(access(helperRequestMarker));
   });
 });
 
-test("registered Pi tool uses the configured upstream helper for a generated field value", async () => {
+test("registered Pi tool uses Luna through Pi for a generated field value", async () => {
   await withFakeExternalInteractions("text_generated", async (harnessHome) => {
     const helperRequestMarker = join(harnessHome, "helper-requested");
     const fieldMutationMarker = join(harnessHome, "field-mutated");
+    const stdinArtifact = join(harnessHome, "bridge-stdin.jsonl");
+    const completionCalls: HelperCompletionCall[] = [];
+    const oauthMaterial = "synthetic-oauth-material-MOON-62";
     process.env.RLCD_TEST_HELPER_REQUEST_MARKER = helperRequestMarker;
     process.env.RLCD_TEST_FIELD_MUTATION_MARKER = fieldMutationMarker;
-    process.env.TEXT_MODEL_API_KEY = "synthetic-text-helper-key";
-    process.env.TEXT_MODEL_BASE_URL = "http://127.0.0.1:43115/v1";
-    process.env.TEXT_MODEL = "synthetic-text-helper-v1";
+    process.env.RLCD_TEST_STDIN_MARKER = stdinArtifact;
 
-    const result = await registeredTool().execute(
+    const result = await registeredTool({
+      helperCalls: completionCalls,
+      syntheticOAuthMaterial: oauthMaterial,
+    }).execute(
       "generated-field-value",
       baseInput({
         goal: "Fill Destination city with South Korea's second-largest city, then stop when marker FIELD-41 is visible.",
@@ -340,14 +492,21 @@ test("registered Pi tool uses the configured upstream helper for a generated fie
       "deterministic-jev-external-fake",
     );
     assert.equal(
-      stringField(helperUsage, "configuredModel"),
-      "synthetic-text-helper-v1",
+      stringField(helperUsage, "model"),
+      "openai-codex/gpt-5.6-luna",
     );
-    assert.equal(stringField(helperCall, "reportedModel"), "unavailable");
+    assert.equal(
+      stringField(helperCall, "reportedModel"),
+      "gpt-5.6-luna-synthetic-provider",
+    );
     assert.equal(stringField(helperCall, "field"), "Destination city");
     assert.deepEqual(helperCall.usage, {
-      prompt_tokens: 19,
-      completion_tokens: 4,
+      input: 19,
+      output: 4,
+      cacheRead: 0,
+      cacheWrite: 0,
+      reasoning: 2,
+      totalTokens: 23,
     });
     assert.ok(numberField(helperCall, "latencyMs") >= 0);
     assert.equal(jevUsage.providerHttpAttempts, "unavailable");
@@ -362,6 +521,34 @@ test("registered Pi tool uses the configured upstream helper for a generated fie
     );
     assert.equal(await access(helperRequestMarker), undefined);
     assert.equal(await access(fieldMutationMarker), undefined);
+    assert.equal(completionCalls.length, 1);
+    assert.deepEqual(
+      {
+        provider: completionCalls[0]?.provider,
+        model: completionCalls[0]?.model,
+        reasoningEffort: completionCalls[0]?.reasoningEffort,
+      },
+      {
+        provider: "openai-codex",
+        model: "gpt-5.6-luna",
+        reasoningEffort: "high",
+      },
+    );
+    assert.match(completionCalls[0]?.systemPrompt ?? "", /JSON object/i);
+    const fieldContext: unknown = JSON.parse(
+      completionCalls[0]?.userPrompt ?? "",
+    );
+    assert.ok(isRecord(fieldContext));
+    assert.equal(recordField(fieldContext, "field").label, "Destination city");
+    assert.match(stringField(fieldContext, "goal"), /second-largest city/);
+    assert.match(
+      stringField(recordField(fieldContext, "page"), "text"),
+      /FIELD-41/,
+    );
+    const bridgeInput = await readFile(stdinArtifact, "utf8");
+    assert.match(bridgeInput, /text_helper_response/);
+    assert.doesNotMatch(bridgeInput, new RegExp(oauthMaterial));
+    assert.doesNotMatch(JSON.stringify(result), new RegExp(oauthMaterial));
   });
 });
 
@@ -369,15 +556,15 @@ test("unusable helper generations and provider failures stop before field mutati
   for (const [scenario, diagnostic] of [
     ["text_malformed", /no valid field value/i],
     ["text_empty", /no valid field value/i],
+    ["text_extra_key", /no valid field value/i],
+    ["text_value_too_long", /no valid field value/i],
     ["text_provider_failure", /connection failed/i],
     ["text_status_failure", /HTTP 503/i],
+    ["text_helper_oversized", /exceeded 12000 characters/i],
   ] as const) {
     await withFakeExternalInteractions(scenario, async (harnessHome) => {
       const helperRequestMarker = join(harnessHome, "helper-requested");
       const fieldMutationMarker = join(harnessHome, "field-mutated");
-      process.env.TEXT_MODEL_API_KEY = "synthetic-text-helper-key";
-      process.env.TEXT_MODEL_BASE_URL = "http://127.0.0.1:43115/v1";
-      process.env.TEXT_MODEL = "synthetic-text-helper-v1";
       process.env.RLCD_TEST_HELPER_REQUEST_MARKER = helperRequestMarker;
       process.env.RLCD_TEST_FIELD_MUTATION_MARKER = fieldMutationMarker;
 
@@ -407,14 +594,22 @@ test("unusable helper generations and provider failures stop before field mutati
         arrayField(recordField(usage, "jev"), "decisions").length,
         1,
       );
-      assert.deepEqual(helperUsage, {
-        configured: true,
-        configuredModel: "synthetic-text-helper-v1",
-        calls: [],
-        providerHttpAttempts: "unavailable",
-        providerRetries: "unavailable",
-        providerCost: "unavailable",
-      });
+      assert.equal(helperUsage.availability, "available");
+      assert.equal(helperUsage.model, "openai-codex/gpt-5.6-luna");
+      const helperCalls = arrayField(helperUsage, "calls");
+      assert.equal(
+        helperCalls.length,
+        scenario === "text_malformed" ||
+          scenario === "text_empty" ||
+          scenario === "text_extra_key" ||
+          scenario === "text_value_too_long" ||
+          scenario === "text_helper_oversized"
+          ? 1
+          : 0,
+      );
+      assert.equal(helperUsage.providerHttpAttempts, "unavailable");
+      assert.equal(helperUsage.providerRetries, "unavailable");
+      assert.equal(helperUsage.providerCost, "unavailable");
       assert.equal(await access(helperRequestMarker), undefined);
       assert.equal(
         (await readFile(helperRequestMarker, "utf8")).trim().split("\n").length,
@@ -426,15 +621,111 @@ test("unusable helper generations and provider failures stop before field mutati
   }
 });
 
+test("Pi cancellation aborts a waiting helper and prevents field mutation", async () => {
+  await withFakeExternalInteractions(
+    "text_helper_waits",
+    async (harnessHome) => {
+      const helperRequestMarker = join(harnessHome, "helper-requested");
+      const fieldMutationMarker = join(harnessHome, "field-mutated");
+      const completionCalls: HelperCompletionCall[] = [];
+      process.env.RLCD_TEST_HELPER_REQUEST_MARKER = helperRequestMarker;
+      process.env.RLCD_TEST_FIELD_MUTATION_MARKER = fieldMutationMarker;
+      const controller = new AbortController();
+      const running = registeredTool({ helperCalls: completionCalls }).execute(
+        "cancel-waiting-helper",
+        baseInput(),
+        controller.signal,
+      );
+
+      await waitForFile(helperRequestMarker);
+      controller.abort(new Error("cancel helper wait"));
+      const result = await running;
+      const details = detailsOf(result);
+
+      assert.equal(stringField(details, "status"), "stopped");
+      assert.equal(stringField(details, "stopReason"), "cancelled");
+      assert.equal(stringField(details, "mutationOutcome"), "not_in_flight");
+      assert.equal(completionCalls.length, 1);
+      assert.equal(completionCalls[0]?.signal?.aborted, true);
+      assert.deepEqual(
+        arrayField(
+          recordField(recordField(details, "usage"), "textHelper"),
+          "calls",
+        ),
+        [],
+      );
+      await assert.rejects(access(fieldMutationMarker));
+      const bridgePid = numberField(
+        recordField(details, "ownership"),
+        "bridgePid",
+      );
+      assert.throws(
+        () => process.kill(bridgePid, 0),
+        (error: unknown) =>
+          error instanceof Error && "code" in error && error.code === "ESRCH",
+      );
+    },
+  );
+});
+
+test("helper deadline ignores a late completion without writing into a later run", async () => {
+  await withFakeExternalInteractions(
+    "text_helper_late",
+    async (harnessHome) => {
+      const helperRequestMarker = join(harnessHome, "helper-requested");
+      const fieldMutationMarker = join(harnessHome, "field-mutated");
+      const stdinArtifact = join(harnessHome, "bridge-stdin.jsonl");
+      const completionCalls: HelperCompletionCall[] = [];
+      process.env.RLCD_TEST_HELPER_REQUEST_MARKER = helperRequestMarker;
+      process.env.RLCD_TEST_FIELD_MUTATION_MARKER = fieldMutationMarker;
+      process.env.RLCD_TEST_STDIN_MARKER = stdinArtifact;
+      const tool = registeredTool({ helperCalls: completionCalls });
+
+      const expired = await tool.execute(
+        "deadline-waiting-helper",
+        baseInput({ maxSeconds: 1 }),
+        new AbortController().signal,
+      );
+      const expiredDetails = detailsOf(expired);
+      assert.equal(stringField(expiredDetails, "status"), "stopped");
+      assert.equal(stringField(expiredDetails, "stopReason"), "time_budget");
+      assert.equal(
+        stringField(expiredDetails, "mutationOutcome"),
+        "not_in_flight",
+      );
+      assert.equal(completionCalls[0]?.signal?.aborted, true);
+      await assert.rejects(access(fieldMutationMarker));
+
+      process.env.RLCD_TEST_SCENARIO = "text_generated";
+      const completed = await tool.execute(
+        "run-after-late-helper",
+        baseInput(),
+        new AbortController().signal,
+      );
+      assert.equal(
+        stringField(detailsOf(completed), "status"),
+        "completion_claim",
+      );
+      await delay(500);
+
+      const bridgeInput = await readFile(stdinArtifact, "utf8");
+      assert.equal(
+        bridgeInput.match(/text_helper_response/g)?.length,
+        1,
+        "only the later run may receive a helper response",
+      );
+      assert.equal(completionCalls.length, 2);
+      assert.equal(await access(fieldMutationMarker), undefined);
+    },
+  );
+});
+
 test("pre-helper browser freshness transport failures remain conservative upstream errors", async () => {
   await withFakeExternalInteractions(
     "text_freshness_failure",
     async (harnessHome) => {
       const helperRequestMarker = join(harnessHome, "helper-requested");
       const fieldMutationMarker = join(harnessHome, "field-mutated");
-      process.env.TEXT_MODEL_API_KEY = "synthetic-text-helper-key";
-      process.env.TEXT_MODEL_BASE_URL = "http://127.0.0.1:43115/v1";
-      process.env.TEXT_MODEL = "synthetic-text-helper-v1";
       process.env.RLCD_TEST_HELPER_REQUEST_MARKER = helperRequestMarker;
       process.env.RLCD_TEST_FIELD_MUTATION_MARKER = fieldMutationMarker;
 
@@ -472,9 +763,6 @@ test("a cached generated value does not make a later fill failure safe to retry"
     async (harnessHome) => {
       const helperRequestMarker = join(harnessHome, "helper-requested");
       const inputDispatchMarker = join(harnessHome, "input-dispatched");
-      process.env.TEXT_MODEL_API_KEY = "synthetic-text-helper-key";
-      process.env.TEXT_MODEL_BASE_URL = "http://127.0.0.1:43115/v1";
-      process.env.TEXT_MODEL = "synthetic-text-helper-v1";
       process.env.RLCD_TEST_HELPER_REQUEST_MARKER = helperRequestMarker;
       process.env.RLCD_TEST_INPUT_DISPATCH_MARKER = inputDispatchMarker;
 
@@ -526,14 +814,10 @@ test("invalid URL and limits stop before runtime preflight", async () => {
   });
 });
 
-test("pre-bridge results leave native helper capability and model unknown", async () => {
+test("pre-bridge results leave Pi helper capability and model unknown", async () => {
   await withFakeExternalInteractions("click_done", async () => {
-    process.env.TEXT_MODEL_API_KEY = "synthetic-parent-helper-key";
-    process.env.TEXT_MODEL_BASE_URL = "https://helper.example.test/v1";
-    process.env.TEXT_MODEL = "synthetic-parent-helper-model";
-
     const result = await registeredTool().execute(
-      "invalid-before-native-configuration",
+      "invalid-before-Pi-helper-check",
       baseInput({ url: "file:///tmp/not-browser-input" }),
       new AbortController().signal,
     );
@@ -542,8 +826,8 @@ test("pre-bridge results leave native helper capability and model unknown", asyn
       "textHelper",
     );
 
-    assert.equal(helperUsage.configured, "unknown");
-    assert.equal(helperUsage.configuredModel, "unknown");
+    assert.equal(helperUsage.availability, "unknown");
+    assert.equal(helperUsage.model, "unknown");
   });
 });
 
@@ -624,78 +908,18 @@ test("registered tool rejects resolved remote Harness configuration before brows
   }
 });
 
-test("click-only use advertises missing text capability and stops before TYPE_TEXT", async () => {
-  await withFakeExternalInteractions("needs_text", async (harnessHome) => {
-    const helperRequestMarker = join(harnessHome, "helper-requested");
-    const fieldMutationMarker = join(harnessHome, "field-mutated");
-    process.env.RLCD_TEST_HELPER_REQUEST_MARKER = helperRequestMarker;
-    process.env.RLCD_TEST_FIELD_MUTATION_MARKER = fieldMutationMarker;
-    const result = await registeredTool().execute(
-      "needs-text",
-      baseInput(),
-      new AbortController().signal,
-    );
-    const details = detailsOf(result);
-    const trace = arrayField(details, "trace");
-    assert.equal(trace.length, 1);
-    const entry = recordValue(trace[0], "trace[0]");
-    const textUsage = recordField(recordField(details, "usage"), "textHelper");
-    const timing = recordField(details, "timing");
-
-    assert.equal(stringField(details, "status"), "stopped");
-    assert.equal(stringField(details, "stopReason"), "needs_text");
-    assert.match(stringField(details, "diagnostic"), /TEXT_MODEL_API_KEY/);
-    assert.deepEqual(
-      {
-        step: numberField(entry, "step"),
-        operation: stringField(entry, "operation"),
-        action: stringField(entry, "action"),
-        outcome: stringField(entry, "outcome"),
-      },
-      {
-        step: 1,
-        operation: "TYPE_TEXT",
-        action: "Optional search",
-        outcome: "needs_text",
-      },
-    );
-    const traceElapsedMs = numberField(entry, "elapsedMs");
-    assert.ok(Number.isFinite(traceElapsedMs));
-    assert.ok(traceElapsedMs >= 0);
-    assert.ok(traceElapsedMs <= numberField(timing, "elapsedMs"));
-    assert.deepEqual(textUsage, {
-      configured: false,
-      configuredModel: null,
-      calls: [],
-      providerHttpAttempts: "unavailable",
-      providerRetries: "unavailable",
-      providerCost: "unavailable",
-    });
-    assert.equal(
-      stringField(recordField(details, "cleanup"), "taskTab"),
-      "closed",
-    );
-    await assert.rejects(access(helperRequestMarker));
-    await assert.rejects(access(fieldMutationMarker));
-  });
-});
-
-test("incomplete or invalid helper settings never select upstream defaults or mutate a field", async () => {
+test("missing Pi helper model or login stops TYPE_TEXT before helper work", async () => {
   await withFakeExternalInteractions("needs_text", async (harnessHome) => {
     const cases = [
       {
-        name: "incomplete",
-        environment: { TEXT_MODEL_API_KEY: "synthetic-lone-helper-key" },
-        diagnostic: /missing TEXT_MODEL_BASE_URL, TEXT_MODEL/,
+        name: "missing-model",
+        tool: registeredTool({ helperModelAvailable: false }),
+        diagnostic: /model openai-codex\/gpt-5\.6-luna is unavailable/i,
       },
       {
-        name: "invalid-endpoint",
-        environment: {
-          TEXT_MODEL_API_KEY: "synthetic-text-helper-key",
-          TEXT_MODEL_BASE_URL: "http://helper.example.test/v1",
-          TEXT_MODEL: "synthetic-text-helper-v1",
-        },
-        diagnostic: /HTTPS endpoint or loopback HTTP endpoint/,
+        name: "missing-login",
+        tool: registeredTool({ helperAuthAvailable: false }),
+        diagnostic: /Pi login for openai-codex\/gpt-5\.6-luna is unavailable/i,
       },
     ] as const;
 
@@ -708,46 +932,69 @@ test("incomplete or invalid helper settings never select upstream defaults or mu
         harnessHome,
         `${helperCase.name}-field-mutated`,
       );
-      delete process.env.TEXT_MODEL_API_KEY;
-      delete process.env.TEXT_MODEL_BASE_URL;
-      delete process.env.TEXT_MODEL;
-      Object.assign(process.env, helperCase.environment);
       process.env.RLCD_TEST_HELPER_REQUEST_MARKER = helperRequestMarker;
       process.env.RLCD_TEST_FIELD_MUTATION_MARKER = fieldMutationMarker;
 
-      const result = await registeredTool().execute(
-        `${helperCase.name}-helper`,
+      const result = await helperCase.tool.execute(
+        helperCase.name,
         baseInput(),
         new AbortController().signal,
       );
       const details = detailsOf(result);
-      const helperUsage = recordField(
+      const trace = arrayField(details, "trace");
+      assert.equal(trace.length, 1);
+      const entry = recordValue(trace[0], "trace[0]");
+      const textUsage = recordField(
         recordField(details, "usage"),
         "textHelper",
       );
+      const timing = recordField(details, "timing");
 
       assert.equal(stringField(details, "status"), "stopped");
       assert.equal(stringField(details, "stopReason"), "needs_text");
       assert.match(stringField(details, "diagnostic"), helperCase.diagnostic);
-      assert.equal(helperUsage.configured, false);
-      assert.equal(helperUsage.configuredModel, null);
-      assert.deepEqual(arrayField(helperUsage, "calls"), []);
+      assert.deepEqual(
+        {
+          step: numberField(entry, "step"),
+          operation: stringField(entry, "operation"),
+          action: stringField(entry, "action"),
+          outcome: stringField(entry, "outcome"),
+        },
+        {
+          step: 1,
+          operation: "TYPE_TEXT",
+          action: "Optional search",
+          outcome: "needs_text",
+        },
+      );
+      const traceElapsedMs = numberField(entry, "elapsedMs");
+      assert.ok(Number.isFinite(traceElapsedMs));
+      assert.ok(traceElapsedMs >= 0);
+      assert.ok(traceElapsedMs <= numberField(timing, "elapsedMs"));
+      assert.deepEqual(textUsage, {
+        availability: "unavailable",
+        model: null,
+        calls: [],
+        providerHttpAttempts: "unavailable",
+        providerRetries: "unavailable",
+        providerCost: "unavailable",
+      });
+      assert.equal(
+        stringField(recordField(details, "cleanup"), "taskTab"),
+        "closed",
+      );
       await assert.rejects(access(helperRequestMarker));
       await assert.rejects(access(fieldMutationMarker));
     }
   });
 });
 
-test("native workspace helper secrets are redacted before child protocol emission", async () => {
-  const helperSecret = "synthetic-text-helper-secret-ALPHA-73";
+test("native workspace Jev secrets are redacted before child protocol emission", async () => {
+  const childTypesafeSecret = "synthetic-typesafe-secret-ALPHA-73";
   await withFakeExternalInteractions(
-    "text_secret_error",
+    "provider_secret_error",
     async (harnessHome) => {
-      const typesafeSecret = process.env.TYPESAFE_API_KEY;
-      assert.ok(typesafeSecret);
-      assert.equal(process.env.TEXT_MODEL_API_KEY, undefined);
-      assert.equal(process.env.TEXT_MODEL_BASE_URL, undefined);
-      assert.equal(process.env.TEXT_MODEL, undefined);
+      delete process.env.TYPESAFE_API_KEY;
       const updates: ToolResult[] = [];
       const argvArtifact = join(harnessHome, "bridge-argv.json");
       const protocolArtifact = join(harnessHome, "raw-bridge-protocol.jsonl");
@@ -755,10 +1002,8 @@ test("native workspace helper secrets are redacted before child protocol emissio
       process.env.RLCD_TEST_PROTOCOL_MARKER = protocolArtifact;
 
       const result = await registeredTool().execute(
-        "redacted-native-helper-failure",
-        baseInput({
-          goal: "Fill Destination city with South Korea's second-largest city, then stop when marker FIELD-41 is visible.",
-        }),
+        "redacted-native-jev-failure",
+        baseInput(),
         new AbortController().signal,
         (update) => updates.push(update),
       );
@@ -786,19 +1031,16 @@ test("native workspace helper secrets are redacted before child protocol emissio
       ] as const) {
         assert.doesNotMatch(
           serialized,
-          new RegExp(helperSecret),
-          `${surface} exposed the child-loaded helper secret`,
+          new RegExp(childTypesafeSecret),
+          `${surface} exposed the child-loaded Jev secret`,
         );
-        assert.doesNotMatch(serialized, new RegExp(typesafeSecret));
       }
-      assert.doesNotMatch(bridgeArgv, /TEXT_MODEL|synthetic|Busan|FIELD-41/);
+      assert.doesNotMatch(bridgeArgv, new RegExp(childTypesafeSecret));
     },
     {
       nativeConfiguration:
         `${nativeHarnessConfiguration}` +
-        `TEXT_MODEL_API_KEY=${helperSecret}\n` +
-        "TEXT_MODEL_BASE_URL=http://127.0.0.1:43115/v1\n" +
-        "TEXT_MODEL=synthetic-text-helper-v1\n",
+        `TYPESAFE_API_KEY=${childTypesafeSecret}\n`,
     },
   );
 });
@@ -1098,6 +1340,7 @@ test("failed targeted cleanup remains unconfirmed without disturbing shared reso
   await withFakeExternalInteractions(
     "bridge_death_cleanup_unconfirmed",
     async (harnessHome) => {
+      delete process.env.TYPESAFE_API_KEY;
       const targetMarker = join(harnessHome, "target-events");
       process.env.RLCD_TEST_TARGET_EVENTS_MARKER = targetMarker;
 
@@ -1130,10 +1373,7 @@ test("failed targeted cleanup remains unconfirmed without disturbing shared reso
     },
     {
       nativeConfiguration:
-        `${nativeHarnessConfiguration}` +
-        `TEXT_MODEL_API_KEY=${cleanupSecret}\n` +
-        "TEXT_MODEL_BASE_URL=http://127.0.0.1:43115/v1\n" +
-        "TEXT_MODEL=synthetic-text-helper-v1\n",
+        `${nativeHarnessConfiguration}` + `TYPESAFE_API_KEY=${cleanupSecret}\n`,
     },
   );
 });
@@ -1525,12 +1765,8 @@ test("executable preflight loads native Harness workspace configuration", async 
   });
 });
 
-test("preflight reports only coherent explicit helper configuration", async () => {
+test("standalone preflight reports Pi helper capability as unknown", async () => {
   await withFakeExternalInteractions("click_done", async () => {
-    const secret = "synthetic-preflight-helper-secret";
-    process.env.TEXT_MODEL_API_KEY = secret;
-    process.env.TEXT_MODEL_BASE_URL = "https://helper.example.test/v1";
-    process.env.TEXT_MODEL = "configured-helper-model-v1";
     const result = await execFileAsync(
       join(repositoryRoot, "scripts", "preflight-runtime.sh"),
       [],
@@ -1540,13 +1776,12 @@ test("preflight reports only coherent explicit helper configuration", async () =
     assert.ok(isRecord(report));
     const checks = recordField(report, "checks");
 
-    assert.equal(checks.textHelperConfigured, true);
-    assert.equal(stringField(checks, "textHelperConfiguration"), "configured");
-    assert.equal(
-      stringField(checks, "textHelperModel"),
-      "configured-helper-model-v1",
+    assert.equal(checks.textHelperAvailability, "unknown");
+    assert.equal(checks.textHelperModel, "unknown");
+    assert.match(
+      stringField(checks, "textHelperReason"),
+      /Pi owns text-helper model and login checks/i,
     );
-    assert.doesNotMatch(result.stdout, new RegExp(secret));
   });
 });
 

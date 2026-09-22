@@ -4,7 +4,10 @@ import { access, constants } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type {
+  ExtensionAPI,
+  ExtensionContext,
+} from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "typebox";
 
 const DEFAULT_MAX_ACTIONS = 6;
@@ -17,6 +20,10 @@ const MAX_PROTOCOL_LINE_CHARS = 32_000;
 const MAX_STDERR_CHARS = 4_000;
 const MAX_TOOL_CONTENT_CHARS = 12_000;
 const STOP_GRACE_MS = 1_500;
+const MAX_HELPER_RESPONSE_CHARS = 12_000;
+const TEXT_HELPER_PROVIDER = "openai-codex";
+const TEXT_HELPER_MODEL = "gpt-5.6-luna";
+const TEXT_HELPER_DISPLAY_MODEL = `${TEXT_HELPER_PROVIDER}/${TEXT_HELPER_MODEL}`;
 const projectRoot = resolve(
   dirname(fileURLToPath(import.meta.url)),
   "../../..",
@@ -89,17 +96,23 @@ interface ModelMeasurement {
   usage: JsonValue;
 }
 
-type TextHelperConfiguration =
-  "absent" | "incomplete" | "invalid" | "configured";
+type TextHelperAvailability = "available" | "unavailable" | "unknown";
 
 interface ReadyProtocolRecord {
   type: "ready";
-  protocolVersion: 1;
+  protocolVersion: 2;
   daemon: string;
   capabilities: {
-    textHelperConfigured: boolean;
-    textHelperConfiguration: TextHelperConfiguration;
-    textHelperConfiguredModel: string | null;
+    textHelperAvailability: Exclude<TextHelperAvailability, "unknown">;
+  };
+}
+
+interface TextHelperRequestProtocolRecord {
+  type: "text_helper_request";
+  requestId: number;
+  prompt: {
+    system: string;
+    user: string;
   };
 }
 
@@ -147,8 +160,8 @@ interface Usage {
     providerCost: Measurement;
   };
   textHelper: {
-    configured: boolean | "unknown";
-    configuredModel: string | null | "unknown";
+    availability: TextHelperAvailability;
+    model: string | null | "unknown";
     calls: ModelMeasurement[];
     callsTruncated?: boolean;
     providerHttpAttempts: Measurement;
@@ -196,6 +209,27 @@ export interface RlcdRunResult {
 interface ToolResult {
   content: Array<{ type: "text"; text: string }>;
   details: RlcdRunResult;
+}
+
+interface BridgeRunInput extends Required<RlcdRunInput> {
+  textHelperAvailable: boolean;
+  textHelperUnavailableReason: string | null;
+}
+
+interface TextHelperCompletion {
+  response: string;
+  reportedModel: string;
+  latencyMs: number;
+  usage: JsonValue;
+}
+
+interface PiTextHelper {
+  available: boolean;
+  unavailableReason: string | null;
+  complete(
+    prompt: TextHelperRequestProtocolRecord["prompt"],
+    signal: AbortSignal,
+  ): Promise<TextHelperCompletion>;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -298,8 +332,8 @@ function basicResult(
         providerCost: "unavailable",
       },
       textHelper: {
-        configured: "unknown",
-        configuredModel: "unknown",
+        availability: "unknown",
+        model: "unknown",
         calls: [],
         providerHttpAttempts: "unavailable",
         providerRetries: "unavailable",
@@ -324,9 +358,77 @@ function basicResult(
 }
 
 function knownCredentials(): string[] {
-  return [process.env.TYPESAFE_API_KEY, process.env.TEXT_MODEL_API_KEY].filter(
+  return [process.env.TYPESAFE_API_KEY].filter(
     (value): value is string => typeof value === "string" && value.length > 0,
   );
+}
+
+function createPiTextHelper(ctx: ExtensionContext): PiTextHelper {
+  const model = ctx.modelRegistry.find(TEXT_HELPER_PROVIDER, TEXT_HELPER_MODEL);
+  const unavailableReason = !model
+    ? `Pi text helper model ${TEXT_HELPER_DISPLAY_MODEL} is unavailable`
+    : !ctx.modelRegistry.hasConfiguredAuth(model)
+      ? `Pi login for ${TEXT_HELPER_DISPLAY_MODEL} is unavailable`
+      : null;
+
+  return {
+    available: unavailableReason === null,
+    unavailableReason,
+    async complete(prompt, signal) {
+      if (!model || unavailableReason) {
+        throw new Error(
+          unavailableReason ??
+            `Pi text helper ${TEXT_HELPER_DISPLAY_MODEL} is unavailable`,
+        );
+      }
+      signal.throwIfAborted();
+      const startedAt = Date.now();
+      const response = await ctx.modelRegistry.complete(
+        model,
+        {
+          systemPrompt: prompt.system,
+          messages: [
+            {
+              role: "user",
+              content: [{ type: "text", text: prompt.user }],
+              timestamp: Date.now(),
+            },
+          ],
+        },
+        { reasoningEffort: "high", signal },
+      );
+      signal.throwIfAborted();
+      if (response.stopReason !== "stop") {
+        throw new Error(
+          response.errorMessage ||
+            `Pi text helper stopped with ${response.stopReason}`,
+        );
+      }
+      const text = response.content
+        .filter(
+          (part): part is { type: "text"; text: string } =>
+            part.type === "text",
+        )
+        .map((part) => part.text)
+        .join("\n");
+      const usage = {
+        input: response.usage.input,
+        output: response.usage.output,
+        cacheRead: response.usage.cacheRead,
+        cacheWrite: response.usage.cacheWrite,
+        ...(response.usage.reasoning === undefined
+          ? {}
+          : { reasoning: response.usage.reasoning }),
+        totalTokens: response.usage.totalTokens,
+      };
+      return {
+        response: text,
+        reportedModel: response.responseModel ?? "unavailable",
+        latencyMs: Date.now() - startedAt,
+        usage,
+      };
+    },
+  };
 }
 
 function redactText(value: string, credentials: readonly string[]): string {
@@ -498,9 +600,10 @@ function normalizedUsage(
     textRetries === undefined ||
     textCost === undefined ||
     typeof value.jev.configuredModel !== "string" ||
-    typeof value.textHelper.configured !== "boolean" ||
-    (value.textHelper.configuredModel !== null &&
-      typeof value.textHelper.configuredModel !== "string") ||
+    (value.textHelper.availability !== "available" &&
+      value.textHelper.availability !== "unavailable") ||
+    (value.textHelper.model !== null &&
+      typeof value.textHelper.model !== "string") ||
     (value.jev.decisionsTruncated !== undefined &&
       typeof value.jev.decisionsTruncated !== "boolean") ||
     (value.textHelper.callsTruncated !== undefined &&
@@ -520,10 +623,10 @@ function normalizedUsage(
       providerCost: jevCost,
     },
     textHelper: {
-      configured: value.textHelper.configured,
-      configuredModel:
-        typeof value.textHelper.configuredModel === "string"
-          ? redactText(value.textHelper.configuredModel, credentials)
+      availability: value.textHelper.availability,
+      model:
+        typeof value.textHelper.model === "string"
+          ? redactText(value.textHelper.model, credentials)
           : null,
       calls,
       ...(typeof value.textHelper.callsTruncated === "boolean"
@@ -649,35 +752,21 @@ function normalizedProgressRecord(
 ): NormalizedProgressRecord | undefined {
   if (!isRecord(value) || typeof value.type !== "string") return undefined;
   if (value.type === "ready") {
-    if (!isRecord(value.capabilities)) return undefined;
-    const configuration = value.capabilities.textHelperConfiguration;
     if (
-      value.protocolVersion !== 1 ||
+      value.protocolVersion !== 2 ||
       typeof value.daemon !== "string" ||
-      typeof value.capabilities.textHelperConfigured !== "boolean" ||
-      (configuration !== "absent" &&
-        configuration !== "incomplete" &&
-        configuration !== "invalid" &&
-        configuration !== "configured") ||
-      (value.capabilities.textHelperConfiguredModel !== null &&
-        typeof value.capabilities.textHelperConfiguredModel !== "string")
+      !isRecord(value.capabilities) ||
+      (value.capabilities.textHelperAvailability !== "available" &&
+        value.capabilities.textHelperAvailability !== "unavailable")
     ) {
       return undefined;
     }
     return {
       type: "ready",
-      protocolVersion: 1,
+      protocolVersion: 2,
       daemon: redactText(value.daemon, credentials),
       capabilities: {
-        textHelperConfigured: value.capabilities.textHelperConfigured,
-        textHelperConfiguration: configuration,
-        textHelperConfiguredModel:
-          typeof value.capabilities.textHelperConfiguredModel === "string"
-            ? redactText(
-                value.capabilities.textHelperConfiguredModel,
-                credentials,
-              )
-            : null,
+        textHelperAvailability: value.capabilities.textHelperAvailability,
       },
     };
   }
@@ -736,6 +825,29 @@ function normalizedProgressRecord(
     };
   }
   return undefined;
+}
+
+function normalizedTextHelperRequest(
+  value: Record<string, unknown>,
+): TextHelperRequestProtocolRecord | undefined {
+  if (
+    value.type !== "text_helper_request" ||
+    !Number.isInteger(value.requestId) ||
+    !isNonnegativeFinite(value.requestId) ||
+    !isRecord(value.prompt) ||
+    typeof value.prompt.system !== "string" ||
+    typeof value.prompt.user !== "string"
+  ) {
+    return undefined;
+  }
+  return {
+    type: "text_helper_request",
+    requestId: value.requestId,
+    prompt: {
+      system: value.prompt.system,
+      user: value.prompt.user,
+    },
+  };
 }
 
 function boundedJsonText(
@@ -891,8 +1003,9 @@ interface PartialBridgeState {
   traceTruncated: boolean;
   decisions: ModelMeasurement[];
   decisionsTruncated: boolean;
-  textHelperConfigured: boolean | "unknown";
-  textHelperConfiguredModel: string | null | "unknown";
+  textHelperAvailability: TextHelperAvailability;
+  textHelperModel: string | null | "unknown";
+  textHelperCalls: ModelMeasurement[];
   mutationOutcome: "not_in_flight" | "unknown";
 }
 
@@ -941,8 +1054,9 @@ function partialBridgeResult(
   result.traceTruncated = state.traceTruncated;
   result.usage.jev.decisions = state.decisions;
   result.usage.jev.decisionsTruncated = state.decisionsTruncated;
-  result.usage.textHelper.configured = state.textHelperConfigured;
-  result.usage.textHelper.configuredModel = state.textHelperConfiguredModel;
+  result.usage.textHelper.availability = state.textHelperAvailability;
+  result.usage.textHelper.model = state.textHelperModel;
+  result.usage.textHelper.calls = state.textHelperCalls;
   result.ownership = {
     targetId: state.targetId,
     bridgePid: state.bridgePid,
@@ -973,9 +1087,11 @@ function applyProgressRecord(
 ): void {
   if (record.type === "ready") {
     state.daemon = record.daemon;
-    state.textHelperConfigured = record.capabilities.textHelperConfigured;
-    state.textHelperConfiguredModel =
-      record.capabilities.textHelperConfiguredModel;
+    state.textHelperAvailability = record.capabilities.textHelperAvailability;
+    state.textHelperModel =
+      record.capabilities.textHelperAvailability === "available"
+        ? TEXT_HELPER_DISPLAY_MODEL
+        : null;
     return;
   }
   if (record.type === "ownership") {
@@ -1139,7 +1255,8 @@ async function targetedCleanup(
 async function waitForBridge(
   child: ChildProcessWithoutNullStreams,
   childEnvironment: NodeJS.ProcessEnv,
-  input: Required<RlcdRunInput>,
+  input: BridgeRunInput,
+  textHelper: PiTextHelper,
   signal: AbortSignal | undefined,
   onUpdate: ((result: ToolResult) => void) | undefined,
   startedAt: number,
@@ -1155,8 +1272,9 @@ async function waitForBridge(
     traceTruncated: false,
     decisions: [],
     decisionsTruncated: false,
-    textHelperConfigured: "unknown",
-    textHelperConfiguredModel: "unknown",
+    textHelperAvailability: "unknown",
+    textHelperModel: "unknown",
+    textHelperCalls: [],
     mutationOutcome: "not_in_flight",
   };
   let stdoutBuffer = "";
@@ -1168,8 +1286,14 @@ async function waitForBridge(
   let shutdownStartedAt: number | undefined;
   let forced = false;
   let graceTimer: NodeJS.Timeout | undefined;
+  let helperRequestId: number | undefined;
+  let helperTask: Promise<void> | undefined;
+  let helperSettleDiagnostic: string | undefined;
+  const helperAbort = new AbortController();
 
   const stopChild = () => {
+    helperAbort.abort();
+    if (!child.stdin.destroyed) child.stdin.end();
     shutdownStartedAt ??= Date.now();
     child.kill("SIGTERM");
     if (graceTimer) return;
@@ -1188,6 +1312,92 @@ async function waitForBridge(
   const failProtocol = (diagnostic: string) => {
     protocolError ??= diagnostic;
     stopChild();
+  };
+
+  const writeToBridge = (record: unknown) => {
+    if (
+      requestedStop ||
+      protocolError ||
+      child.stdin.destroyed ||
+      !child.stdin.writable
+    ) {
+      return;
+    }
+    const line = JSON.stringify(record);
+    if (line.length > MAX_PROTOCOL_LINE_CHARS) {
+      failProtocol("text helper reply exceeded the bridge protocol bound");
+      return;
+    }
+    child.stdin.write(`${line}\n`, (error) => {
+      if (error && !requestedStop && !protocolError) {
+        failProtocol(`could not send text helper reply: ${error.message}`);
+      }
+    });
+  };
+
+  const handleTextHelperRequest = (
+    request: TextHelperRequestProtocolRecord,
+  ) => {
+    if (helperRequestId !== undefined) {
+      failProtocol("bridge requested more than one text helper call at a time");
+      return;
+    }
+    helperRequestId = request.requestId;
+    helperTask = (async () => {
+      try {
+        const completion = await textHelper.complete(
+          request.prompt,
+          helperAbort.signal,
+        );
+        if (
+          helperAbort.signal.aborted ||
+          requestedStop ||
+          protocolError ||
+          helperRequestId !== request.requestId
+        ) {
+          return;
+        }
+        state.textHelperCalls.push({
+          reportedModel: completion.reportedModel,
+          latencyMs: completion.latencyMs,
+          usage: completion.usage,
+        });
+        if (completion.response.length > MAX_HELPER_RESPONSE_CHARS) {
+          writeToBridge({
+            type: "text_helper_response",
+            requestId: request.requestId,
+            error: `Pi text helper response exceeded ${MAX_HELPER_RESPONSE_CHARS} characters`,
+          });
+        } else {
+          writeToBridge({
+            type: "text_helper_response",
+            requestId: request.requestId,
+            response: completion.response,
+            usage: completion.usage,
+          });
+        }
+      } catch (error) {
+        if (
+          helperAbort.signal.aborted ||
+          requestedStop ||
+          protocolError ||
+          helperRequestId !== request.requestId
+        ) {
+          return;
+        }
+        const message =
+          error instanceof Error ? error.message : "Pi text helper failed";
+        writeToBridge({
+          type: "text_helper_response",
+          requestId: request.requestId,
+          error: redactText(message, credentials).slice(0, MAX_STDERR_CHARS),
+        });
+      } finally {
+        if (helperRequestId === request.requestId) {
+          helperRequestId = undefined;
+        }
+      }
+    })();
   };
 
   const onAbort = () => requestStop("cancelled");
@@ -1223,8 +1433,30 @@ async function waitForBridge(
         failProtocol("bridge emitted more than one terminal result");
       } else {
         terminal = normalizedBridgeResult(parsed.result, credentials);
-        if (!terminal)
+        if (!terminal) {
           failProtocol("bridge emitted an invalid terminal result");
+        } else {
+          const bridgeCalls = terminal.usage.textHelper.calls;
+          terminal.usage.textHelper.availability = state.textHelperAvailability;
+          terminal.usage.textHelper.model = state.textHelperModel;
+          terminal.usage.textHelper.calls = state.textHelperCalls.map(
+            (call, index) => ({
+              ...call,
+              ...(bridgeCalls[index]?.field === undefined
+                ? {}
+                : { field: bridgeCalls[index].field }),
+            }),
+          );
+        }
+      }
+      return;
+    }
+    if (parsed.type === "text_helper_request") {
+      const request = normalizedTextHelperRequest(parsed);
+      if (!request) {
+        failProtocol("bridge emitted an invalid text helper request");
+      } else {
+        handleTextHelperRequest(request);
       }
       return;
     }
@@ -1265,12 +1497,38 @@ async function waitForBridge(
     stderrOmitted += Math.max(0, chunk.length - available);
   });
 
+  child.stdin.on("error", (error) => {
+    if (!requestedStop && !protocolError) {
+      failProtocol(`bridge stdin failed: ${error.message}`);
+    }
+  });
+
   if (!requestedStop) {
     if (signal?.aborted) requestStop("cancelled");
-    else child.stdin.end(`${JSON.stringify(input)}\n`);
+    else writeToBridge(input);
   }
 
   const closed = await waitForClose(child);
+  helperAbort.abort();
+  if (!child.stdin.destroyed) child.stdin.end();
+  if (helperTask) {
+    let settled = false;
+    let settleTimer: NodeJS.Timeout | undefined;
+    await Promise.race([
+      helperTask.then(() => {
+        settled = true;
+      }),
+      new Promise<void>((resolve) => {
+        settleTimer = setTimeout(resolve, STOP_GRACE_MS);
+        settleTimer.unref();
+      }),
+    ]);
+    if (settleTimer) clearTimeout(settleTimer);
+    if (!settled) {
+      helperSettleDiagnostic =
+        "aborted Pi text helper did not settle within shutdown grace";
+    }
+  }
   clearTimeout(deadline);
   if (graceTimer) clearTimeout(graceTimer);
   signal?.removeEventListener("abort", onAbort);
@@ -1377,6 +1635,7 @@ async function waitForBridge(
     protocolError,
     exitDiagnostic,
     stderrDiagnostic,
+    helperSettleDiagnostic,
     targeted?.diagnostic,
   ]);
   return result;
@@ -1386,6 +1645,7 @@ async function runRegisteredTool(
   params: RlcdRunInput,
   signal: AbortSignal | undefined,
   onUpdate: ((result: ToolResult) => void) | undefined,
+  ctx: ExtensionContext,
 ): Promise<ToolResult> {
   const startedAt = Date.now();
   const maxSeconds = params.maxSeconds ?? DEFAULT_MAX_SECONDS;
@@ -1414,17 +1674,6 @@ async function runRegisteredTool(
     );
   }
   if (signal?.aborted) return cancelledBeforeBridge();
-  if (!process.env.TYPESAFE_API_KEY?.trim()) {
-    return asToolResult(
-      basicResult(
-        "setup_error",
-        "TYPESAFE_API_KEY is not configured; no browser or model work started",
-        Date.now() - startedAt,
-        maxSeconds,
-        daemon,
-      ),
-    );
-  }
   try {
     await access(pythonExecutable, constants.X_OK);
     if (signal?.aborted) return cancelledBeforeBridge();
@@ -1444,12 +1693,15 @@ async function runRegisteredTool(
 
   if (signal?.aborted) return cancelledBeforeBridge();
 
-  const input: Required<RlcdRunInput> = {
+  const textHelper = createPiTextHelper(ctx);
+  const input: BridgeRunInput = {
     url: params.url,
     goal: params.goal.trim(),
     maxActions: params.maxActions ?? DEFAULT_MAX_ACTIONS,
     maxSeconds,
     retainTab: params.retainTab ?? false,
+    textHelperAvailable: textHelper.available,
+    textHelperUnavailableReason: textHelper.unavailableReason,
   };
   const childEnvironment: NodeJS.ProcessEnv = {
     ...process.env,
@@ -1466,6 +1718,7 @@ async function runRegisteredTool(
       child,
       childEnvironment,
       input,
+      textHelper,
       signal,
       onUpdate,
       startedAt,
@@ -1485,8 +1738,8 @@ export default function rlcdBrwsrExtension(pi: ExtensionAPI): void {
     ],
     parameters: rlcdBrwsrParameters,
     executionMode: "sequential",
-    async execute(_toolCallId, params, signal, onUpdate) {
-      return runRegisteredTool(params, signal, onUpdate);
+    async execute(_toolCallId, params, signal, onUpdate, ctx) {
+      return runRegisteredTool(params, signal, onUpdate, ctx);
     },
   });
 }

@@ -36,6 +36,33 @@ _argv_marker = os.environ.get("RLCD_TEST_ARGV_MARKER")
 if _argv_marker:
     Path(_argv_marker).write_text(json.dumps(sys.argv), encoding="utf-8")
 
+_stdin_marker = os.environ.get("RLCD_TEST_STDIN_MARKER")
+if _stdin_marker:
+    _stdin_buffer = sys.stdin.buffer
+
+    class _CapturedInputBuffer:
+        def _record(self, value):
+            with Path(_stdin_marker).open("ab") as capture:
+                capture.write(value)
+            return value
+
+        def readline(self, size=-1):
+            return self._record(_stdin_buffer.readline(size))
+
+        def read(self, size=-1):
+            return self._record(_stdin_buffer.read(size))
+
+        def __getattr__(self, name):
+            return getattr(_stdin_buffer, name)
+
+    class _CapturedInput:
+        buffer = _CapturedInputBuffer()
+
+        def __getattr__(self, name):
+            return getattr(sys.__stdin__, name)
+
+    sys.stdin = _CapturedInput()
+
 if _SCENARIO in {"terminal_abnormal", "retained_terminal_hang"}:
     _terminal_output = sys.stdout
 
@@ -111,11 +138,6 @@ admin.daemon_browser_kind = _daemon_browser_kind
 
 def _page():
     if _SCENARIO.startswith("text_"):
-        helper_secret = (
-            os.environ.get("TEXT_MODEL_API_KEY", "")
-            if _SCENARIO == "text_secret_error"
-            else ""
-        )
         if _STATE["typed_text"]:
             return {
                 "url": _STATE["url"],
@@ -135,14 +157,14 @@ def _page():
             "title": "Generated field fixture",
             "text": (
                 "Enter the destination city requested by the goal. "
-                f"A valid value reveals marker FIELD-41. {helper_secret}"
+                "A valid value reveals marker FIELD-41."
             ),
             "scroll": {"y": 0},
             "actions": [
                 {
                     "id": "destination-city",
                     "kind": "fill",
-                    "label": f"Destination city {helper_secret}".strip(),
+                    "label": "Destination city",
                     "role": "textbox",
                     "value": "",
                     "node": 21,
@@ -178,10 +200,18 @@ def _page():
             "page_key": f"destination-{_STATE['clicks']}",
             "guards": {"11": "guard-11"},
         }
+    typesafe_secret = (
+        os.environ.get("TYPESAFE_API_KEY", "")
+        if _SCENARIO == "provider_secret_error"
+        else ""
+    )
     return {
         "url": _STATE["url"],
         "title": "Fixture start",
-        "text": "Click Continue to reach the independently verifiable marker.",
+        "text": (
+            "Click Continue to reach the independently verifiable marker. "
+            f"{typesafe_secret}"
+        ).strip(),
         "scroll": {"y": 0},
         "actions": [
             {
@@ -222,7 +252,7 @@ def _cdp(method, session_id=None, **params):
         if target_id != "rlcd-owned-target":
             raise RuntimeError(f"attempted to close unrelated target {target_id!r}")
         if _SCENARIO == "bridge_death_cleanup_unconfirmed":
-            secret = os.environ.get("TEXT_MODEL_API_KEY", "")
+            secret = os.environ.get("TYPESAFE_API_KEY", "")
             raise RuntimeError(
                 f"targeted cleanup transport unavailable for credential {secret}"
             )
@@ -322,48 +352,6 @@ def _choice(criteria, selected):
 
 def _post_json(url, key, body):
     _mark_external_work("RLCD_TEST_MODEL_WORK_MARKER")
-    if "messages" in body:
-        _mark_external_work("RLCD_TEST_HELPER_REQUEST_MARKER")
-        if url != "http://127.0.0.1:43115/v1/chat/completions":
-            raise RuntimeError("text helper used an unexpected endpoint")
-        if (
-            _SCENARIO != "text_secret_error"
-            and key != "synthetic-text-helper-key"
-        ):
-            raise RuntimeError("text helper used an unexpected credential")
-        if body.get("model") != "synthetic-text-helper-v1":
-            raise RuntimeError("text helper used an unexpected model")
-        context = json.loads(body["messages"][1]["content"])
-        if (
-            not context.get("field", {}).get("label", "").startswith(
-                "Destination city"
-            )
-            or "second-largest city" not in context.get("goal", "")
-            or "FIELD-41" not in context.get("page", {}).get("text", "")
-        ):
-            raise RuntimeError("upstream field context was not preserved")
-        if _SCENARIO == "text_malformed":
-            content = "not-json"
-        elif _SCENARIO == "text_empty":
-            content = json.dumps({"text": " "})
-        elif _SCENARIO == "text_provider_failure":
-            raise RuntimeError("Model connection failed; no action executed.")
-        elif _SCENARIO == "text_status_failure":
-            raise RuntimeError("Model provider returned HTTP 503; no action executed.")
-        elif _SCENARIO == "text_secret_error":
-            print(f"external helper diagnostic echoed {key}", file=sys.stderr)
-            raise RuntimeError(
-                f"Model provider rejected Authorization: Bearer {key}; "
-                f"status detail {key}; no action executed."
-            )
-        else:
-            content = json.dumps({"text": "Busan"})
-        return {
-            "model": "reported-text-helper-external-fake",
-            "choices": [{"message": {"content": content}}],
-            "usage": {"prompt_tokens": 19, "completion_tokens": 4},
-        }
-
     if os.environ.get("TYPESAFE_MODEL") != "jev-1.13.0":
         raise RuntimeError("the wrapper did not select the pinned Jev model")
     if _SCENARIO in {
