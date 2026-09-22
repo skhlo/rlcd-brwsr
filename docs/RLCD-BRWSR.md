@@ -254,9 +254,11 @@ Cancellation, wall expiry, protocol failure, and child EOF abort a waiting Pi
 completion and prevent a late reply from being written into a closed or later
 exchange.
 
-Diagnostics use standard error. The parent bounds each protocol line to 32,000
-characters and streams validated progress without retaining an unbounded record
-list or imposing a competing record-count stop. Model-visible results are
+Diagnostics use standard error. The parent bounds ordinary protocol lines to
+32,000 characters and the unchanged upstream text-helper request to 384,000
+characters, with the same serialized bounds enforced by the bridge. It streams
+validated progress without retaining an unbounded record list or imposing a
+competing record-count stop. Model-visible results are
 bounded to 12,000 characters, last-observation evidence to 4,000 characters,
 and terminal trace/decision lists to 24 entries. After native Harness
 configuration resolution, the child redacts its known credentials from every

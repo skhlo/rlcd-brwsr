@@ -17,7 +17,10 @@ const MAX_ACTIONS = 20;
 const MAX_SECONDS = 120;
 const MAX_URL_CHARS = 2_048;
 const MAX_GOAL_CHARS = 1_200;
+const MAX_REQUEST_BYTES = 20_000;
 const MAX_PROTOCOL_LINE_CHARS = 32_000;
+const MAX_HELPER_REQUEST_LINE_CHARS = 384_000;
+const MAX_RETAINED_RECORDS = 24;
 const MAX_STDERR_CHARS = 4_000;
 const MAX_TOOL_CONTENT_CHARS = 12_000;
 const STOP_GRACE_MS = 1_500;
@@ -93,6 +96,7 @@ interface TraceEntry {
 interface ModelMeasurement {
   reportedModel: string;
   field?: string;
+  helperRequestId?: number;
   latencyMs: Measurement;
   usage: JsonValue;
 }
@@ -622,6 +626,9 @@ function normalizedModelMeasurement(
     !isRecord(value) ||
     typeof value.reportedModel !== "string" ||
     (value.field !== undefined && typeof value.field !== "string") ||
+    (value.helperRequestId !== undefined &&
+      (!Number.isInteger(value.helperRequestId) ||
+        !isNonnegativeFinite(value.helperRequestId))) ||
     (value.latencyMs !== "unavailable" && !isNonnegativeFinite(value.latencyMs))
   ) {
     return undefined;
@@ -632,6 +639,9 @@ function normalizedModelMeasurement(
     reportedModel: redactText(value.reportedModel, credentials),
     ...(typeof value.field === "string"
       ? { field: redactText(value.field, credentials) }
+      : {}),
+    ...(typeof value.helperRequestId === "number"
+      ? { helperRequestId: value.helperRequestId }
       : {}),
     latencyMs: value.latencyMs,
     usage,
@@ -1092,6 +1102,7 @@ interface PartialBridgeState {
   textHelperAvailability: TextHelperAvailability;
   textHelperModel: string | null | "unknown";
   textHelperCalls: ModelMeasurement[];
+  textHelperCallsTruncated: boolean;
   piUsage: PiUsage | undefined;
   mutationOutcome: "not_in_flight" | "unknown";
 }
@@ -1125,6 +1136,15 @@ function boundedDiagnostic(
   return `${joined.slice(0, MAX_STDERR_CHARS - suffix.length)}${suffix}`;
 }
 
+function publicTextHelperCall(call: ModelMeasurement): ModelMeasurement {
+  return {
+    reportedModel: call.reportedModel,
+    ...(call.field === undefined ? {} : { field: call.field }),
+    latencyMs: call.latencyMs,
+    usage: call.usage,
+  };
+}
+
 function partialBridgeResult(
   state: PartialBridgeState,
   stopReason: string,
@@ -1148,7 +1168,11 @@ function partialBridgeResult(
   result.usage.jev.decisionsTruncated = state.decisionsTruncated;
   result.usage.textHelper.availability = state.textHelperAvailability;
   result.usage.textHelper.model = state.textHelperModel;
-  result.usage.textHelper.calls = state.textHelperCalls;
+  result.usage.textHelper.calls =
+    state.textHelperCalls.map(publicTextHelperCall);
+  if (state.textHelperCallsTruncated) {
+    result.usage.textHelper.callsTruncated = true;
+  }
   result.ownership = {
     targetId: state.targetId,
     bridgePid: state.bridgePid,
@@ -1166,7 +1190,7 @@ function upsertTrace(state: PartialBridgeState, entry: TraceEntry): void {
     state.trace[existing] = entry;
     return;
   }
-  if (state.trace.length === 24) {
+  if (state.trace.length === MAX_RETAINED_RECORDS) {
     state.trace.shift();
     state.traceTruncated = true;
   }
@@ -1201,7 +1225,7 @@ function applyProgressRecord(
   }
   if (record.phase === "prediction") {
     upsertTrace(state, record.decision);
-    if (state.decisions.length === 24) {
+    if (state.decisions.length === MAX_RETAINED_RECORDS) {
       state.decisions.shift();
       state.decisionsTruncated = true;
     }
@@ -1348,6 +1372,7 @@ async function waitForBridge(
   child: ChildProcessWithoutNullStreams,
   childEnvironment: NodeJS.ProcessEnv,
   input: BridgeRunInput,
+  serializedInput: string,
   textHelper: PiTextHelper,
   signal: AbortSignal | undefined,
   onUpdate: ((result: ToolResult) => void) | undefined,
@@ -1367,6 +1392,7 @@ async function waitForBridge(
     textHelperAvailability: "unknown",
     textHelperModel: "unknown",
     textHelperCalls: [],
+    textHelperCallsTruncated: false,
     piUsage: undefined,
     mutationOutcome: "not_in_flight",
   };
@@ -1442,8 +1468,13 @@ async function waitForBridge(
           request.prompt,
           helperAbort.signal,
         );
+        if (state.textHelperCalls.length === MAX_RETAINED_RECORDS) {
+          state.textHelperCalls.shift();
+          state.textHelperCallsTruncated = true;
+        }
         state.textHelperCalls.push({
           reportedModel: completion.reportedModel,
+          helperRequestId: request.requestId,
           latencyMs: completion.latencyMs,
           usage: completion.usage,
         });
@@ -1509,9 +1540,9 @@ async function waitForBridge(
 
   const handleLine = (rawLine: string) => {
     if (!rawLine || protocolError) return;
-    if (rawLine.length > MAX_PROTOCOL_LINE_CHARS) {
+    if (rawLine.length > MAX_HELPER_REQUEST_LINE_CHARS) {
       failProtocol(
-        `bridge emitted a line longer than ${MAX_PROTOCOL_LINE_CHARS} characters`,
+        `bridge emitted a line longer than ${MAX_HELPER_REQUEST_LINE_CHARS} characters`,
       );
       return;
     }
@@ -1524,6 +1555,16 @@ async function waitForBridge(
     }
     if (!isRecord(parsed) || typeof parsed.type !== "string") {
       failProtocol("bridge emitted an invalid protocol record");
+      return;
+    }
+    const maximumLineChars =
+      parsed.type === "text_helper_request"
+        ? MAX_HELPER_REQUEST_LINE_CHARS
+        : MAX_PROTOCOL_LINE_CHARS;
+    if (rawLine.length > maximumLineChars) {
+      failProtocol(
+        `bridge emitted a line longer than ${maximumLineChars} characters`,
+      );
       return;
     }
     if (parsed.type === "result") {
@@ -1569,10 +1610,10 @@ async function waitForBridge(
       stdoutBuffer = stdoutBuffer.slice(newline + 1);
       newline = stdoutBuffer.indexOf("\n");
     }
-    if (stdoutBuffer.length > MAX_PROTOCOL_LINE_CHARS) {
-      stdoutBuffer = stdoutBuffer.slice(0, MAX_PROTOCOL_LINE_CHARS + 1);
+    if (stdoutBuffer.length > MAX_HELPER_REQUEST_LINE_CHARS) {
+      stdoutBuffer = stdoutBuffer.slice(0, MAX_HELPER_REQUEST_LINE_CHARS + 1);
       failProtocol(
-        `bridge emitted a line longer than ${MAX_PROTOCOL_LINE_CHARS} characters`,
+        `bridge emitted a line longer than ${MAX_HELPER_REQUEST_LINE_CHARS} characters`,
       );
     }
   });
@@ -1591,7 +1632,13 @@ async function waitForBridge(
 
   if (!requestedStop) {
     if (signal?.aborted) requestStop("cancelled");
-    else writeToBridge(input);
+    else {
+      child.stdin.write(serializedInput, (error) => {
+        if (error && !requestedStop && !protocolError) {
+          failProtocol(`could not send bridge request: ${error.message}`);
+        }
+      });
+    }
   }
 
   const closed = await waitForClose(child);
@@ -1669,14 +1716,32 @@ async function waitForBridge(
   }
 
   const resultHelperCalls = result.usage.textHelper.calls;
+  const fieldsByRequestId = new Map<number, string>();
+  for (const call of resultHelperCalls) {
+    if (call.helperRequestId !== undefined && call.field !== undefined) {
+      fieldsByRequestId.set(call.helperRequestId, call.field);
+    }
+  }
   result.usage.textHelper.availability = state.textHelperAvailability;
   result.usage.textHelper.model = state.textHelperModel;
-  result.usage.textHelper.calls = state.textHelperCalls.map((call, index) => ({
-    ...call,
-    ...(resultHelperCalls[index]?.field === undefined
-      ? {}
-      : { field: resultHelperCalls[index].field }),
-  }));
+  result.usage.textHelper.calls = state.textHelperCalls.map((call) => {
+    const field =
+      call.helperRequestId === undefined
+        ? undefined
+        : fieldsByRequestId.get(call.helperRequestId);
+    return publicTextHelperCall({
+      ...call,
+      ...(field === undefined ? {} : { field }),
+    });
+  });
+  if (
+    state.textHelperCallsTruncated ||
+    result.usage.textHelper.callsTruncated === true
+  ) {
+    result.usage.textHelper.callsTruncated = true;
+  } else {
+    delete result.usage.textHelper.callsTruncated;
+  }
 
   const trustedRetainedTab =
     terminalTrusted &&
@@ -1802,6 +1867,18 @@ async function runRegisteredTool(
     textHelperAvailable: textHelper.available,
     textHelperUnavailableReason: textHelper.unavailableReason,
   };
+  const serializedInput = `${JSON.stringify(input)}\n`;
+  if (Buffer.byteLength(serializedInput, "utf8") > MAX_REQUEST_BYTES) {
+    return asToolResult(
+      basicResult(
+        "invalid_input",
+        `serialized input must not exceed ${MAX_REQUEST_BYTES} bytes`,
+        Date.now() - startedAt,
+        maxSeconds,
+        daemon,
+      ),
+    );
+  }
   const childEnvironment: NodeJS.ProcessEnv = {
     ...process.env,
     TYPESAFE_MODEL: runtimeConfig.jevModel,
@@ -1816,6 +1893,7 @@ async function runRegisteredTool(
     child,
     childEnvironment,
     input,
+    serializedInput,
     textHelper,
     signal,
     onUpdate,

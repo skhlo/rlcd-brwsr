@@ -23,6 +23,9 @@ _STATE = {
     "typed_values": [],
     "fresh_checks": 0,
     "stale_click_checks": 0,
+    "many_fresh_checks": 0,
+    "context_revision": 0,
+    "post_action_observations": 0,
 }
 
 
@@ -140,7 +143,10 @@ admin.daemon_browser_kind = _daemon_browser_kind
 def _page():
     if _SCENARIO.startswith("text_"):
         typed_values = _STATE["typed_values"]
-        helper_target = 2 if _SCENARIO == "text_two_helpers" else 1
+        many_fields = _SCENARIO == "text_many_helpers_missing_last"
+        helper_target = (
+            20 if many_fields else 2 if _SCENARIO == "text_two_helpers" else 1
+        )
         if len(typed_values) >= helper_target:
             accepted = ", then ".join(typed_values)
             return {
@@ -157,18 +163,45 @@ def _page():
                 "guards": {},
             }
         second_field = _SCENARIO == "text_two_helpers" and len(typed_values) == 1
-        field_id = "country-code" if second_field else "destination-city"
-        field_label = "Country code" if second_field else "Destination city"
-        field_node = 22 if second_field else 21
-        marker = "text-second" if second_field else "text-start"
+        field_number = len(typed_values) + 1
+        field_id = (
+            f"field-{field_number}"
+            if many_fields
+            else "country-code"
+            if second_field
+            else "destination-city"
+        )
+        field_label = (
+            f"Field {field_number}"
+            if many_fields
+            else "Country code"
+            if second_field
+            else "Destination city"
+        )
+        field_node = (
+            20 + field_number if many_fields else 22 if second_field else 21
+        )
+        marker = (
+            f"text-many-{field_number}-{_STATE['context_revision']}"
+            if many_fields
+            else "text-second"
+            if second_field
+            else "text-start"
+        )
+        page_text = (
+            "界" * 6_000
+            if _SCENARIO == "text_unicode_context"
+            else (
+                "Enter the destination values requested by the goal. "
+                f"Values already accepted: {', '.join(typed_values) or 'none'}. "
+                f"Context revision: {_STATE['context_revision']}. "
+                "Completing the fixture reveals marker FIELD-41."
+            )
+        )
         return {
             "url": _STATE["url"],
             "title": "Generated field fixture",
-            "text": (
-                "Enter the destination values requested by the goal. "
-                f"Values already accepted: {', '.join(typed_values) or 'none'}. "
-                "Completing the fixture reveals marker FIELD-41."
-            ),
+            "text": page_text,
             "scroll": {"y": 0},
             "actions": [
                 {
@@ -266,6 +299,15 @@ def _cdp(method, session_id=None, **params):
             raise RuntimeError(
                 f"targeted cleanup transport unavailable for credential {secret}"
             )
+        if _SCENARIO == "primary_cleanup_unconfirmed":
+            marker = os.environ.get("RLCD_TEST_TARGET_EVENTS_MARKER")
+            close_count = (
+                Path(marker).read_text(encoding="utf-8").count("close:")
+                if marker
+                else 0
+            )
+            if close_count == 1:
+                return {"success": False}
         if _SCENARIO == "slow_primary_cleanup":
             marker = os.environ.get("RLCD_TEST_TARGET_EVENTS_MARKER")
             close_count = (
@@ -301,6 +343,7 @@ def _cdp(method, session_id=None, **params):
         return {}
     if method == "Runtime.evaluate":
         expression = params.get("expression", "")
+        forced_marker = None
         if "return state?.marker ?? null" in expression:
             _STATE["fresh_checks"] += 1
             if (
@@ -314,22 +357,44 @@ def _cdp(method, session_id=None, **params):
                 _SCENARIO == "text_cached_fill_failure"
                 and _STATE["fresh_checks"] == 3
             ):
-                value = "stale-before-first-fill"
+                forced_marker = "stale-before-first-fill"
+            if (
+                _SCENARIO == "text_many_helpers_missing_last"
+                and not _STATE["typed_values"]
+            ):
+                _STATE["many_fresh_checks"] += 1
+                if (
+                    _STATE["many_fresh_checks"] % 3 == 0
+                    and _STATE["context_revision"] < 5
+                ):
+                    _STATE["context_revision"] += 1
+                    forced_marker = _page()["marker"]
         if expression == "document.readyState":
             value = "complete"
-        elif "if (!document.body) return null" in expression and "const state=" not in expression:
+        elif (
+            "if (!document.body) return null" in expression
+            and "const state=" not in expression
+        ):
             if _SCENARIO == "initial_observation_failure":
                 raise RuntimeError("initial observation failed before ownership")
             if _SCENARIO == "cancel_observation" and _STATE["destination"]:
                 _mark_external_work("RLCD_TEST_PHASE_MARKER", "observation-started")
                 time.sleep(30)
+            if (
+                _SCENARIO == "post_action_observation_failure"
+                and _STATE["destination"]
+            ):
+                raise RuntimeError("post-action observation failed after execution")
+            if (
+                _SCENARIO == "post_action_stale_reobservation"
+                and _STATE["destination"]
+            ):
+                _STATE["post_action_observations"] += 1
+                if _STATE["post_action_observations"] <= 10:
+                    return {"exceptionDetails": {"text": "document changed"}}
             value = _page()
         elif "return state?.marker ?? null" in expression:
-            if not (
-                _SCENARIO == "text_cached_fill_failure"
-                and _STATE["fresh_checks"] == 3
-            ):
-                value = _page()["marker"]
+            value = forced_marker if forced_marker is not None else _page()["marker"]
         elif "return c ? [c.pageKey()" in expression:
             match = re.search(r"nodes\.get\((\d+)\)", expression)
             node = match.group(1) if match else ""
@@ -400,6 +465,8 @@ def _post_json(url, key, body):
         time.sleep(30)
     if _SCENARIO == "provider_secret_error":
         raise RuntimeError(f"provider rejected synthetic credential {key}")
+    if _SCENARIO == "long_provider_error":
+        raise RuntimeError("provider rejected request: " + "X" * 2_000)
     if _SCENARIO in {"slow_model", "cancel_model", "slow_primary_cleanup"}:
         time.sleep(30)
 
@@ -409,6 +476,8 @@ def _post_json(url, key, body):
         operation = "TYPE_TEXT"
     elif _SCENARIO == "text_two_helpers":
         operation = "DONE" if len(_STATE["typed_values"]) >= 2 else "TYPE_TEXT"
+    elif _SCENARIO == "text_many_helpers_missing_last":
+        operation = "DONE" if len(_STATE["typed_values"]) >= 20 else "TYPE_TEXT"
     elif _SCENARIO.startswith("text_"):
         operation = "DONE" if _STATE["typed_text"] else "TYPE_TEXT"
     elif _SCENARIO == "blocked":

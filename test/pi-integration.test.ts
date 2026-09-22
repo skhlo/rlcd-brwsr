@@ -164,6 +164,7 @@ function registeredTool(options: RegisteredToolOptions = {}): RegisteredTool {
   rlcdBrwsrExtension(pi);
   assert.ok(registered);
   const captured = registered;
+  let helperCompletionCount = 0;
   const context = {
     modelRegistry: {
       find(provider: string, model: string) {
@@ -198,6 +199,7 @@ function registeredTool(options: RegisteredToolOptions = {}): RegisteredTool {
           signal?: AbortSignal;
         },
       ) {
+        helperCompletionCount += 1;
         const userPrompt = completionContext.messages
           .flatMap((message) => message.content)
           .filter((part) => part.type === "text")
@@ -234,7 +236,9 @@ function registeredTool(options: RegisteredToolOptions = {}): RegisteredTool {
           throw error;
         }
         const text =
-          scenario === "text_malformed"
+          scenario === "text_malformed" ||
+          (scenario === "text_many_helpers_missing_last" &&
+            helperCompletionCount === 25)
             ? "not-json"
             : scenario === "text_empty"
               ? JSON.stringify({ text: " " })
@@ -261,7 +265,10 @@ function registeredTool(options: RegisteredToolOptions = {}): RegisteredTool {
           api: "openai-codex-responses",
           provider: model.provider,
           model: model.id,
-          responseModel: "gpt-5.6-luna-synthetic-provider",
+          responseModel:
+            scenario === "text_many_helpers_missing_last"
+              ? `helper-attempt-${helperCompletionCount}`
+              : "gpt-5.6-luna-synthetic-provider",
           usage: syntheticPiUsage,
           stopReason,
           ...(scenario === "text_status_failure"
@@ -603,6 +610,87 @@ test("registered Pi tool uses Luna through Pi for generated field values", async
   );
 });
 
+test("Unicode-heavy upstream helper prompts cross the bounded relay unchanged", async () => {
+  await withFakeExternalInteractions(
+    "text_unicode_context",
+    async (harnessHome) => {
+      const fieldMutationMarker = join(harnessHome, "field-mutated");
+      const completionCalls: HelperCompletionCall[] = [];
+      process.env.RLCD_TEST_FIELD_MUTATION_MARKER = fieldMutationMarker;
+
+      const result = await registeredTool({
+        helperCalls: completionCalls,
+      }).execute(
+        "unicode-helper-context",
+        baseInput({ goal: "目".repeat(1_200) }),
+        new AbortController().signal,
+      );
+      const details = detailsOf(result);
+
+      assert.equal(stringField(details, "status"), "completion_claim");
+      assert.equal(completionCalls.length, 1);
+      const deliveredPrompt = completionCalls[0]?.userPrompt ?? "";
+      assert.ok(deliveredPrompt.length > 32_000);
+      const context: unknown = JSON.parse(deliveredPrompt);
+      assert.ok(isRecord(context));
+      assert.equal(
+        stringField(recordField(context, "page"), "text"),
+        "界".repeat(6_000),
+      );
+      assert.equal(await access(fieldMutationMarker), undefined);
+    },
+  );
+});
+
+test("helper measurements retain an aligned bounded suffix", async () => {
+  await withFakeExternalInteractions(
+    "text_many_helpers_missing_last",
+    async () => {
+      const completionCalls: HelperCompletionCall[] = [];
+      const result = await registeredTool({
+        helperCalls: completionCalls,
+      }).execute(
+        "bounded-helper-history",
+        baseInput({
+          goal: "Fill all twenty fields with the generated value.",
+          maxActions: 20,
+          maxSeconds: 20,
+        }),
+        new AbortController().signal,
+      );
+      const details = detailsOf(result);
+      const helperUsage = recordField(
+        recordField(details, "usage"),
+        "textHelper",
+      );
+      const calls = arrayField(helperUsage, "calls").map((call, index) =>
+        recordValue(call, `text helper call ${index}`),
+      );
+
+      assert.equal(stringField(details, "status"), "error");
+      assert.equal(stringField(details, "stopReason"), "upstream_error");
+      assert.equal(completionCalls.length, 25);
+      assert.equal(calls.length, 24);
+      assert.equal(booleanField(helperUsage, "callsTruncated"), true);
+      assert.equal(stringField(calls[0]!, "reportedModel"), "helper-attempt-2");
+      assert.equal(stringField(calls[0]!, "field"), "Field 1");
+      assert.equal(
+        stringField(calls.at(-2)!, "reportedModel"),
+        "helper-attempt-24",
+      );
+      assert.equal(stringField(calls.at(-2)!, "field"), "Field 19");
+      assert.equal(
+        stringField(calls.at(-1)!, "reportedModel"),
+        "helper-attempt-25",
+      );
+      assert.equal("field" in calls.at(-1)!, false);
+      const combinedUsage = recordValue(result.usage, "combined Pi usage");
+      assert.equal(numberField(combinedUsage, "input"), 475);
+      assert.equal(numberField(combinedUsage, "totalTokens"), 575);
+    },
+  );
+});
+
 test("unusable helper generations and provider failures stop before field mutation", async () => {
   for (const helperCase of [
     {
@@ -922,6 +1010,28 @@ test("a cached generated value does not make a later fill failure safe to retry"
       assert.equal(await access(inputDispatchMarker), undefined);
     },
   );
+});
+
+test("valid Unicode URL and goal bounds cross the serialized request", async () => {
+  await withFakeExternalInteractions("click_done", async (harnessHome) => {
+    const targetMarker = join(harnessHome, "unicode-request-targets");
+    process.env.RLCD_TEST_TARGET_EVENTS_MARKER = targetMarker;
+
+    const result = await registeredTool().execute(
+      "unicode-request",
+      baseInput({
+        url: `https://example.test/${"界".repeat(2_000)}`,
+        goal: "目".repeat(1_200),
+      }),
+      new AbortController().signal,
+    );
+
+    assert.equal(stringField(detailsOf(result), "status"), "completion_claim");
+    assert.deepEqual(await targetEvents(targetMarker), [
+      "created:rlcd-owned-target",
+      "close:rlcd-owned-target",
+    ]);
+  });
 });
 
 test("invalid URL and limits stop before runtime preflight", async () => {
@@ -1246,6 +1356,25 @@ test("upstream BLOCKED and stale re-observation remain distinct outcomes", async
       ),
     );
   });
+
+  await withFakeExternalInteractions(
+    "post_action_stale_reobservation",
+    async () => {
+      const result = await registeredTool().execute(
+        "stale-after-execution",
+        baseInput(),
+        new AbortController().signal,
+      );
+      const details = detailsOf(result);
+      const trace = arrayField(details, "trace").map((entry, index) =>
+        recordValue(entry, `trace[${index}]`),
+      );
+
+      assert.equal(stringField(details, "status"), "completion_claim");
+      assert.equal(stringField(trace[0]!, "operation"), "CLICK");
+      assert.equal(stringField(trace[0]!, "outcome"), "executed");
+    },
+  );
 });
 
 test("valid WAIT-heavy progress reaches the wall budget instead of a record-count protocol error", async () => {
@@ -1253,7 +1382,7 @@ test("valid WAIT-heavy progress reaches the wall budget instead of a record-coun
     let progressUpdates = 0;
     const result = await registeredTool().execute(
       "wait-heavy",
-      baseInput({ maxActions: 20, maxSeconds: 5 }),
+      baseInput({ maxActions: 20, maxSeconds: 10 }),
       new AbortController().signal,
       () => {
         progressUpdates += 1;
@@ -1265,7 +1394,10 @@ test("valid WAIT-heavy progress reaches the wall budget instead of a record-coun
     assert.equal(stringField(details, "status"), "stopped");
     assert.equal(stringField(details, "stopReason"), "time_budget");
     assert.notEqual(stringField(details, "stopReason"), "protocol_error");
-    assert.ok(progressUpdates > 128);
+    assert.ok(
+      progressUpdates > 128,
+      `received ${progressUpdates} progress updates`,
+    );
     assert.equal(booleanField(details, "traceTruncated"), true);
     assert.ok(trace.length > 0);
     assert.ok(trace.length <= 24);
@@ -1357,10 +1489,10 @@ test("Pi cancellation cooperatively closes the owned tab and reaps the bridge", 
   });
 });
 
-test("cancellation during observation or dispatched input preserves partial evidence and uncertain mutation", async () => {
-  for (const [scenario, phase] of [
-    ["cancel_observation", "observation-started"],
-    ["cancel_dispatched_input", "input-dispatched"],
+test("cancellation preserves known execution and uncertain dispatch distinctly", async () => {
+  for (const [scenario, phase, mutationOutcome, traceOutcome] of [
+    ["cancel_observation", "observation-started", "not_in_flight", "executed"],
+    ["cancel_dispatched_input", "input-dispatched", "unknown", "dispatched"],
   ] as const) {
     await withFakeExternalInteractions(scenario, async (harnessHome) => {
       const phaseMarker = join(harnessHome, `${scenario}-phase`);
@@ -1388,10 +1520,10 @@ test("cancellation during observation or dispatched input preserves partial evid
 
       assert.equal(stringField(details, "status"), "stopped");
       assert.equal(stringField(details, "stopReason"), "cancelled");
-      assert.equal(stringField(details, "mutationOutcome"), "unknown");
+      assert.equal(stringField(details, "mutationOutcome"), mutationOutcome);
       assert.match(stringField(observation, "evidence"), /Click Continue/);
       assert.equal(stringField(ownership, "targetId"), "rlcd-owned-target");
-      assert.equal(stringField(trace.at(-1)!, "outcome"), "dispatched");
+      assert.equal(stringField(trace.at(-1)!, "outcome"), traceOutcome);
       assert.deepEqual(recordField(details, "cleanup"), {
         taskTab: "closed",
         bridgeProcess: "reaped",
@@ -1409,6 +1541,32 @@ test("cancellation during observation or dispatched input preserves partial evid
       );
     });
   }
+});
+
+test("post-action observation errors retain authoritative execution history", async () => {
+  await withFakeExternalInteractions(
+    "post_action_observation_failure",
+    async () => {
+      const result = await registeredTool().execute(
+        "post-action-observation-failure",
+        baseInput(),
+        new AbortController().signal,
+      );
+      const details = detailsOf(result);
+      const trace = arrayField(details, "trace").map((entry, index) =>
+        recordValue(entry, `trace[${index}]`),
+      );
+
+      assert.equal(stringField(details, "status"), "error");
+      assert.equal(stringField(details, "stopReason"), "upstream_error");
+      assert.equal(stringField(details, "mutationOutcome"), "not_in_flight");
+      assert.equal(stringField(trace[0]!, "outcome"), "executed");
+      assert.match(
+        stringField(details, "diagnostic"),
+        /post-action observation failed after execution/i,
+      );
+    },
+  );
 });
 
 test("bridge death retains reported ownership and progress and targets only that tab for cleanup", async () => {
@@ -1463,6 +1621,38 @@ test("bridge death retains reported ownership and progress and targets only that
         (error: unknown) =>
           error instanceof Error && "code" in error && error.code === "ESRCH",
       );
+    },
+  );
+});
+
+test("an unconfirmed primary close uses targeted fallback cleanup", async () => {
+  await withFakeExternalInteractions(
+    "primary_cleanup_unconfirmed",
+    async (harnessHome) => {
+      const targetMarker = join(harnessHome, "primary-cleanup-targets");
+      process.env.RLCD_TEST_TARGET_EVENTS_MARKER = targetMarker;
+
+      const result = await registeredTool().execute(
+        "primary-cleanup-unconfirmed",
+        baseInput(),
+        new AbortController().signal,
+      );
+      const details = detailsOf(result);
+
+      assert.equal(stringField(details, "status"), "completion_claim");
+      assert.equal(
+        stringField(recordField(details, "cleanup"), "taskTab"),
+        "closed",
+      );
+      assert.match(
+        stringField(details, "diagnostic"),
+        /task-tab cleanup was not confirmed/i,
+      );
+      assert.deepEqual(await targetEvents(targetMarker), [
+        "created:rlcd-owned-target",
+        "close:rlcd-owned-target",
+        "close:rlcd-owned-target",
+      ]);
     },
   );
 });
@@ -1818,6 +2008,23 @@ test("wall budget includes model work and returns partial observed evidence", as
     assert.ok(numberField(timing, "elapsedMs") >= 900);
     assert.equal(stringField(cleanup, "taskTab"), "closed");
     assert.equal(stringField(cleanup, "bridgeProcess"), "reaped");
+  });
+});
+
+test("long bridge diagnostics disclose truncation", async () => {
+  await withFakeExternalInteractions("long_provider_error", async () => {
+    const result = await registeredTool().execute(
+      "long-provider-diagnostic",
+      baseInput(),
+      new AbortController().signal,
+    );
+    const details = detailsOf(result);
+    const diagnostic = stringField(details, "diagnostic");
+
+    assert.equal(stringField(details, "status"), "error");
+    assert.equal(stringField(details, "stopReason"), "upstream_error");
+    assert.ok(diagnostic.length <= 600);
+    assert.match(diagnostic, /diagnostic truncated from \d+ characters/i);
   });
 });
 

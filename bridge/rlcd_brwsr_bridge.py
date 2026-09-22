@@ -19,9 +19,10 @@ from runtime_support import (
 )
 
 PROTOCOL_VERSION = 2
-MAX_REQUEST_BYTES = 8_192
+MAX_REQUEST_BYTES = 20_000
 MAX_HELPER_REPLY_BYTES = 16_000
 MAX_PROTOCOL_LINE_CHARS = 32_000
+MAX_HELPER_REQUEST_LINE_CHARS = 384_000
 MAX_EVIDENCE_CHARS = 4_000
 MAX_PROGRESS_EVIDENCE_CHARS = 1_200
 MAX_TRACE_ENTRIES = 24
@@ -33,6 +34,7 @@ _INTERNAL_HELPER_MODEL = "pi-native-text-helper"
 _helper_request_id = 0
 _helper_waiting = False
 _helper_wait_interrupted = False
+_helper_usage_request_ids: dict[int, int] = {}
 
 
 class RunCancelled(Exception):
@@ -107,11 +109,26 @@ def _bounded_text(value: object, maximum: int) -> str:
     return text if len(text) <= maximum else text[:maximum]
 
 
+def _bounded_diagnostic(value: object, maximum: int = MAX_DIAGNOSTIC_CHARS) -> str:
+    text = str(value)
+    if len(text) <= maximum:
+        return text
+    suffix = f" [diagnostic truncated from {len(text)} characters]"
+    if len(suffix) >= maximum:
+        return "[diagnostic truncated]"[:maximum]
+    return f"{text[: maximum - len(suffix)]}{suffix}"
+
+
 def _emit(record: dict[str, Any]) -> None:
     line = json.dumps(
         _redacted_json(record), ensure_ascii=False, separators=(",", ":")
     )
-    if len(line) > MAX_PROTOCOL_LINE_CHARS:
+    maximum = (
+        MAX_HELPER_REQUEST_LINE_CHARS
+        if record.get("type") == "text_helper_request"
+        else MAX_PROTOCOL_LINE_CHARS
+    )
+    if len(line) > maximum:
         raise RuntimeError("bridge protocol record exceeded its fixed line bound")
     sys.stdout.write(line + "\n")
     sys.stdout.flush()
@@ -139,7 +156,7 @@ def _read_helper_reply(request_id: int) -> dict[str, Any]:
     if error is not None:
         if not isinstance(error, str) or not error.strip():
             raise RuntimeError("Pi text helper returned an invalid error")
-        raise RuntimeError(_bounded_text(error, MAX_DIAGNOSTIC_CHARS))
+        raise RuntimeError(_bounded_diagnostic(error))
     response = reply.get("response")
     usage = reply.get("usage")
     if not isinstance(response, str):
@@ -193,6 +210,7 @@ def _install_pi_text_helper(upstream_model: Any) -> None:
             reply = _read_helper_reply(request_id)
         finally:
             _helper_waiting = False
+        _helper_usage_request_ids[id(reply["usage"])] = request_id
         return {
             "choices": [{"message": {"content": reply["response"]}}],
             "usage": reply["usage"],
@@ -324,6 +342,26 @@ def _selected_action(state: dict[str, Any]) -> dict[str, Any] | None:
     )
 
 
+def _reconcile_executed_action(
+    state: dict[str, Any], trace: list[dict[str, Any]], history_before: int
+) -> tuple[bool, int]:
+    history = state.get("history", [])
+    if not isinstance(history, list):
+        return False, 0
+    executed_actions = sum(
+        1
+        for item in history
+        if isinstance(item, dict) and item.get("kind") != "wait"
+    )
+    if len(history) <= history_before or not trace:
+        return False, executed_actions
+    latest = history[-1]
+    trace[-1]["outcome"] = "executed"
+    if isinstance(latest, dict):
+        trace[-1]["url"] = _bounded_text(latest.get("url", ""), 2_048)
+    return True, executed_actions
+
+
 def _bounded_usage(value: object) -> object:
     if not isinstance(value, dict) or not value:
         return "unavailable"
@@ -384,7 +422,9 @@ def _fit_terminal_result(result: dict[str, Any]) -> None:
         diagnostic = result.get("diagnostic")
         if isinstance(diagnostic, str):
             overage = _protocol_length(wrapped) - MAX_PROTOCOL_LINE_CHARS
-            result["diagnostic"] = diagnostic[: max(0, len(diagnostic) - overage - 128)]
+            result["diagnostic"] = _bounded_diagnostic(
+                diagnostic, max(64, len(diagnostic) - overage - 128)
+            )
 
     if _protocol_length(wrapped) > MAX_PROTOCOL_LINE_CHARS:
         raise RuntimeError("terminal result could not fit its fixed protocol bound")
@@ -411,16 +451,25 @@ def _terminal(
     text_calls = state.get("text_calls")
     if not isinstance(text_calls, list):
         text_calls = []
-    text_usage = [
-        {
-            "reportedModel": "unavailable",
-            "field": _bounded_text(call.get("field", "unavailable"), 300),
-            "latencyMs": call.get("latency_ms", "unavailable"),
-            "usage": _bounded_usage(call.get("usage")),
-        }
-        for call in text_calls
-        if isinstance(call, dict)
-    ]
+    text_usage = []
+    for call in text_calls:
+        if not isinstance(call, dict):
+            continue
+        raw_usage = call.get("usage")
+        request_id = _helper_usage_request_ids.get(id(raw_usage))
+        text_usage.append(
+            {
+                "reportedModel": "unavailable",
+                "field": _bounded_text(call.get("field", "unavailable"), 300),
+                "latencyMs": call.get("latency_ms", "unavailable"),
+                "usage": _bounded_usage(raw_usage),
+                **(
+                    {"helperRequestId": request_id}
+                    if request_id is not None
+                    else {}
+                ),
+            }
+        )
     result: dict[str, Any] = {
         "status": status,
         "stopReason": stop_reason,
@@ -466,9 +515,7 @@ def _terminal(
             "daemon": _bounded_text(daemon_name, 200) if daemon_name else None,
         },
         "mutationOutcome": mutation_outcome,
-        "diagnostic": _bounded_text(diagnostic, MAX_DIAGNOSTIC_CHARS)
-        if diagnostic
-        else None,
+        "diagnostic": _bounded_diagnostic(diagnostic) if diagnostic else None,
     }
     return result
 
@@ -484,6 +531,7 @@ def _run(request: dict[str, Any], started_at: float) -> tuple[dict[str, Any], ob
     fill_was_selected = False
     fill_may_reuse_cached_text = False
     helper_calls_before = 0
+    history_before = 0
     phase = "preflight"
 
     initialization_started = False
@@ -668,10 +716,13 @@ def _run(request: dict[str, Any], started_at: float) -> tuple[dict[str, Any], ob
                 )
                 phase = "observation"
             except StalePage:
+                reconciled, executed_actions = _reconcile_executed_action(
+                    state, trace, history_before
+                )
                 state["decision"] = None
                 state["status"] = "ready"
                 state["page"] = state["browser"].observe(screenshot=False)
-                if trace:
+                if trace and not reconciled:
                     trace[-1]["outcome"] = "stale_reobserved"
                 _emit(
                     {
@@ -685,17 +736,10 @@ def _run(request: dict[str, Any], started_at: float) -> tuple[dict[str, Any], ob
                 )
                 continue
 
-            history = state.get("history", [])
-            if len(history) > history_before and trace:
-                latest = history[-1]
-                trace[-1]["outcome"] = "executed"
-                if isinstance(latest, dict):
-                    trace[-1]["url"] = _bounded_text(latest.get("url", ""), 2_048)
-                executed_actions = sum(
-                    1
-                    for item in history
-                    if isinstance(item, dict) and item.get("kind") != "wait"
-                )
+            reconciled, executed_actions = _reconcile_executed_action(
+                state, trace, history_before
+            )
+            if reconciled:
                 _emit(
                     {
                         "type": "progress",
@@ -726,16 +770,28 @@ def _run(request: dict[str, Any], started_at: float) -> tuple[dict[str, Any], ob
                     trace[-1]["outcome"] = "blocked"
                 return finish("stopped", "blocked"), agent
     except RunCancelled:
+        reconciled = False
+        if agent is not None:
+            reconciled, _ = _reconcile_executed_action(
+                state, trace, history_before
+            )
         return finish(
             "stopped",
             _cancel_reason or "cancelled",
             mutation_outcome=(
                 "unknown"
-                if phase == "mutation" and not _helper_wait_interrupted
+                if phase == "mutation"
+                and not _helper_wait_interrupted
+                and not reconciled
                 else "not_in_flight"
             ),
         ), agent
     except Exception as error:
+        reconciled = False
+        if agent is not None:
+            reconciled, _ = _reconcile_executed_action(
+                state, trace, history_before
+            )
         current_text_calls = state.get("text_calls", []) if agent is not None else []
         failed_before_mutation = (
             phase == "mutation"
@@ -745,15 +801,15 @@ def _run(request: dict[str, Any], started_at: float) -> tuple[dict[str, Any], ob
             and len(current_text_calls) == helper_calls_before
         )
         stop_reason = "setup_error" if phase == "preflight" else "upstream_error"
-        if trace:
+        if trace and not reconciled:
             trace[-1]["outcome"] = stop_reason
         return finish(
             "error",
             stop_reason,
-            _bounded_text(error, MAX_DIAGNOSTIC_CHARS),
+            _bounded_diagnostic(error),
             mutation_outcome=(
                 "not_in_flight"
-                if failed_before_mutation or phase != "mutation"
+                if reconciled or failed_before_mutation or phase != "mutation"
                 else "unknown"
             ),
         ), agent
@@ -779,7 +835,7 @@ def _run_target_cleanup(request: dict[str, Any], started_at: float) -> int:
         if not closed:
             diagnostic = "targeted task-tab cleanup was not confirmed"
     except Exception as error:
-        diagnostic = _bounded_text(error, MAX_DIAGNOSTIC_CHARS)
+        diagnostic = _bounded_diagnostic(error)
 
     _emit(
         {
@@ -852,7 +908,7 @@ def main() -> int:
             target_id=None,
             trace=[],
             decisions=[],
-            diagnostic=_bounded_text(error, MAX_DIAGNOSTIC_CHARS),
+            diagnostic=_bounded_diagnostic(error),
         )
 
     cleanup_started_at = time.perf_counter()
@@ -866,15 +922,35 @@ def main() -> int:
             cleanup["taskTab"] = "retained"
         else:
             try:
-                agent.close()
-                cleanup["taskTab"] = "closed"
+                from browser_harness.helpers import cdp
+
+                browser_instance = getattr(agent, "browser", None)
+                owned_target = getattr(browser_instance, "target", None)
+                response = (
+                    cdp("Target.closeTarget", targetId=owned_target)
+                    if isinstance(owned_target, str) and owned_target
+                    else None
+                )
+                confirmed = (
+                    isinstance(response, dict) and response.get("success") is True
+                )
+                cleanup["taskTab"] = "closed" if confirmed else "unconfirmed"
+                if confirmed:
+                    browser_instance.target = None
+                else:
+                    existing = result.get("diagnostic")
+                    cleanup_error = "task-tab cleanup was not confirmed"
+                    result["diagnostic"] = _bounded_diagnostic(
+                        f"{existing}; {cleanup_error}" if existing else cleanup_error
+                    )
             except Exception as error:
                 cleanup["taskTab"] = "unconfirmed"
                 existing = result.get("diagnostic")
-                cleanup_error = f"task-tab cleanup failed: {_bounded_text(error, 240)}"
-                result["diagnostic"] = _bounded_text(
-                    f"{existing}; {cleanup_error}" if existing else cleanup_error,
-                    MAX_DIAGNOSTIC_CHARS,
+                cleanup_error = (
+                    f"task-tab cleanup failed: {_bounded_diagnostic(error, 240)}"
+                )
+                result["diagnostic"] = _bounded_diagnostic(
+                    f"{existing}; {cleanup_error}" if existing else cleanup_error
                 )
     elif initialization_started:
         # Agent construction can create a target before its initial observation
