@@ -182,7 +182,8 @@ The latest gate was cancelled, not passed, and R23-R26 remain open (`artifacts/t
 This is the historical scout checklist, not the current decision list. The user
 has since dropped `maxActions` and selected OpenRouter Ling 3.0 Flash. The
 [owning plan](RLCD-BRWSR.md) and [provider note](openrouter-ling-3.0-flash.md) record
-those decisions; live provider behavior remains untested.
+those decisions. Live provider behavior was untested at this scout stage; the
+[subsequent verification record](thin-python-evidence.md) owns later results.
 
 1. Choose the native helper provider/model; cost is not yet measured. A key alone means native DeepSeek defaults; another provider needs explicit `TEXT_MODEL_BASE_URL` and `TEXT_MODEL`, and its acceptance of upstream reasoning fields must be tested later.
 2. Decide whether the public budget can be renamed/redefined as `maxSteps`. Keeping “mutations only, waits separate” requires returning to command-level control and is not the thin `Agent.run()` direction.
@@ -306,7 +307,9 @@ Detailed source references are retained in
 The implementation and remaining acceptance plan are owned by
 [RLCD-BRWSR.md](RLCD-BRWSR.md), not by this evidence note. The direction was
 feasible at the tested pin and the thin wrapper was implemented afterward with
-local registered-tool tests. Live OpenRouter and actual Pi-TUI/real-browser
-acceptance remain future work.
+local registered-tool tests. Later synthetic TUI/Chrome checks and the bounded
+live helper/normal-Pi local fixture are recorded separately in
+[thin rewrite verification](thin-python-evidence.md); public-site acceptance
+remains pending.
 The recovered larger branch has four unresolved static gate findings; recovery
 preserved work but did not turn the cancelled gate into a pass.

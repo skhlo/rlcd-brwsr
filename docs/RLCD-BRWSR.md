@@ -3,12 +3,15 @@
 Status: the thin Python-owned rewrite is **implemented and locally verified**.
 Corrected implementation `b3b42036` passes 20 automated tests and four repeated
 Pi-TUI/real-Chrome command checks with synthetic provider replies. Those command
-checks invoke the registered tool, not an outer-LLM-issued tool turn. Live
-Jev/OpenRouter behavior remains untested. See the
-[verification record](thin-python-evidence.md). The user confirmed
+checks invoke the registered tool, not an outer-LLM-issued tool turn. A later
+bounded live helper probe and one local fixture through Pi's normal agent-turn
+path also passed, using real Jev and Ling on the unchanged implementation. See
+the [verification record](thin-python-evidence.md). The user confirmed
 dropping `maxActions`, selected OpenRouter `inclusionai/ling-3.0-flash`, and
-accepted available native usage with explicitly incomplete Pi totals. No live
-model calls, push or PR were authorized for this build.
+accepted available native usage with explicitly incomplete Pi totals. The build
+itself excluded live calls. The subsequent allowance covered only the live
+helper probe and one 30-second local fixture; it did not cover public-site
+trials. No push or PR has occurred.
 
 The larger experimental Pi-native-helper implementation remains historical at
 `dde01a46dba112dbf9d002aeb2ebe2626363c034`. Its delivery gate was cancelled,
@@ -148,10 +151,12 @@ TEXT_MODEL_REASONING=none
 ```
 
 `TEXT_MODEL_API_KEY` must come from a host-local OpenRouter key; this build did
-not read or configure one. The reasoning setting makes the
-unchanged upstream helper send `reasoning.enabled: false`, appropriate to the
-intended short field-value output. OpenRouter advertises support, but no live
-request has established the actual behavior. Its current JSON-mode route and
+not read or configure one during implementation. The later explicitly authorized
+tests reused preserved host-local keys in process environments without copying
+them to another file. The reasoning setting makes the unchanged upstream helper
+send `reasoning.enabled: false`. One subsequent live helper response validated
+`Busan` and reported zero reasoning tokens; this does not guarantee every route
+or request will behave identically. Its current JSON-mode route and
 pricing differ from the model's cheapest advertised route; see the
 [provider evidence](openrouter-ling-3.0-flash.md). An offline probe verified the
 native request shape and local value validation only. No provider adapter or
@@ -243,16 +248,20 @@ checked exact targets, retained field values, actual runner exits and restored
 browser baselines. This verifies command-invoked execution of the registered
 tool in Pi's TUI, not the whole outer-model agent-turn/tool-scheduling path.
 
-Live acceptance remains pending. Only after host-local key configuration and
-explicit applicable allowance, test the selected OpenRouter helper payload,
-then a benign public task using real Jev/helper calls through the normal Pi
-agent-turn path. Preserve earlier ledgers; native step limits do not constitute
-a billing budget. Report unknown attempts/charges conservatively.
+The subsequent bounded live follow-up passed: the native OpenRouter helper
+returned a valid field value, and Pi's normal outer-model/tool path completed
+one local text-entry fixture using real Jev and Ling. Independent post-exit
+inspection verified the retained target, then exact cleanup restored the
+baseline. No manual retry or extra browser-tool invocation occurred.
+
+A benign public-site acceptance task remains pending and needs its own applicable
+allowance. Preserve earlier ledgers; native step limits do not constitute a
+billing budget. Report unknown attempts/charges conservatively.
 
 Do not add a broader test or runtime framework to satisfy every hypothetical
 failure. A discovered limitation may require a narrower disclosed contract,
-not another state owner. These local checks do not imply live-provider or
-general-web acceptance, an outer-model-issued tool turn, or delivery.
+not another state owner. The tested live local fixture does not imply general-web
+acceptance, compatibility across providers/configurations, or delivery.
 
 ## Evidence and history
 

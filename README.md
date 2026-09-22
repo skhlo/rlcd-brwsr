@@ -2,9 +2,9 @@
 
 **Implementation status:** the thin Python-owned rewrite passes 20 local tests
 and four repeated Pi-TUI/real-Chrome checks with synthetic provider replies at
-`b3b42036`. The TUI checks used a test command invoking the registered tool, not
-outer-LLM-issued tool turns. Live Jev/OpenRouter behavior remains untested; see
-[verification and limits](docs/thin-python-evidence.md). Current GitHub issues
+`b3b42036`. A subsequent live Ling helper probe also passed. Then a normal Pi
+agent turn completed one local fixture using real Jev and Ling. Public-site acceptance remains
+pending; see [verification and limits](docs/thin-python-evidence.md). Current GitHub issues
 still describe the superseded implementation and are not claimed as satisfied.
 See the
 [owning plan](docs/RLCD-BRWSR.md),
@@ -131,5 +131,7 @@ git diff --check
 The automated suite crosses the registered Pi tool -> real Python runner -> real
 pinned `Agent.run()`/native helper seam. It substitutes only external Browser
 Harness CDP and provider responses. Separate real-Chrome/TUI command checks cover
-click, text retention, timeout and cancellation. Neither set establishes live
-model quality, provider compatibility, public-site reliability or actual billing.
+click, text retention, timeout and cancellation. The later bounded live check
+covers one helper payload and one local fixture through Pi's normal agent turn.
+These checks do not establish general model quality, public-site reliability or
+complete billing.
