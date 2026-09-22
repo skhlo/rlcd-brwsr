@@ -1,6 +1,11 @@
 # Wrap the pinned Jev Ultrafast Agent
 
-Status: accepted; supersedes ADR-0001 for the active implementation.
+Status: records the recovered implementation and its earlier accepted amendments.
+[ADR-0003](0003-python-owned-run.md) supersedes the orchestration/helper direction
+for the planned replacement, which is not implemented. The history below is
+retained; it is not a claim that the cancelled delivery gate passed.
+
+This decision originally superseded ADR-0001 for the active implementation.
 
 RLCD-brwsr will expose `browser-use/jev-ultrafast` at commit
 `1231850a0bf1a0c0341fe408ef1668dbbfdfac46` through one thin Pi extension and a
@@ -63,22 +68,29 @@ cannot assess Pi's login.
 
 ## Interrupted-run and retention amendment
 
-The TypeScript parent retains validated ownership, observations, decisions, and
-executed-action progress while the bridge runs. Cancellation or wall expiry
-requests cooperative bridge cleanup, then stops and reaps the bridge after a
-fixed grace period. If normal bridge cleanup is absent or unconfirmed, the
+This section records the intended contract, not verified guarantees at the
+recovered head. The cancelled gate left static findings R23-R26 unresolved:
+late helper dispatch, stop-reason precedence, terminal/ownership disagreement
+and invalid progress-transition interpretation. In particular, shape validation
+alone did not establish the reported lifecycle facts.
+
+The TypeScript parent was designed to retain ownership, observations, decisions,
+and executed-action progress while the bridge runs. Cancellation or wall expiry
+was intended to request cooperative cleanup, then stop and reap the bridge after
+a fixed grace period. If normal bridge cleanup is absent or unconfirmed, the
 parent may start the same Python bridge in a bounded cleanup mode. That mode
 resolves Harness's native configuration, requires the existing daemon, and
 issues one direct close for only the target identifier that the original bridge
 reported incrementally. It does not enumerate target differences, bind a second
 browser selector, restart Harness, or touch unrelated targets.
 
-A mutation-dispatch progress record marks uncertainty before upstream execution.
-A later execution/observation record or a trusted terminal result can narrow it;
-process exit itself cannot. An unchanged text-helper call count is safe evidence
-only when no cached generated value could be reused. Cleanup, stale terminal
-state, and initialization before reported ownership remain unconfirmed when the
-available evidence cannot establish them.
+A mutation-dispatch progress record was intended to mark uncertainty before
+upstream execution, with later execution/observation records or an agreeing
+terminal result narrowing it. R26 leaves that transition interpretation
+unreliable in the recovered implementation. The intended rules still reject
+process exit as proof of rollback and an unchanged helper-call count as general
+proof of no input when cached text can be reused. Cleanup and initialization
+without an available handle must remain unconfirmed when evidence is missing.
 
 Default runs close the task tab. `retainTab: true` skips task-tab closure only
 for a completion claim; the per-run bridge still exits. Cancellation, expiry,

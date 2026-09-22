@@ -1,376 +1,236 @@
-# RLCD-brwsr v0.1 plan
+# RLCD-brwsr plan
 
-Status: approved direction; upstream-backed click and generated-field slices in issues #10 and #11.
+Status: the thin Python-owned direction is approved; the replacement is **not
+implemented**. This document owns the next implementation plan. Detailed
+interface choices below are recommendations to confirm before the rewrite.
 
-RLCD-brwsr is a thin Pi extension over the pinned Jev Ultrafast `Agent`. The
-outer agent supplies a starting URL, a natural-language goal, and finite
-execution budgets. Jev Ultrafast owns browser observation, indexed action
-candidates, action selection, text-helper handoff, stale-state checks, and
-execution through Browser Harness. RLCD-brwsr owns the Pi-facing contract,
-process bounds, progress capture, normalized result, Pi-native text completion,
-and run-owned cleanup.
+The existing code is the larger experimental Pi-native-helper implementation,
+recovered at `dde01a46dba112dbf9d002aeb2ebe2626363c034`. Its delivery gate was
+cancelled, not passed; four static review findings remain recorded. Recovery
+preserved all three gate correction commits. Nothing was pushed and no new PR
+was created. The as-built contract remains available in this document's Git
+history at that commit, with historical verification in the issue evidence files.
 
-This optimizes browser work that Pi has already authorized. It is not a new
-authorization system, a global browser lock, or proof that model-selected page
-controls are harmless.
+## Decision and reason
 
-The human-facing name is **RLCD-brwsr**. Its source slug is `rlcd-brwsr`, and its
-single Pi tool is `rlcd_brwsr_run`.
+Use the pinned upstream `Agent.run()` generator and its native API-key text
+helper. Python owns the browser run and its state. Pi launches it, requests stop,
+reaps the process and displays a bounded result. Do not port upstream to
+TypeScript or retain a Pi-Luna callback as another helper backend.
 
-## Interface
+This trades an additional host-local text-provider key for less orchestration:
+no bidirectional helper relay, no TypeScript shadow browser state and no
+cross-language action-history reconciliation. It also deliberately promises
+less after forced termination. [ADR-0003](adr/0003-python-owned-run.md) records
+this change to ADR-0002's later amendments.
 
-The first slice accepts:
+## What the investigation established
+
+[Thin Python feasibility](thin-python-feasibility.md) owns the source citations
+and probe findings. The evidence is narrow:
+
+- At the pinned revision, `Agent.run()` returns a synchronous generator. It
+  yields snapshots; exhausting it does not return a separate result object.
+- Eleven offline assertions exercised native completion, text validation,
+  limits and signals with external Browser/provider fakes. Expected failures
+  and unknown cleanup counted as passing assertions, not successful cleanup.
+- Two direct-runtime fixtures used the real Agent, native helper validation,
+  Browser Harness and isolated Chrome, with synthetic Jev/helper HTTP replies.
+  Independent CDP inspection verified the exact click and text-entry targets.
+  Exact close responses were true and the target baseline was restored.
+- A separate normal-retention probe confirmed an exact task target remained
+  inspectable after its Python child exited and was reaped, then closed that
+  target. A preceding harness setup failure is retained; this was not a
+  first-attempt reliability result.
+- No new Pi wrapper was tested. No live Jev/helper inference, provider
+  compatibility, public-site reliability, general cancellation guarantee or
+  speed improvement was established.
+
+The source/probe distinction matters: direct upstream fixture viability is a
+reason to try the small wrapper, not acceptance of a wrapper that does not exist.
+
+## Proposed interface
+
+Keep `rlcd_brwsr_run` and initially expose only:
 
 ```ts
 rlcd_brwsr_run({
   url: string;
   goal: string;
-  maxActions?: number;
   maxSeconds?: number;
   retainTab?: boolean;
 });
 ```
 
-Inputs are validated before a bridge, browser, or model is used. The defaults
-are 6 executed actions and 30 seconds; the maxima are 20 actions and 120
-seconds. Pi schedules this tool sequentially, which does not prevent another
-browser client from changing the page. `retainTab` defaults to false and applies
-only to a completion claim; stopped, failed, expired, and cancelled runs still
-attempt cleanup.
+- Validate the HTTP(S) URL, nonempty goal and serialized request before starting
+  a process. No shell interpolation or credentials in argv.
+- `maxSeconds` is a coarse stop-request deadline measured by Pi from before
+  startup. A fixed shutdown grace follows it. It is not a promise that no browser
+  action crossed the deadline or that stopping a process rolled back input.
+- `retainTab` applies only to a normal upstream completion claim. Retention
+  requires a usable task-target handle and must not retain the runner process.
+- Schedule sequentially within Pi, without claiming a global browser lock.
 
-The result is one of a completion claim, an explicit stop, or a structured
-error. It includes:
+**Recommended contract reduction:** omit the current mutation-only `maxActions`
+knob initially and preserve upstream's fixed limits. Native history counts waits
+and scrolls as well as clicks/fills; it is capped at 60, with a separate
+120-decision cap. These are not HTTP-attempt or spend caps. If a lower per-call
+limit is needed, consider a clearly named `maxSteps` after testing its semantics;
+do not silently reinterpret `maxActions`. This interface reduction needs
+confirmation before implementation.
 
-- the stop reason and whether Jev claimed completion;
-- the last successfully observed URL, title, and bounded page evidence;
-- a compact executed-action trace and available Jev/text-helper decisions;
-- available timing and usage measurements, including bounded cleanup overrun,
-  with unavailable measurements named;
-- bounded, redacted diagnostics with explicit truncation; and
-- task-tab retention/cleanup and bridge cleanup status.
-
-A Jev `DONE` choice is supporting evidence. The outer agent verifies the
-requested outcome independently.
-
-## Architecture
+## Ownership and smallest implementation
 
 ```text
-Pi calls rlcd_brwsr_run(url, goal, budgets)
-  -> TypeScript validates input and project-local runtime availability
-  -> TypeScript resolves fixed Luna availability through Pi's model registry
-  -> TypeScript starts one project-local Python bridge with fixed argv
-  -> bridge requires the configured existing Browser Harness daemon
-  -> bridge constructs the pinned upstream Agent
-  -> upstream observes, predicts, and executes through Browser Harness
-  -> TYPE_TEXT relays the unchanged upstream helper prompt to Pi over the bridge
-  -> bridge emits bounded JSONL ownership, progress, and terminal records
-  -> TypeScript enforces the wall deadline/cancellation and normalizes output
-  -> bridge closes its run-owned tab unless a completion-only retention request applies
-  -> shared daemon and unrelated tabs remain
+Pi tool
+  -> validate input; start fixed project-local Python with one JSON stdin request
+  -> Python resolves native configuration and requires the existing local Harness
+  -> Python constructs Agent and consumes Agent.run()
+  -> upstream owns observation, Jev selection, native helper HTTP and browser input
+  -> Python projects available state, makes the normal cleanup/retention decision
+  <- one bounded terminal JSON result
 ```
 
-There is one active tool implementation. The extension has no DOM extractor,
-action policy, site scripts, TypeScript port of Jev Ultrafast, Chrome DevTools
-CLI fallback, MCP wrapper, or maintained upstream fork.
+The small TypeScript launcher owns only input validation, process I/O bounds,
+its stop reason, stop/reap handling and presentation. It does not reconstruct
+browser phases or merge helper replies with Python history. Installed Pi 0.85.1
+`pi.exec` lacks the stdin and output-bound controls this interface needs; use a
+small Node built-in `spawn` helper rather than another process package/framework.
+The source scout's escalation concern has not been runtime-probed.
 
-The Python dependency is pinned to
-`browser-use/jev-ultrafast@1231850a0bf1a0c0341fe408ef1668dbbfdfac46`.
-That manifest pins Browser Harness `0.1.13` and requires Python 3.12. The project
-uses uv for its Python environment and lock. The evaluated Jev model is pinned
-as `jev-1.13.0`, not a moving alias.
+Python owns the Agent reference, current upstream state, known task target,
+provider configuration, result projection, redaction and normal cleanup. Iterate
+`Agent.run()` rather than separately driving `predict` and `act`. Keep state
+local to Python; do not stream a second model of the run to Pi. On a handled
+exception, project only state that actually exists. Do not dump full native
+snapshots: they contain raw model request/answer data and potentially large
+history and page data.
 
-The integration deliberately uses upstream's revision-pinned
-prediction/action/state seam so the wrapper can enforce a smaller action budget
-and emit progress after each observation or execution. Observation, candidate
-construction, selection, stale checks, helper prompt/value validation, and
-execution remain upstream code; Pi owns the helper completion itself.
-Compatibility tests are required before any upstream pin update.
+Two small pinned integrations remain justified:
 
-## Browser setup and ownership
+1. Bind upstream's imported `ensure_daemon` startup symbol to Harness's
+   `require_existing_daemon`, retaining the existing small local-mode check.
+   Calling direct `Agent` otherwise permits automatic setup/recovery.
+2. Once construction returns a known target, use its pinned handle for optional
+   retention and one direct `Target.closeTarget` call. Report confirmed closure
+   only from a successful response; `Agent.close()` returning is not proof.
 
-Extension loading is inert apart from registering the tool. It does not install
-software, start a bridge or daemon, navigate Chrome, request browser permission,
-or call a model.
+No startup target interception, parent fallback-cleanup mode, tab-difference
+ownership inference, generic RPC framework, new daemon or durable run journal
+is part of this proposal.
 
-Browser Harness is the single authoritative owner of browser connection
-configuration. It resolves `BU_NAME` and its native connection settings itself,
-including its normal workspace `.env` loading. The wrapper has no browser
-aliases, dotenv parser, selector precedence, endpoint mirror, or target-set
-binding comparison. RLCD-brwsr applies only its local safety envelope after
-Harness resolution: native local discovery and a loopback HTTP `BU_CDP_URL` are
-supported, while resolved `BU_BROWSER_ID`, `BU_CDP_WS`, `BU_AUTOSPAWN`, a
-non-loopback CDP URL, or a live cloud daemon are rejected rather than silently
-overridden.
+## Configuration and operating scope
 
-`scripts/setup-runtime.sh` runs the frozen uv sync.
-`scripts/provision-browser.sh` is the separately requested setup action that may
-call Browser Harness's native `ensure_daemon()` after the resolved configuration
-passes local validation. `scripts/preflight-runtime.sh` checks pins,
-configuration, the version-pinned integration seam, and the configured existing
-named daemon without starting or repairing one. At run time the bridge requires
-that existing daemon and directly substitutes Browser Harness's native
-`require_existing_daemon()` for the upstream Agent's automatic startup hook. A
-run never invokes daemon recovery, selects another browser, starts Chrome, or
-automates a permission flow. Preflight invokes only the existing
-`.venv/bin/python`; it never creates or synchronizes the environment.
+Retain the uv-managed Python 3.12 environment, Jev Ultrafast commit
+`1231850a0bf1a0c0341fe408ef1668dbbfdfac46`, Browser Harness 0.1.13 and evaluated
+Jev model pin. Browser Harness remains the single browser-configuration owner.
+Loading the Pi extension stays inert; installation/provisioning is explicit,
+and tool runs require the already-provisioned local named daemon.
 
-Browser Harness consumes connection settings when its daemon starts. The
-wrapper does not independently detect or reconcile a same-named local daemon
-left running after those settings change. The operator must stop/restart Harness
-using the old native configuration, update that configuration, and explicitly
-provision again. This intentionally replaces the earlier stronger wrapper
-contract that independently compared an `RLCD_BRWSR_CDP_URL` endpoint with live
-daemon target identifiers.
+Use native `TYPESAFE_API_KEY` and `TEXT_MODEL_*` settings through the authorized
+host-local environment/configuration. Do not introduce a secret store, copy
+existing credentials or read Pi's OAuth credentials. The future helper provider
+and model have not been chosen. A key alone selects upstream's DeepSeek defaults;
+other providers also require their base URL and model. “OpenAI-compatible” is
+not proof that the provider accepts this pin's reasoning parameters.
 
-Each upstream `Agent` creates one task tab. The bridge reports its target
-identifier once Agent construction returns a usable handle. A normal run closes
-that tab and reaps its bridge. An explicit completion-only retention request can
-instead leave that identified tab open after the bridge exits. If Agent
-construction is interrupted before the handle is available, ownership remains
-unknown and cleanup is reported as unconfirmed; the wrapper does not infer the
-target from before/after tab differences. The shared Harness daemon, selected
-Chrome process, and unrelated tabs are not run-owned and remain. Concurrent
-clients are still an operating limitation.
+The helper remains optional for click-only tasks. Native missing-key or invalid
+value errors must return useful sanitized errors and available state, without
+inventing a field value or switching to the outer Pi model.
 
-## Model responsibilities
+Initial tasks remain benign, unauthenticated and non-booking. The outer agent
+owns permissions and verification. Neither the wrapper nor upstream guarantees
+recognition of every consequential control or prompt-injection immunity. No
+custom extractor, site script, TypeScript port, Chrome-CLI fallback, page-cleanup
+LLM, recordings or automatic rollout is added.
 
-Jev chooses only from upstream's observed, code-owned action candidates.
-Upstream validates the selected operation and operation-specific target before
-execution. Model output never becomes a selector, coordinate, URL, shell
-command, or executable JavaScript.
+## Results and deliberately narrower guarantees
 
-The only text helper is Pi-native `openai-codex/gpt-5.6-luna` at high
-reasoning. The TypeScript extension resolves that exact model from the current
-tool context and calls `ctx.modelRegistry.complete()`. Pi owns its existing
-login, OAuth refresh, provider transport, and completion. RLCD-brwsr neither
-reads/copies OAuth material nor changes the session's main model or thinking
-level. There is no helper endpoint, API-key setup, backend selector, daemon,
-credential store, or fallback model in this project.
+Python returns a small projection: completion claim or stop/error, last actually
+observed page when available, bounded recorded history, configured model names,
+upstream-retained usage, known target, cleanup outcome and a sanitized diagnostic.
+Use one explicit UTF-8 byte budget for the projected terminal result and report
+omitted fields/records. The same projection can serve content and details;
+there is no need for competing detailed state reconstructions. Final cap values
+and pathological Unicode/metadata behavior still require executable tests.
 
-The helper remains optional for click-only work. Before bridge readiness, and in
-standalone Python preflight, helper capability/model are `unknown`. During a
-tool run the bridge receives only Pi's available/unavailable judgment. If
-upstream first selects `TYPE_TEXT` while the model or Pi login is unavailable,
-the run stops before a helper request or field mutation and returns `needs_text`
-with prior progress.
+- `DONE` is a completion claim, never independent proof of the goal.
+- Redact complete raw values before clipping or preview. Keep both Jev/helper
+  key privacy checks; no OAuth relay exists in this target design.
+- A handled error or cooperative stop may provide available Agent state. A hard
+  kill, failed construction or invalid/missing result may provide none.
+- After forced or incomplete exits, report execution and cleanup as unknown;
+  do not infer zero side effects, zero charges or closed tabs. A task tab can
+  remain for operator inspection. Do not automatically retry uncertain input.
+- Keep the parent's first stop reason when requested shutdown yields no valid
+  terminal result. Confirm child exit before reporting it reaped; a sent signal
+  is not an exit observation.
+- No live phase-by-phase progress, hard-kill evidence recovery or universal
+  no-dispatch-after-deadline guarantee is promised.
 
-At the pinned upstream seam, Python installs a narrow transport interception for
-only the API-key-shaped call made by `field_text()`. Internal nonsecret sentinel
-values satisfy that fixed upstream interface and cannot reach HTTP. The bridge
-relays the exact upstream system and user prompt over its existing stdin/stdout;
-TypeScript translates upstream's generic low-effort request to the one approved
-high-effort Luna call. The response and available token usage return over the
-same single-inflight exchange. Upstream remains the sole owner of
-`field_context()`, prompt construction, and validation that the response is
-exactly `{text}` with a nonempty string of at most 2,000 characters.
+An upstream budget exception is not the same as Jev choosing `BLOCKED`; preserve
+the exception rather than translating solely from upstream's status field.
 
-## First vertical slice
+Available usage is only the subset upstream retained. Invalid helper responses,
+failed requests and retry counts can be absent. Do not equate record count with
+request count or missing usage with zero. **Initial accounting recommendation:**
+show bounded source-labelled records and unavailable values in tool details;
+omit Pi top-level `usage` unless its required numeric fields are supportable.
+This leaves Pi footer/session totals incomplete and must be disclosed. Whether
+to add rate-based estimated totals is an open choice after provider selection,
+not a reason to build a billing adapter now.
 
-Issue #10 proves one benign click-only journey on a loopback fixture through the
-registered Pi tool, real TypeScript extension, real Python bridge, and pinned
-upstream `Agent`. External browser/model interactions may be deterministic in
-offline tests and acceptance, and must be labeled as such.
+## Reuse and leave behind
 
-The slice provides:
+Reuse dependency pins/setup, native Harness configuration and existing-daemon
+checks, inert Pi registration, browser fixtures, independent observation helpers,
+and the redaction/bounding/cleanup lessons. Reuse behavior tests where the
+contract is unchanged; do not preserve the old implementation solely for tests.
 
-- uv-managed Python 3.12 setup and a reproducible lock;
-- exact existing-daemon preflight and actionable setup errors;
-- bounded JSONL readiness/ownership, progress, and terminal records;
-- basic action and elapsed-time bounds plus Pi cancellation;
-- bounded evidence, trace, diagnostics, and measurement disclosure;
-- normal task-tab and bridge cleanup; and
-- a missing-text-helper capability handoff.
+Replace the current TypeScript protocol engine and Python command-level bridge.
+Remove the Pi-Luna completion adapter, helper reply channel and sentinel backend,
+shadow state, phase validators/reducers, usage-to-field merge and parent fallback
+cleanup mode. Retire tests for deliberately removed promises and replace them
+with the reduced public contract. Do not delete historical branches, reports,
+raw evidence or the earlier custom-loop work.
 
-Issue #11 added the text-entry journey through the same tool. The later
-Pi-native ownership revision keeps its upstream field-context construction,
-generated-value validation, and browser fill while replacing the separate
-OpenAI-compatible helper configuration with fixed Luna/high completion through
-Pi. The wrapper adds only capability handoff, a bounded single-inflight relay,
-bounded failure classification, and normalized helper evidence. It does not add
-prepared values, a second generator, page cleanup, or site planning.
+## Implementation and verification sequence
 
-Issue #12 extends the same registered-tool/real-bridge seam with in-flight
-interruption, abnormal-exit cleanup, and completion-only retained tabs. It does
-not add a tab manager or permit an unbounded runner.
+1. Confirm the proposed removal of mutation-only `maxActions` and the initial
+   accounting limitation. Select concrete request/result byte budgets without
+   clipping upstream observations or helper prompts.
+2. Build a small Python runner plus the small Pi launcher. No provider
+   credential or live model call is needed for the deterministic work.
+3. Test through the registered Pi tool with the real new runner and external
+   fakes: native click/fill/DONE/BLOCKED/error behavior, empty/malformed helper
+   values, preflight/input failure, output overflow/Unicode/privacy, stop
+   precedence, cooperative cleanup and unknown-on-hard-kill/construction.
+4. Repeat the click/text fixtures through the actual Pi TUI and new runner with
+   real upstream/Harness/Chrome and synthetic provider replies. Independently
+   inspect known owned targets, test retention/default close and a real bounded
+   stop, and measure resource outcomes instead of inferring them from signals.
+5. Only after provider selection and explicit applicable allowance, test its
+   native helper payload, then a benign public task using real Jev/helper calls.
+   Preserve earlier ledgers; native step limits do not constitute a billing
+   budget. Report unknown attempts/charges conservatively.
 
-## Operating scope
+Do not add a broader test or runtime framework to satisfy every hypothetical
+failure. A discovered limitation may require a narrower disclosed contract,
+not another state owner. No implementation, live-provider acceptance or delivery
+is implied by this plan.
 
-The outer agent decides which authorized work to delegate. Initial use is
-limited to benign, unauthenticated, non-booking tasks. Credentials, payments,
-purchases, bookings, uploads, downloads, account changes, consent grants,
-messages, posts, publication, deletion, and installation remain with the outer
-agent.
+## Evidence and history
 
-Page content is untrusted data. The unchanged upstream policy has no distinct
-consequential-action permission outcome, so this wrapper does not promise to
-recognize every consequential control. `BLOCKED`, stale state, missing
-capability, uncertainty, or setup failure returns control to the outer agent.
-The wrapper does not add a second permission classifier or site policy.
+- [Feasibility source/probe record](thin-python-feasibility.md).
+- [Next architecture decision](adr/0003-python-owned-run.md).
+- [Recovered architecture and amendments](adr/0002-wrap-pinned-jev-ultrafast-agent.md).
+- Earlier verification: [#10](issue-10-evidence.md), [#11](issue-11-evidence.md),
+  [#12](issue-12-evidence.md). Those are not tests of the proposed rewrite.
+- Local raw probes and recovery receipts: `artifacts/thin-python-plan/`.
+- Cancelled gate: `01M33MP2Y3PGGAM3EARNPYQMTQ`; unresolved static findings R23-R26
+  are preserved in the local review log, not represented as fixed or reproduced.
 
-## Bounds and stopping
-
-The wall budget includes bridge startup, initial observation, model/helper
-calls, waits, and browser work. The action budget counts executed browser
-mutations; predictions and waits are reported separately. The parent passes the
-original absolute wall deadline to the bridge, so pre-spawn work does not renew
-the child budget. The wrapper stops dispatching new work after cancellation or
-expiry and preserves upstream's stricter limits.
-
-The first slice stops for:
-
-- a Jev `DONE` completion claim or upstream `BLOCKED` state;
-- unavailable Luna model or Pi login when text entry is selected;
-- the configured action or wall-clock budget;
-- Pi cancellation;
-- stale/invalid upstream state, provider failure, or uncertain execution; or
-- bridge/protocol/setup failure.
-
-A dispatched mutation may remain uncertain after cancellation or process exit.
-Stopping the bridge is not rollback, and the wrapper does not retry it. A fill
-failure before a recorded helper result can also originate in the preceding
-browser freshness check, so the wrapper reports a conservative upstream error
-rather than inventing a helper-specific origin; it still reports whether a
-mutation could have started. In particular, an unchanged helper-call count does
-not prove safety when upstream can reuse a cached generated value after a stale
-retry. Partial observations and executed-action records remain useful. Cleanup
-is reported as confirmed or unconfirmed rather than inferred.
-
-## Protocol and result bounds
-
-The extension starts a fixed project-local Python executable with a fixed bridge
-path. It sends one structured run request on stdin, followed only by correlated
-text-helper replies when requested. URL, goal, page text, and model output are
-data and never enter a shell command.
-
-Standard output is protocol-only JSON Lines:
-
-1. one readiness record, including Pi-helper availability;
-2. ownership once Agent construction exposes a usable task-target handle;
-3. bounded progress after observations, predictions, mutation dispatch, and
-   executions;
-4. at most one in-flight text-helper request, correlated with one bounded reply
-   on stdin; and
-5. exactly one terminal result on a normal bridge path.
-
-The parent accepts readiness and ownership once, freezes the first reported
-owned target for fallback cleanup, and validates progress ordering and terminal
-retention/ownership agreement. The parent independently reapplies field and list
-bounds to every accepted record.
-
-The parent keeps task-run stdin open only for that sequential helper exchange;
-targeted standalone cleanup retains its one-line-plus-EOF contract.
-Cancellation, wall expiry, protocol failure, and actual child-process close
-abort a waiting Pi completion and prevent a late reply from being written into
-a closed or later exchange. An unexpectedly closed child stdout pipe while the
-bridge process remains alive does not itself abort a pending Pi completion;
-work may continue until process close or the wall deadline.
-
-Diagnostics use standard error. The parent bounds ordinary protocol lines to
-32,000 Unicode code points and the unchanged upstream text-helper request to
-384,000 Unicode code points, with the same serialized bounds enforced by the
-bridge. It streams validated progress without retaining an unbounded record
-list or imposing a competing record-count stop. Model-visible results are
-bounded to 12,000 Unicode code points, last-observation evidence to 4,000 code
-points, and terminal trace/decision lists to 24 entries. Bounded URL, title,
-action, field, model, target and daemon metadata carries an adjacent truncation
-indicator. After native Harness
-configuration resolution, the child redacts its known credentials from complete
-raw values before any preview or clipping and again before emission. The parent separately
-retains its defense for values it knows. Redaction therefore covers retained
-errors, progress, tool content, and details without serializing child-only
-secrets to the parent. Measurements name the configured Jev model and fixed Pi
-helper separately from provider-reported identities. Helper latency, response
-model, and available Pi token usage are captured for every resolved response,
-including incomplete or late responses observed during shutdown. Combined Pi
-helper usage is also returned as the tool result's top-level nested-call usage;
-Python-echoed usage is not counted again. A thrown completion with no response
-usage does not invent any. Raw Pi SDK error messages, bodies, and stacks never
-enter the bridge or tool result; non-stop responses and thrown failures use
-fixed failure text. Provider attempt, retry, subscription-spend, and cost counts
-that are not exposed remain `unavailable`, not zero. Cleanup elapsed time remains unavailable
-when an abnormal exit prevents measuring the whole interval; total elapsed time
-and any overrun beyond the wall budget remain parent-observed. The Jev model
-identifier has one executable owner in `config/runtime.json`, which the
-extension, bridge, and preflight consume.
-
-## Verification
-
-The agreed TDD seam is the registered Pi tool. Tests load the real extension and
-run the real bridge. They substitute only external upstream/browser/model
-interactions and assert public outcomes rather than private parsing helpers or
-incidental call order.
-
-The first slice covers inert loading, invalid input, explicit preflight,
-click-only completion, basic action/time/cancellation bounds, missing text-helper
-handoff, bounded/redacted failure output, and owned-resource cleanup. The
-Pi-native text slice covers a complete request/reply round trip through the
-registered tool and real bridge; exact upstream prompt/value validation;
-missing model/login; malformed, empty, extra-key, overlong, and oversized
-responses; provider failures; cancellation/deadline while waiting; late reply
-suppression; click-only no-call behavior; separate model/usage reporting; and
-synthetic Jev-secret redaction through raw child, parent, and retained surfaces.
-Focused regressions cross the executable setup, executable preflight, and
-registered-tool seams while letting real Browser Harness import-time workspace
-`.env` loading resolve synthetic local and conflicting cloud settings. Cheap
-guards are proven red before implementation. Issue #12 adds interruption
-at observation/model/dispatched-input phases, missing-terminal partial evidence,
-failed initialization before ownership, malformed/truncated/oversized output,
-abnormal exit, confirmed and unconfirmed targeted cleanup, default closure, and
-completion-only retention. Fallback cleanup starts the same bridge executable in
-a bounded cleanup mode, resolves Harness's native configuration again, requires
-the existing daemon, and sends one direct close for only the incrementally
-reported target identifier. It never lists or reconciles a target set.
-
-Acceptance also uses a fresh actual Pi TUI controlled through Paseo CLI, the
-named Browser Harness daemon, the loopback fixture, and honestly labelled
-deterministic responders. Those responders replace external Jev and Pi helper
-completion only; the pinned Agent, DOM observation, upstream helper
-context/value validation, Browser Harness, and Chrome remain real. A separate browser observation verifies the
-click destination or inspects the text field and `FIELD-41` marker on the owned
-target while the text run is still open; `DONE` alone does not pass. Resource
-census records tabs, processes, the named shared daemon, and any run-owned bridge
-before and after.
-
-Repository formatting, type checks, focused tests, full tests, and upstream
-bridge compatibility checks run before a local candidate commit.
-
-## Superseded direction and retained evidence
-
-ADR-0001 and the original version of this plan chose a custom TypeScript loop
-over Chrome DevTools CLI because adopting Python and Browser Harness before
-that experiment would have added an untested runtime and provisioning path.
-That rationale was appropriate for the experiment. The experiment then showed
-that the wrapper was rebuilding upstream ownership and introduced restrictive
-observation limits, probability-wire validation failures, and timing/visibility
-problems. Its broader research trial did not establish an end-to-end speedup.
-Those results do not establish a general limitation of Jev.
-
-Issue #9 and ADR-0002 supersede the runtime decision: the pinned upstream Agent
-is now the implementation, and Browser Harness is its only browser execution
-path. The issue #10 implementation initially added wrapper-specific
-`RLCD_BRWSR_DAEMON`/`RLCD_BRWSR_CDP_URL` settings and a live target-identity
-binding check. A later user-approved simplification supersedes that connection
-contract: Browser Harness now owns native resolution, while the wrapper retains
-only local-mode validation and existing-daemon-only runtime behavior. A further
-user-approved simplification supersedes issue #11's separate API-key helper:
-Pi now solely owns fixed Luna/high model lookup, login, refresh, and completion;
-the Python side retains only the pinned upstream prompt/validation seam and a
-bounded relay. Historical custom-loop code, tests, reports, and raw observations remain
-in open PR #8 at `5dafb11` and in the sibling experiment history through
-`6df4b4b0f8b17420f9c9bc0a8176072312ec6de3`. They are references, not a branch
-to merge and not results from this wrapper.
-
-## References
-
-- Parent implementation spec: GitHub issue #9.
-- First vertical slice: GitHub issue #10.
-- Architecture revision: `docs/adr/0002-wrap-pinned-jev-ultrafast-agent.md`.
-- Prior decision: `docs/adr/0001-classifier-over-existing-browser-executor.md`.
-- Jev Ultrafast pin: `1231850a0bf1a0c0341fe408ef1668dbbfdfac46`.
-- Browser Harness pin: `0.1.13` (owned by the upstream manifest and uv lock).
-- Initial Jev model pin: `jev-1.13.0`.
-- Issue #10 verification summary: `docs/issue-10-evidence.md`.
-- Generated field-value slice: GitHub issue #11.
-- Issue #11 verification summary: `docs/issue-11-evidence.md`.
-- Interrupted-run and retention slice: GitHub issue #12.
-- Issue #12 verification summary: `docs/issue-12-evidence.md`.
+GitHub issues #9-#13 still describe the prior implementation and have not been
+rewritten by this planning task. The later approved direction and this plan
+must be reconciled with those issues before implementation is presented as
+satisfying them. PR #8 and the sibling experiment checkout remain untouched.

@@ -1,14 +1,23 @@
 # RLCD-brwsr
 
-RLCD-brwsr is a thin Pi extension over the pinned Jev Ultrafast Agent. It runs
+**Planning status:** this branch preserves the larger experimental implementation
+recovered from a cancelled, not-passed delivery gate. The approved next direction
+is a thinner Python-owned wrapper with a native API-key text helper; that rewrite
+has **not** been implemented. See the [next plan](docs/RLCD-BRWSR.md) and
+[source/probe evidence](docs/thin-python-feasibility.md). Setup and behavior below
+describe the recovered Pi-native-helper code, not the proposed replacement.
+
+The recovered RLCD-brwsr extension wraps the pinned Jev Ultrafast Agent. It runs
 one bounded browser task in an owned tab through the existing local daemon
 selected by Browser Harness's native configuration. A Jev `DONE` response is a
 completion claim, not proof; the outer agent must independently verify the page
 outcome.
 
-The active design and safety envelope are in
-[the v0.1 plan](docs/RLCD-BRWSR.md). The earlier custom Chrome DevTools CLI
-experiment remains historical evidence, not an active runtime or fallback.
+The next design and operating scope are owned by
+[the plan](docs/RLCD-BRWSR.md); the recovered implementation's decisions are
+preserved in [ADR-0002](docs/adr/0002-wrap-pinned-jev-ultrafast-agent.md). The
+earlier custom Chrome DevTools CLI experiment remains historical evidence, not
+an active runtime or fallback.
 
 ## Project-local setup
 
@@ -97,14 +106,15 @@ claim; its bridge still exits, while cancelled, expired, stopped, and failed
 runs attempt cleanup. Pi schedules the tool sequentially, which is not a global
 browser lock.
 
-The parent preserves bounded ownership, observation, decision, and action
-progress if a bridge exits without a terminal record. It first allows bounded
-cooperative shutdown, then reaps the run-owned process. When cleanup is absent
-or unconfirmed, it can ask the same bridge executable to close only the target
-identifier reported by that run through the same native-configured existing
-Harness daemon. It never chooses a target from before/after differences and
-never stops the shared daemon. An interrupted dispatched mutation remains
-`unknown`; process exit is neither cancellation proof nor rollback.
+The recovered parent contains progress retention, cooperative shutdown and
+exact-target fallback-cleanup mechanisms. They were intended to preserve useful
+partial state without touching shared services. They are **not verified
+lifecycle guarantees** at the recovered head: unresolved static findings R23-R26
+question late helper dispatch, stop-reason precedence, terminal/ownership
+agreement and progress-transition interpretation. Do not treat its reported
+partial state or cleanup as proven merely because a record was shape-validated.
+The findings are retained in `artifacts/thin-python-plan/gate-review-log.txt`;
+this planning task did not reproduce or fix them. Process exit is not rollback.
 
 ## Local fixture and checks
 
