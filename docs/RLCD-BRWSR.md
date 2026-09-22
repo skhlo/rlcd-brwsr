@@ -122,12 +122,15 @@ provision again. This intentionally replaces the earlier stronger wrapper
 contract that independently compared an `RLCD_BRWSR_CDP_URL` endpoint with live
 daemon target identifiers.
 
-Each upstream `Agent` creates one task tab and reports its target identifier as
-soon as available. A normal run closes that tab and reaps its bridge. An explicit
-completion-only retention request can instead leave that identified tab open
-after the bridge exits. The shared Harness daemon, selected Chrome process, and
-unrelated tabs are not run-owned and remain. Concurrent clients are still an
-operating limitation.
+Each upstream `Agent` creates one task tab. The bridge reports its target
+identifier once Agent construction returns a usable handle. A normal run closes
+that tab and reaps its bridge. An explicit completion-only retention request can
+instead leave that identified tab open after the bridge exits. If Agent
+construction is interrupted before the handle is available, ownership remains
+unknown and cleanup is reported as unconfirmed; the wrapper does not infer the
+target from before/after tab differences. The shared Harness daemon, selected
+Chrome process, and unrelated tabs are not run-owned and remain. Concurrent
+clients are still an operating limitation.
 
 ## Model responsibilities
 
@@ -208,9 +211,10 @@ The wrapper does not add a second permission classifier or site policy.
 
 The wall budget includes bridge startup, initial observation, model/helper
 calls, waits, and browser work. The action budget counts executed browser
-mutations; predictions and waits are reported separately. The wrapper stops
-dispatching new work after cancellation or expiry and preserves upstream's
-stricter limits.
+mutations; predictions and waits are reported separately. The parent passes the
+original absolute wall deadline to the bridge, so pre-spawn work does not renew
+the child budget. The wrapper stops dispatching new work after cancellation or
+expiry and preserves upstream's stricter limits.
 
 The first slice stops for:
 
@@ -241,18 +245,25 @@ data and never enter a shell command.
 Standard output is protocol-only JSON Lines:
 
 1. one readiness record, including Pi-helper availability;
-2. ownership as soon as a task target exists;
+2. ownership once Agent construction exposes a usable task-target handle;
 3. bounded progress after observations, predictions, mutation dispatch, and
    executions;
 4. at most one in-flight text-helper request, correlated with one bounded reply
    on stdin; and
 5. exactly one terminal result on a normal bridge path.
 
+The parent accepts readiness and ownership once, freezes the first reported
+owned target for fallback cleanup, and validates progress ordering and terminal
+retention/ownership agreement. The parent independently reapplies field and list
+bounds to every accepted record.
+
 The parent keeps task-run stdin open only for that sequential helper exchange;
 targeted standalone cleanup retains its one-line-plus-EOF contract.
-Cancellation, wall expiry, protocol failure, and child EOF abort a waiting Pi
-completion and prevent a late reply from being written into a closed or later
-exchange.
+Cancellation, wall expiry, protocol failure, and actual child-process close
+abort a waiting Pi completion and prevent a late reply from being written into
+a closed or later exchange. An unexpectedly closed child stdout pipe while the
+bridge process remains alive does not itself abort a pending Pi completion;
+work may continue until process close or the wall deadline.
 
 Diagnostics use standard error. The parent bounds ordinary protocol lines to
 32,000 Unicode code points and the unchanged upstream text-helper request to
@@ -263,8 +274,8 @@ bounded to 12,000 Unicode code points, last-observation evidence to 4,000 code
 points, and terminal trace/decision lists to 24 entries. Bounded URL, title,
 action, field, model, target and daemon metadata carries an adjacent truncation
 indicator. After native Harness
-configuration resolution, the child redacts its known credentials from every
-protocol record and diagnostic stream before emission. The parent separately
+configuration resolution, the child redacts its known credentials from complete
+raw values before any preview or clipping and again before emission. The parent separately
 retains its defense for values it knows. Redaction therefore covers retained
 errors, progress, tool content, and details without serializing child-only
 secrets to the parent. Measurements name the configured Jev model and fixed Pi

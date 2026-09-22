@@ -21,6 +21,17 @@ const MAX_REQUEST_BYTES = 20_000;
 const MAX_PROTOCOL_LINE_CHARS = 32_000;
 const MAX_HELPER_REQUEST_LINE_CHARS = 384_000;
 const MAX_RETAINED_RECORDS = 24;
+const MAX_OBSERVATION_URL_CHARS = 2_048;
+const MAX_OBSERVATION_TITLE_CHARS = 300;
+const MAX_EVIDENCE_CHARS = 4_000;
+const MAX_PROGRESS_EVIDENCE_CHARS = 1_200;
+const MAX_TRACE_OPERATION_CHARS = 80;
+const MAX_TRACE_ACTION_CHARS = 300;
+const MAX_MODEL_ID_CHARS = 160;
+const MAX_FIELD_CHARS = 300;
+const MAX_TARGET_ID_CHARS = 300;
+const MAX_DAEMON_CHARS = 200;
+const MAX_USAGE_CHARS = 600;
 const MAX_STDERR_CHARS = 4_000;
 const MAX_TOOL_CONTENT_CHARS = 12_000;
 const STOP_GRACE_MS = 1_500;
@@ -114,6 +125,7 @@ interface ReadyProtocolRecord {
   type: "ready";
   protocolVersion: 2;
   daemon: string;
+  daemonTruncated: boolean;
   capabilities: {
     textHelperAvailability: Exclude<TextHelperAvailability, "unknown">;
   };
@@ -229,6 +241,7 @@ interface ToolResult {
 }
 
 interface BridgeRunInput extends Required<RlcdRunInput> {
+  deadlineEpochMs: number;
   textHelperAvailable: boolean;
   textHelperUnavailableReason: string | null;
 }
@@ -271,6 +284,28 @@ function boundedCodePoints(
   return {
     text: length <= maximum ? value : takeCodePoints(value, maximum),
     truncated: length > maximum,
+  };
+}
+
+function normalizedBoundedText(
+  value: string,
+  maximum: number,
+  credentials: readonly string[],
+  sourceTruncated = false,
+): { text: string; truncated: boolean } {
+  const bounded = boundedCodePoints(redactText(value, credentials), maximum);
+  return {
+    text: bounded.text,
+    truncated: sourceTruncated || bounded.truncated,
+  };
+}
+
+function boundedJsonValue(value: JsonValue): JsonValue {
+  const serialized = JSON.stringify(value);
+  if (codePointLength(serialized) <= MAX_USAGE_CHARS) return value;
+  return {
+    truncated: true,
+    preview: takeCodePoints(serialized, MAX_USAGE_CHARS - 40),
   };
 }
 
@@ -600,6 +635,7 @@ function isNonnegativeFinite(value: unknown): value is number {
 function normalizedObservation(
   value: unknown,
   credentials: readonly string[],
+  maximumEvidenceChars = MAX_EVIDENCE_CHARS,
 ): Observation | null | undefined {
   if (value === null) return null;
   if (
@@ -613,13 +649,31 @@ function normalizedObservation(
   ) {
     return undefined;
   }
+  const url = normalizedBoundedText(
+    value.url,
+    MAX_OBSERVATION_URL_CHARS,
+    credentials,
+    value.urlTruncated,
+  );
+  const title = normalizedBoundedText(
+    value.title,
+    MAX_OBSERVATION_TITLE_CHARS,
+    credentials,
+    value.titleTruncated,
+  );
+  const evidence = normalizedBoundedText(
+    value.evidence,
+    maximumEvidenceChars,
+    credentials,
+    value.evidenceTruncated,
+  );
   return {
-    url: redactText(value.url, credentials),
-    urlTruncated: value.urlTruncated,
-    title: redactText(value.title, credentials),
-    titleTruncated: value.titleTruncated,
-    evidence: redactText(value.evidence, credentials),
-    evidenceTruncated: value.evidenceTruncated,
+    url: url.text,
+    urlTruncated: url.truncated,
+    title: title.text,
+    titleTruncated: title.truncated,
+    evidence: evidence.text,
+    evidenceTruncated: evidence.truncated,
   };
 }
 
@@ -636,6 +690,7 @@ function normalizedTraceEntry(
     typeof value.action !== "string" ||
     typeof value.actionTruncated !== "boolean" ||
     typeof value.outcome !== "string" ||
+    codePointLength(value.outcome) > 80 ||
     !isNonnegativeFinite(value.elapsedMs) ||
     (value.url !== undefined && typeof value.url !== "string") ||
     (value.urlTruncated !== undefined &&
@@ -644,20 +699,41 @@ function normalizedTraceEntry(
   ) {
     return undefined;
   }
+  const operation = normalizedBoundedText(
+    value.operation,
+    MAX_TRACE_OPERATION_CHARS,
+    credentials,
+    value.operationTruncated,
+  );
+  const action = normalizedBoundedText(
+    value.action,
+    MAX_TRACE_ACTION_CHARS,
+    credentials,
+    value.actionTruncated,
+  );
+  const url =
+    typeof value.url === "string" && typeof value.urlTruncated === "boolean"
+      ? normalizedBoundedText(
+          value.url,
+          MAX_OBSERVATION_URL_CHARS,
+          credentials,
+          value.urlTruncated,
+        )
+      : undefined;
   return {
     step: value.step,
-    operation: redactText(value.operation, credentials),
-    operationTruncated: value.operationTruncated,
-    action: redactText(value.action, credentials),
-    actionTruncated: value.actionTruncated,
-    outcome: redactText(value.outcome, credentials),
+    operation: operation.text,
+    operationTruncated: operation.truncated,
+    action: action.text,
+    actionTruncated: action.truncated,
+    outcome: normalizedBoundedText(value.outcome, 80, credentials).text,
     elapsedMs: value.elapsedMs,
-    ...(typeof value.url === "string" && typeof value.urlTruncated === "boolean"
-      ? {
-          url: redactText(value.url, credentials),
-          urlTruncated: value.urlTruncated,
-        }
-      : {}),
+    ...(url === undefined
+      ? {}
+      : {
+          url: url.text,
+          urlTruncated: url.truncated,
+        }),
   };
 }
 
@@ -688,28 +764,42 @@ function normalizedModelMeasurement(
   }
   const usage = sanitizedJson(value.usage, credentials);
   if (usage === undefined) return undefined;
+  const reportedModel = normalizedBoundedText(
+    value.reportedModel,
+    MAX_MODEL_ID_CHARS,
+    credentials,
+    value.reportedModelTruncated,
+  );
+  const field =
+    typeof value.field === "string" && typeof value.fieldTruncated === "boolean"
+      ? normalizedBoundedText(
+          value.field,
+          MAX_FIELD_CHARS,
+          credentials,
+          value.fieldTruncated,
+        )
+      : undefined;
   return {
-    reportedModel: redactText(value.reportedModel, credentials),
-    reportedModelTruncated: value.reportedModelTruncated,
-    ...(typeof value.field === "string" &&
-    typeof value.fieldTruncated === "boolean"
-      ? {
-          field: redactText(value.field, credentials),
-          fieldTruncated: value.fieldTruncated,
-        }
-      : {}),
+    reportedModel: reportedModel.text,
+    reportedModelTruncated: reportedModel.truncated,
+    ...(field === undefined
+      ? {}
+      : {
+          field: field.text,
+          fieldTruncated: field.truncated,
+        }),
     ...(typeof value.helperRequestId === "number"
       ? { helperRequestId: value.helperRequestId }
       : {}),
     latencyMs: value.latencyMs,
-    usage,
+    usage: boundedJsonValue(usage),
   };
 }
 
 function normalizedModelMeasurements(
   value: unknown,
   credentials: readonly string[],
-): ModelMeasurement[] | undefined {
+): { values: ModelMeasurement[]; truncated: boolean } | undefined {
   if (!Array.isArray(value)) return undefined;
   const output: ModelMeasurement[] = [];
   for (const item of value) {
@@ -717,7 +807,10 @@ function normalizedModelMeasurements(
     if (!measurement) return undefined;
     output.push(measurement);
   }
-  return output;
+  return {
+    values: output.slice(-MAX_RETAINED_RECORDS),
+    truncated: output.length > MAX_RETAINED_RECORDS,
+  };
 }
 
 function normalizedUsage(
@@ -752,7 +845,7 @@ function normalizedUsage(
     textAttempts === undefined ||
     textRetries === undefined ||
     textCost === undefined ||
-    typeof value.jev.configuredModel !== "string" ||
+    value.jev.configuredModel !== runtimeConfig.jevModel ||
     (value.textHelper.availability !== "available" &&
       value.textHelper.availability !== "unavailable") ||
     (value.textHelper.model !== null &&
@@ -766,10 +859,10 @@ function normalizedUsage(
   }
   return {
     jev: {
-      configuredModel: redactText(value.jev.configuredModel, credentials),
-      decisions,
-      ...(typeof value.jev.decisionsTruncated === "boolean"
-        ? { decisionsTruncated: value.jev.decisionsTruncated }
+      configuredModel: runtimeConfig.jevModel,
+      decisions: decisions.values,
+      ...(decisions.truncated || value.jev.decisionsTruncated === true
+        ? { decisionsTruncated: true }
         : {}),
       providerHttpAttempts: jevAttempts,
       providerRetries: jevRetries,
@@ -781,9 +874,9 @@ function normalizedUsage(
         typeof value.textHelper.model === "string"
           ? redactText(value.textHelper.model, credentials)
           : null,
-      calls,
-      ...(typeof value.textHelper.callsTruncated === "boolean"
-        ? { callsTruncated: value.textHelper.callsTruncated }
+      calls: calls.values,
+      ...(calls.truncated || value.textHelper.callsTruncated === true
+        ? { callsTruncated: true }
         : {}),
       providerHttpAttempts: textAttempts,
       providerRetries: textRetries,
@@ -812,6 +905,7 @@ function normalizedBridgeResult(
     : undefined;
   if (
     typeof value.stopReason !== "string" ||
+    codePointLength(value.stopReason) > 400 ||
     !isRecord(value.completionClaim) ||
     typeof value.completionClaim.claimed !== "boolean" ||
     value.completionClaim.requiresIndependentVerification !== true ||
@@ -842,12 +936,15 @@ function normalizedBridgeResult(
   ) {
     return undefined;
   }
-  const trace: TraceEntry[] = [];
+  const normalizedTrace: TraceEntry[] = [];
   for (const item of value.trace) {
     const entry = normalizedTraceEntry(item, credentials);
     if (!entry) return undefined;
-    trace.push(entry);
+    normalizedTrace.push(entry);
   }
+  const trace = normalizedTrace.slice(-MAX_RETAINED_RECORDS);
+  const traceTruncated =
+    value.traceTruncated || normalizedTrace.length > MAX_RETAINED_RECORDS;
   const taskTab = value.cleanup.taskTab;
   if (
     taskTab !== "not_created" &&
@@ -857,16 +954,38 @@ function normalizedBridgeResult(
   ) {
     return undefined;
   }
+  const targetId =
+    typeof value.ownership.targetId === "string"
+      ? normalizedBoundedText(
+          value.ownership.targetId,
+          MAX_TARGET_ID_CHARS,
+          credentials,
+          value.ownership.targetIdTruncated,
+        )
+      : null;
+  const daemon =
+    typeof value.ownership.daemon === "string"
+      ? normalizedBoundedText(
+          value.ownership.daemon,
+          MAX_DAEMON_CHARS,
+          credentials,
+          value.ownership.daemonTruncated,
+        )
+      : null;
+  const diagnostic =
+    typeof value.diagnostic === "string"
+      ? boundedDiagnostic([redactText(value.diagnostic, credentials)])
+      : null;
   return {
     status,
-    stopReason: redactText(value.stopReason, credentials),
+    stopReason: normalizedBoundedText(value.stopReason, 400, credentials).text,
     completionClaim: {
       claimed: value.completionClaim.claimed,
       requiresIndependentVerification: true,
     },
     lastObservation: observation,
     trace,
-    traceTruncated: value.traceTruncated,
+    traceTruncated,
     usage,
     timing: {
       elapsedMs: value.timing.elapsedMs,
@@ -875,26 +994,17 @@ function normalizedBridgeResult(
       cleanupOverrunMs: value.timing.cleanupOverrunMs,
     },
     ownership: {
-      targetId:
-        typeof value.ownership.targetId === "string"
-          ? redactText(value.ownership.targetId, credentials)
-          : null,
-      targetIdTruncated: value.ownership.targetIdTruncated,
+      targetId: targetId?.text ?? null,
+      targetIdTruncated: targetId?.truncated ?? false,
       bridgePid:
         typeof value.ownership.bridgePid === "number"
           ? value.ownership.bridgePid
           : null,
-      daemon:
-        typeof value.ownership.daemon === "string"
-          ? redactText(value.ownership.daemon, credentials)
-          : null,
-      daemonTruncated: value.ownership.daemonTruncated,
+      daemon: daemon?.text ?? null,
+      daemonTruncated: daemon?.truncated ?? false,
     },
     mutationOutcome: value.mutationOutcome,
-    diagnostic:
-      typeof value.diagnostic === "string"
-        ? redactText(value.diagnostic, credentials)
-        : null,
+    diagnostic,
     cleanup: {
       taskTab,
       bridgeProcess: "reaped",
@@ -918,17 +1028,27 @@ function normalizedProgressRecord(
     ) {
       return undefined;
     }
+    const daemon = normalizedBoundedText(
+      value.daemon,
+      MAX_DAEMON_CHARS,
+      credentials,
+    );
     return {
       type: "ready",
       protocolVersion: 2,
-      daemon: redactText(value.daemon, credentials),
+      daemon: daemon.text,
+      daemonTruncated: daemon.truncated,
       capabilities: {
         textHelperAvailability: value.capabilities.textHelperAvailability,
       },
     };
   }
   if (value.type === "ownership") {
-    if (value.targetId !== null && typeof value.targetId !== "string") {
+    if (
+      value.targetId !== null &&
+      (typeof value.targetId !== "string" ||
+        codePointLength(value.targetId) > MAX_TARGET_ID_CHARS)
+    ) {
       return undefined;
     }
     return {
@@ -947,7 +1067,11 @@ function normalizedProgressRecord(
     return undefined;
   }
   if (value.phase === "observation") {
-    const observation = normalizedObservation(value.observation, credentials);
+    const observation = normalizedObservation(
+      value.observation,
+      credentials,
+      MAX_PROGRESS_EVIDENCE_CHARS,
+    );
     if (observation === undefined) return undefined;
     return {
       type: "progress",
@@ -1163,6 +1287,7 @@ function asToolResult(result: RlcdRunResult, usage?: PiUsage): ToolResult {
 
 interface PartialBridgeState {
   daemon: string | null;
+  daemonTruncated: boolean;
   targetId: string | null;
   ownershipReported: boolean;
   bridgePid: number | null;
@@ -1261,10 +1386,11 @@ function partialBridgeResult(
     targetIdTruncated: targetId?.truncated ?? false,
     bridgePid: state.bridgePid,
     daemon: daemon?.text ?? null,
-    daemonTruncated: daemon?.truncated ?? false,
+    daemonTruncated: state.daemonTruncated || (daemon?.truncated ?? false),
   };
   result.mutationOutcome = state.mutationOutcome;
   result.cleanup.taskTab = "unconfirmed";
+  result.cleanup.bridgeProcess = "unconfirmed";
   result.timing.cleanupElapsedMs = "unavailable";
   return result;
 }
@@ -1288,6 +1414,7 @@ function applyProgressRecord(
 ): void {
   if (record.type === "ready") {
     state.daemon = record.daemon;
+    state.daemonTruncated = record.daemonTruncated;
     state.textHelperAvailability = record.capabilities.textHelperAvailability;
     state.textHelperModel =
       record.capabilities.textHelperAvailability === "available"
@@ -1296,8 +1423,10 @@ function applyProgressRecord(
     return;
   }
   if (record.type === "ownership") {
-    state.ownershipReported = true;
-    state.targetId = record.targetId;
+    if (!state.ownershipReported) {
+      state.ownershipReported = true;
+      state.targetId = record.targetId;
+    }
     return;
   }
 
@@ -1474,6 +1603,7 @@ async function waitForBridge(
   const credentials = knownCredentials();
   const state: PartialBridgeState = {
     daemon: null,
+    daemonTruncated: false,
     targetId: null,
     ownershipReported: false,
     bridgePid: child.pid ?? null,
@@ -1501,6 +1631,8 @@ async function waitForBridge(
   let helperRequestId: number | undefined;
   let helperTask: Promise<void> | undefined;
   let helperSettleDiagnostic: string | undefined;
+  let readyReceived = false;
+  let ownershipReceived = false;
   const helperAbort = new AbortController();
 
   const stopChild = () => {
@@ -1565,7 +1697,11 @@ async function waitForBridge(
           state.textHelperCalls.shift();
           state.textHelperCallsTruncated = true;
         }
-        const reportedModel = boundedCodePoints(completion.reportedModel, 160);
+        const reportedModel = normalizedBoundedText(
+          completion.reportedModel,
+          MAX_MODEL_ID_CHARS,
+          credentials,
+        );
         state.textHelperCalls.push({
           reportedModel: reportedModel.text,
           reportedModelTruncated: reportedModel.truncated,
@@ -1634,6 +1770,56 @@ async function waitForBridge(
   deadline.unref();
   if (remainingMs === 0) requestStop("time_budget");
 
+  const terminalAgreesWithProtocol = (candidate: RlcdRunResult): boolean => {
+    const claimed = candidate.status === "completion_claim";
+    if (candidate.completionClaim.claimed !== claimed) return false;
+    if (
+      claimed &&
+      (candidate.stopReason !== "done_claim" ||
+        !ownershipReceived ||
+        state.targetId === null)
+    ) {
+      return false;
+    }
+    if (candidate.timing.wallBudgetMs !== input.maxSeconds * 1_000) {
+      return false;
+    }
+    if (
+      state.bridgePid !== null &&
+      candidate.ownership.bridgePid !== state.bridgePid
+    ) {
+      return false;
+    }
+    if (ownershipReceived) {
+      const targetId =
+        state.targetId === null
+          ? null
+          : boundedCodePoints(state.targetId, MAX_TARGET_ID_CHARS);
+      if (
+        candidate.ownership.targetId !== (targetId?.text ?? null) ||
+        candidate.ownership.targetIdTruncated !== (targetId?.truncated ?? false)
+      ) {
+        return false;
+      }
+    } else if (candidate.ownership.targetId !== null) {
+      return false;
+    }
+    if (
+      readyReceived &&
+      (candidate.ownership.daemon !== state.daemon ||
+        candidate.ownership.daemonTruncated !== state.daemonTruncated ||
+        candidate.usage.textHelper.availability !==
+          state.textHelperAvailability)
+    ) {
+      return false;
+    }
+    const shouldRetain = input.retainTab && claimed;
+    if ((candidate.cleanup.taskTab === "retained") !== shouldRetain) {
+      return false;
+    }
+    return !shouldRetain || candidate.ownership.targetId !== null;
+  };
+
   const handleLine = (rawLine: string) => {
     if (!rawLine || protocolError) return;
     if (codePointLength(rawLine) > MAX_HELPER_REQUEST_LINE_CHARS) {
@@ -1663,18 +1849,24 @@ async function waitForBridge(
       );
       return;
     }
+    if (terminal) {
+      failProtocol("bridge emitted a record after its terminal result");
+      return;
+    }
     if (parsed.type === "result") {
-      if (terminal) {
-        failProtocol("bridge emitted more than one terminal result");
+      const candidate = normalizedBridgeResult(parsed.result, credentials);
+      if (!candidate || !terminalAgreesWithProtocol(candidate)) {
+        failProtocol("bridge emitted an inconsistent terminal result");
       } else {
-        terminal = normalizedBridgeResult(parsed.result, credentials);
-        if (!terminal) {
-          failProtocol("bridge emitted an invalid terminal result");
-        }
+        terminal = candidate;
       }
       return;
     }
     if (parsed.type === "text_helper_request") {
+      if (!readyReceived || !ownershipReceived) {
+        failProtocol("bridge requested text before readiness and ownership");
+        return;
+      }
       const request = normalizedTextHelperRequest(parsed);
       if (!request) {
         failProtocol("bridge emitted an invalid text helper request");
@@ -1688,6 +1880,22 @@ async function waitForBridge(
       failProtocol(
         `bridge emitted an invalid ${JSON.stringify(parsed.type)} record`,
       );
+      return;
+    }
+    if (safeRecord.type === "ready") {
+      if (readyReceived || ownershipReceived) {
+        failProtocol("bridge emitted readiness out of order");
+        return;
+      }
+      readyReceived = true;
+    } else if (safeRecord.type === "ownership") {
+      if (!readyReceived || ownershipReceived) {
+        failProtocol("bridge emitted ownership out of order");
+        return;
+      }
+      ownershipReceived = true;
+    } else if (!readyReceived || !ownershipReceived) {
+      failProtocol("bridge emitted progress before readiness and ownership");
       return;
     }
     applyProgressRecord(state, safeRecord);
@@ -1995,6 +2203,7 @@ async function runRegisteredTool(
     goal: params.goal.trim(),
     maxActions: params.maxActions ?? DEFAULT_MAX_ACTIONS,
     maxSeconds,
+    deadlineEpochMs: deadlineAt,
     retainTab: params.retainTab ?? false,
     textHelperAvailable: textHelper.available,
     textHelperUnavailableReason: textHelper.unavailableReason,

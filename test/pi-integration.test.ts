@@ -178,6 +178,9 @@ function registeredTool(options: RegisteredToolOptions = {}): RegisteredTool {
         if (process.env.RLCD_TEST_SCENARIO === "pre_spawn_delay") {
           Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1_100);
         }
+        if (process.env.RLCD_TEST_SCENARIO === "remaining_deadline") {
+          Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 600);
+        }
         if (
           options.helperModelAvailable === false ||
           provider !== "openai-codex" ||
@@ -429,6 +432,7 @@ test("registered Pi tool loads native Harness workspace configuration and comple
     const helperRequestMarker = join(harnessHome, "helper-requested");
     process.env.RLCD_TEST_HELPER_REQUEST_MARKER = helperRequestMarker;
     const tool = registeredTool({ helperModelAvailable: false });
+    const updates: ToolResult[] = [];
     assert.equal(tool.name, "rlcd_brwsr_run");
     assert.equal(tool.executionMode, "sequential");
     for (const guidance of [
@@ -443,6 +447,7 @@ test("registered Pi tool loads native Harness workspace configuration and comple
       "click-journey",
       baseInput(),
       new AbortController().signal,
+      (update) => updates.push(update),
     );
     const details = detailsOf(result);
     const completionClaim = recordField(details, "completionClaim");
@@ -485,6 +490,13 @@ test("registered Pi tool loads native Harness workspace configuration and comple
       sharedDaemon: "retained",
     });
     assert.equal(stringField(ownership, "targetId"), "rlcd-owned-target");
+    assert.ok(updates.length > 0);
+    for (const update of updates) {
+      assert.equal(
+        stringField(recordField(detailsOf(update), "cleanup"), "bridgeProcess"),
+        "unconfirmed",
+      );
+    }
     const bridgePid = numberField(ownership, "bridgePid");
     assert.throws(
       () => process.kill(bridgePid, 0),
@@ -1540,6 +1552,39 @@ test("a prediction crossing the deadline cannot dispatch an action", async () =>
   );
 });
 
+test("the bridge receives the original remaining deadline", async () => {
+  await withFakeExternalInteractions(
+    "remaining_deadline",
+    async (harnessHome) => {
+      const inputMarker = join(harnessHome, "remaining-deadline-input");
+      process.env.RLCD_TEST_INPUT_DISPATCH_MARKER = inputMarker;
+
+      let parentBlocked = false;
+      const result = await registeredTool().execute(
+        "remaining-deadline",
+        baseInput({ maxSeconds: 1 }),
+        new AbortController().signal,
+        (update) => {
+          if (
+            !parentBlocked &&
+            update.content[0]?.text.includes('"phase":"observation"')
+          ) {
+            parentBlocked = true;
+            Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 700);
+          }
+        },
+      );
+      const details = detailsOf(result);
+
+      assert.equal(parentBlocked, true);
+      assert.equal(stringField(details, "status"), "stopped");
+      assert.equal(stringField(details, "stopReason"), "time_budget");
+      assert.equal(stringField(details, "mutationOutcome"), "not_in_flight");
+      await assert.rejects(access(inputMarker));
+    },
+  );
+});
+
 test("immediate Pi cancellation does not start browser or model work", async () => {
   await withFakeExternalInteractions("click_done", async (harnessHome) => {
     const browserWorkMarker = join(harnessHome, "browser-work");
@@ -1577,6 +1622,35 @@ test("immediate Pi cancellation does not start browser or model work", async () 
     await assert.rejects(access(modelWorkMarker));
     await assert.rejects(access(targetMarker));
   });
+});
+
+test("interrupted Agent construction reports unknown ownership and cleanup", async () => {
+  await withFakeExternalInteractions(
+    "cancel_during_agent_construction",
+    async (harnessHome) => {
+      const targetMarker = join(harnessHome, "constructing-agent-targets");
+      process.env.RLCD_TEST_TARGET_EVENTS_MARKER = targetMarker;
+
+      const result = await registeredTool().execute(
+        "cancel-during-agent-construction",
+        baseInput(),
+        new AbortController().signal,
+      );
+      const details = detailsOf(result);
+      const ownership = recordField(details, "ownership");
+
+      assert.equal(stringField(details, "status"), "stopped");
+      assert.equal(stringField(details, "stopReason"), "cancelled");
+      assert.equal(ownership.targetId, null);
+      assert.equal(
+        stringField(recordField(details, "cleanup"), "taskTab"),
+        "unconfirmed",
+      );
+      assert.deepEqual(await targetEvents(targetMarker), [
+        "created:rlcd-owned-target",
+      ]);
+    },
+  );
 });
 
 test("cancellation after Agent construction still closes the owned tab", async () => {
@@ -1856,6 +1930,65 @@ test("an unconfirmed primary close uses targeted fallback cleanup", async () => 
   );
 });
 
+test("duplicate ownership cannot replace the cleanup target", async () => {
+  await withFakeExternalInteractions(
+    "ownership_switch_protocol",
+    async (harnessHome) => {
+      const targetMarker = join(harnessHome, "ownership-switch-targets");
+      process.env.RLCD_TEST_TARGET_EVENTS_MARKER = targetMarker;
+
+      const result = await registeredTool().execute(
+        "ownership-switch",
+        baseInput(),
+        new AbortController().signal,
+      );
+      const details = detailsOf(result);
+      const events = await targetEvents(targetMarker);
+
+      assert.equal(stringField(details, "status"), "error");
+      assert.equal(stringField(details, "stopReason"), "protocol_error");
+      assert.equal(
+        stringField(recordField(details, "ownership"), "targetId"),
+        "rlcd-owned-target",
+      );
+      assert.ok(events.includes("created:rlcd-owned-target"));
+      assert.ok(events.includes("close:rlcd-owned-target"));
+      assert.equal(events.includes("close:unrelated-target"), false);
+    },
+  );
+});
+
+test("inconsistent retained terminals are rejected and cleaned", async () => {
+  await withFakeExternalInteractions(
+    "inconsistent_retained_terminal",
+    async (harnessHome) => {
+      const targetMarker = join(harnessHome, "inconsistent-terminal-targets");
+      process.env.RLCD_TEST_TARGET_EVENTS_MARKER = targetMarker;
+
+      const result = await registeredTool().execute(
+        "inconsistent-retained-terminal",
+        baseInput(),
+        new AbortController().signal,
+      );
+      const details = detailsOf(result);
+
+      assert.equal(stringField(details, "status"), "error");
+      assert.equal(stringField(details, "stopReason"), "protocol_error");
+      assert.equal(
+        stringField(recordField(details, "cleanup"), "taskTab"),
+        "closed",
+      );
+      assert.ok(
+        (await targetEvents(targetMarker)).every(
+          (event) =>
+            event === "created:rlcd-owned-target" ||
+            event === "close:rlcd-owned-target",
+        ),
+      );
+    },
+  );
+});
+
 test("failed targeted cleanup remains unconfirmed without disturbing shared resources", async () => {
   const cleanupSecret = "synthetic-cleanup-secret-BRAVO-18";
   await withFakeExternalInteractions(
@@ -1989,12 +2122,11 @@ test("malformed output after a large valid observation still has hard-bounded mo
       const details = detailsOf(result);
       const observation = nullableRecordField(details, "lastObservation");
       assert.ok(observation);
-      assert.equal(stringField(observation, "url").length, 14_000);
-      assert.equal(
-        stringField(observation, "title").length,
-        15_000,
-        "parent redaction expansion must remain inside the output budget",
-      );
+      assert.equal(codePointLength(stringField(observation, "url")), 2_048);
+      assert.equal(booleanField(observation, "urlTruncated"), true);
+      assert.equal(codePointLength(stringField(observation, "title")), 300);
+      assert.equal(booleanField(observation, "titleTruncated"), true);
+      assert.doesNotMatch(JSON.stringify(details), /synthetic/);
 
       const content = result.content[0]?.text ?? "";
       assert.ok(
@@ -2009,10 +2141,16 @@ test("malformed output after a large valid observation still has hard-bounded mo
       const completionClaim = recordField(modelVisible, "completionClaim");
       assert.equal(completionClaim.claimed, false);
       assert.equal(completionClaim.requiresIndependentVerification, true);
-      const disclosure = recordField(modelVisible, "modelVisible");
-      assert.equal(disclosure.truncated, true);
-      assert.equal(disclosure.maxChars, 12_000);
-      assert.ok(arrayField(disclosure, "omissions").length > 0);
+      if (isRecord(modelVisible.modelVisible)) {
+        const disclosure = recordField(modelVisible, "modelVisible");
+        assert.equal(disclosure.truncated, true);
+        assert.equal(disclosure.maxChars, 12_000);
+        assert.ok(arrayField(disclosure, "omissions").length > 0);
+      } else {
+        const visibleObservation = recordField(modelVisible, "lastObservation");
+        assert.equal(visibleObservation.urlTruncated, true);
+        assert.equal(visibleObservation.titleTruncated, true);
+      }
       const events = await targetEvents(targetMarker);
       assert.equal(events[0], "created:rlcd-owned-target");
       assert.ok(events.includes("close:rlcd-owned-target"));
@@ -2227,6 +2365,33 @@ test("long bridge diagnostics disclose truncation", async () => {
   });
 });
 
+test("redaction precedes diagnostic clipping at credential boundaries", async () => {
+  const boundarySecret = `SECRET-BOUNDARY-${"Q".repeat(80)}`;
+  await withFakeExternalInteractions(
+    "boundary_secret_error",
+    async () => {
+      delete process.env.TYPESAFE_API_KEY;
+      const result = await registeredTool().execute(
+        "boundary-secret-diagnostic",
+        baseInput(),
+        new AbortController().signal,
+      );
+      const details = detailsOf(result);
+      const serialized = JSON.stringify(result);
+
+      assert.equal(stringField(details, "status"), "error");
+      assert.match(stringField(details, "diagnostic"), /\[REDACTED\]/);
+      assert.doesNotMatch(serialized, /SECRET-BOUNDARY/);
+      assert.doesNotMatch(serialized, new RegExp(boundarySecret));
+    },
+    {
+      nativeConfiguration:
+        `${nativeHarnessConfiguration}` +
+        `TYPESAFE_API_KEY=${boundarySecret}\n`,
+    },
+  );
+});
+
 test("provider failures cannot expose configured credentials", async () => {
   await withFakeExternalInteractions("provider_secret_error", async () => {
     const secret = process.env.TYPESAFE_API_KEY;
@@ -2262,6 +2427,45 @@ test("model-visible output stays bounded while disclosing truncated evidence", a
     assert.equal(booleanField(observation, "evidenceTruncated"), true);
     assert.ok(codePointLength(stringField(observation, "evidence")) <= 4_000);
     assert.ok(codePointLength(result.content[0]?.text ?? "") <= 12_000);
+  });
+});
+
+test("isolated surrogates are normalized before protocol emission", async () => {
+  await withFakeExternalInteractions("surrogate_page", async () => {
+    const result = await registeredTool().execute(
+      "surrogate-page",
+      baseInput(),
+      new AbortController().signal,
+    );
+    const details = detailsOf(result);
+    const observation = nullableRecordField(details, "lastObservation");
+    assert.ok(observation);
+
+    assert.equal(stringField(details, "status"), "completion_claim");
+    assert.notEqual(stringField(details, "stopReason"), "protocol_error");
+    assert.match(stringField(observation, "title"), /�/);
+    assert.match(stringField(observation, "evidence"), /�/);
+  });
+});
+
+test("parent normalization bounds oversized terminal lists", async () => {
+  await withFakeExternalInteractions("oversized_terminal_lists", async () => {
+    const result = await registeredTool().execute(
+      "oversized-terminal-lists",
+      baseInput(),
+      new AbortController().signal,
+    );
+    const details = detailsOf(result);
+    const usage = recordField(details, "usage");
+
+    assert.equal(stringField(details, "status"), "completion_claim");
+    assert.equal(arrayField(details, "trace").length, 24);
+    assert.equal(booleanField(details, "traceTruncated"), true);
+    assert.equal(arrayField(recordField(usage, "jev"), "decisions").length, 24);
+    assert.equal(
+      booleanField(recordField(usage, "jev"), "decisionsTruncated"),
+      true,
+    );
   });
 });
 

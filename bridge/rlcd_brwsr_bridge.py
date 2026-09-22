@@ -58,8 +58,36 @@ def _refresh_known_credentials() -> None:
     _known_credentials = tuple(dict.fromkeys(value for value in values if value))
 
 
+def _normalize_unicode(value: str) -> str:
+    output: list[str] = []
+    index = 0
+    while index < len(value):
+        codepoint = ord(value[index])
+        if 0xD800 <= codepoint <= 0xDBFF:
+            if index + 1 < len(value):
+                trailing = ord(value[index + 1])
+                if 0xDC00 <= trailing <= 0xDFFF:
+                    output.append(
+                        chr(
+                            0x10000
+                            + ((codepoint - 0xD800) << 10)
+                            + trailing
+                            - 0xDC00
+                        )
+                    )
+                    index += 2
+                    continue
+            output.append("\uFFFD")
+        elif 0xDC00 <= codepoint <= 0xDFFF:
+            output.append("\uFFFD")
+        else:
+            output.append(value[index])
+        index += 1
+    return "".join(output)
+
+
 def _redact_text(value: str) -> str:
-    redacted = value
+    redacted = _normalize_unicode(value)
     for credential in _known_credentials:
         redacted = redacted.replace(credential, "[REDACTED]")
     return re.sub(
@@ -110,12 +138,12 @@ def _bounded_text(value: object, maximum: int) -> str:
 
 
 def _bounded_metadata(value: object, maximum: int) -> tuple[str, bool]:
-    text = str(value)
+    text = _redact_text(str(value))
     return _bounded_text(text, maximum), len(text) > maximum
 
 
 def _bounded_diagnostic(value: object, maximum: int = MAX_DIAGNOSTIC_CHARS) -> str:
-    text = str(value)
+    text = _redact_text(str(value))
     if len(text) <= maximum:
         return text
     suffix = f" [diagnostic truncated from {len(text)} characters]"
@@ -255,6 +283,7 @@ def _read_request() -> dict[str, Any]:
 
     max_actions = value.get("maxActions")
     max_seconds = value.get("maxSeconds")
+    deadline_epoch_ms = value.get("deadlineEpochMs")
     retain_tab = value.get("retainTab", False)
     text_helper_available = value.get("textHelperAvailable")
     text_helper_unavailable_reason = value.get("textHelperUnavailableReason")
@@ -279,6 +308,12 @@ def _read_request() -> dict[str, Any]:
         or not 1 <= max_seconds <= 120
     ):
         raise InputError("maxSeconds must be an integer from 1 through 120")
+    if (
+        not isinstance(deadline_epoch_ms, int)
+        or isinstance(deadline_epoch_ms, bool)
+        or deadline_epoch_ms <= 0
+    ):
+        raise InputError("deadlineEpochMs must be a positive integer")
     if not isinstance(retain_tab, bool):
         raise InputError("retainTab must be a boolean")
     if not isinstance(text_helper_available, bool):
@@ -305,6 +340,7 @@ def _read_request() -> dict[str, Any]:
         "goal": goal.strip(),
         "maxActions": max_actions,
         "maxSeconds": max_seconds,
+        "deadlineEpochMs": deadline_epoch_ms,
         "retainTab": retain_tab,
         "textHelperAvailable": text_helper_available,
         "textHelperUnavailableReason": text_helper_unavailable_reason,
@@ -378,9 +414,10 @@ def _reconcile_executed_action(
 def _bounded_usage(value: object) -> object:
     if not isinstance(value, dict) or not value:
         return "unavailable"
-    serialized = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+    safe_value = _redacted_json(value)
+    serialized = json.dumps(safe_value, ensure_ascii=False, separators=(",", ":"))
     if len(serialized) <= MAX_USAGE_CHARS:
-        return value
+        return safe_value
     return {
         "truncated": True,
         "preview": serialized[: MAX_USAGE_CHARS - 40],
@@ -651,9 +688,9 @@ def _run(request: dict[str, Any], started_at: float) -> tuple[dict[str, Any], ob
             }
         )
 
-        deadline = started_at + request["maxSeconds"]
+        deadline_epoch_ms = request["deadlineEpochMs"]
         while True:
-            if time.perf_counter() >= deadline:
+            if time.time() * 1_000 >= deadline_epoch_ms:
                 return finish("stopped", "time_budget"), agent
             executed_actions = sum(
                 1
@@ -706,7 +743,7 @@ def _run(request: dict[str, Any], started_at: float) -> tuple[dict[str, Any], ob
                     }
                 )
 
-                if time.perf_counter() >= deadline:
+                if time.time() * 1_000 >= deadline_epoch_ms:
                     entry["outcome"] = "time_budget"
                     return finish("stopped", "time_budget"), agent
 

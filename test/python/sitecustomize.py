@@ -114,6 +114,65 @@ if _SCENARIO in {"terminal_abnormal", "retained_terminal_hang"}:
 
     sys.stdout = _TerminalExitBehavior()
 
+if _SCENARIO in {
+    "ownership_switch_protocol",
+    "inconsistent_retained_terminal",
+    "oversized_terminal_lists",
+}:
+    _invariant_output = sys.stdout
+
+    class _ProtocolInvariantOutput:
+        def __init__(self):
+            self._ownership_injected = False
+
+        def write(self, value):
+            if (
+                _SCENARIO == "inconsistent_retained_terminal"
+                and '"type":"result"' in value
+            ):
+                record = json.loads(value)
+                record["result"]["cleanup"]["taskTab"] = "retained"
+                value = (
+                    json.dumps(record, ensure_ascii=False, separators=(",", ":"))
+                    + "\n"
+                )
+            if (
+                _SCENARIO == "oversized_terminal_lists"
+                and '"type":"result"' in value
+            ):
+                record = json.loads(value)
+                result = record["result"]
+                if result["trace"]:
+                    result["trace"] = [result["trace"][0]] * 30
+                decisions = result["usage"]["jev"]["decisions"]
+                if decisions:
+                    result["usage"]["jev"]["decisions"] = [decisions[0]] * 30
+                value = (
+                    json.dumps(record, ensure_ascii=False, separators=(",", ":"))
+                    + "\n"
+                )
+            written = _invariant_output.write(value)
+            if (
+                _SCENARIO == "ownership_switch_protocol"
+                and not self._ownership_injected
+                and '"type":"ownership"' in value
+            ):
+                self._ownership_injected = True
+                _invariant_output.write(
+                    '{"type":"ownership","targetId":"unrelated-target"}\n'
+                )
+                _invariant_output.flush()
+            return written
+
+        def flush(self):
+            return _invariant_output.flush()
+
+        def __getattr__(self, name):
+            return getattr(_invariant_output, name)
+
+    sys.stdout = _ProtocolInvariantOutput()
+
+
 _protocol_marker = os.environ.get("RLCD_TEST_PROTOCOL_MARKER")
 if _protocol_marker:
     _protocol_output = sys.stdout
@@ -267,8 +326,16 @@ def _page():
             destination_url += f"?state={_STATE['clicks']}-" + "😀" * 1_900
         return {
             "url": destination_url,
-            "title": "Fixture destination",
-            "text": "Verified fixture destination marker: ORBIT-27 " + suffix,
+            "title": (
+                "Fixture \ud800 destination"
+                if _SCENARIO == "surrogate_page"
+                else "Fixture destination"
+            ),
+            "text": (
+                "Verified fixture destination marker: ORBIT-27 \udfff"
+                if _SCENARIO == "surrogate_page"
+                else "Verified fixture destination marker: ORBIT-27 " + suffix
+            ),
             "scroll": {"y": 0},
             "actions": [
                 {
@@ -330,6 +397,8 @@ def _cdp(method, session_id=None, **params):
         _mark_external_work("RLCD_TEST_TARGET_EVENTS_MARKER", "created:rlcd-owned-target")
         return {"targetId": "rlcd-owned-target"}
     if method == "Target.attachToTarget":
+        if _SCENARIO == "cancel_during_agent_construction":
+            os.kill(os.getpid(), signal.SIGTERM)
         return {"sessionId": "rlcd-owned-session"}
     if method == "Target.closeTarget":
         target_id = params.get("targetId")
@@ -372,7 +441,7 @@ def _cdp(method, session_id=None, **params):
             if _SCENARIO == "cancel_dispatched_input":
                 _mark_external_work("RLCD_TEST_PHASE_MARKER", "input-dispatched")
                 time.sleep(30)
-            if _SCENARIO == "prediction_crosses_deadline":
+            if _SCENARIO in {"prediction_crosses_deadline", "remaining_deadline"}:
                 _mark_external_work("RLCD_TEST_INPUT_DISPATCH_MARKER")
         return {}
     if method == "Input.insertText":
@@ -519,10 +588,16 @@ def _post_json(url, key, body):
         raise RuntimeError(f"provider rejected synthetic credential {key}")
     if _SCENARIO == "long_provider_error":
         raise RuntimeError("provider rejected request: " + "X" * 2_000)
+    if _SCENARIO == "boundary_secret_error":
+        raise RuntimeError(
+            "X" * 530 + os.environ.get("TYPESAFE_API_KEY", "") + " rejected"
+        )
     if _SCENARIO in {"slow_model", "cancel_model", "slow_primary_cleanup"}:
         time.sleep(30)
     if _SCENARIO == "prediction_crosses_deadline":
         time.sleep(1.05)
+    if _SCENARIO == "remaining_deadline":
+        time.sleep(0.45)
 
     questions = body["questions"]
     operations = questions["operation"]["criteria"]
@@ -536,7 +611,12 @@ def _post_json(url, key, body):
         operation = "DONE" if _STATE["typed_text"] else "TYPE_TEXT"
     elif _SCENARIO == "blocked":
         operation = "BLOCKED"
-    elif _SCENARIO in {"always_click", "large_trace", "astral_trace"}:
+    elif _SCENARIO in {
+        "always_click",
+        "large_trace",
+        "astral_trace",
+        "remaining_deadline",
+    }:
         operation = "CLICK"
     elif _SCENARIO == "wait_heavy":
         operation = "WAIT"
