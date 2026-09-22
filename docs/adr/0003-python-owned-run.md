@@ -1,9 +1,10 @@
 # Let upstream Python own the run
 
-Status: accepted and implemented locally. Candidate `3f984e54` passed
-synthetic-provider Pi-TUI/real-browser fixture checks, but they have not been
-repeated after the current corrections; corrected-HEAD and live-provider
-acceptance remain pending. Supersedes ADR-0002's command-level orchestration,
+Status: accepted, implemented and locally verified at `b3b42036`. Twenty
+automated tests and four repeated synthetic-provider Pi-TUI/real-Chrome command
+checks pass. Live-provider behavior and an outer-LLM-issued tool turn remain
+untested; see the [verification record](../thin-python-evidence.md).
+Supersedes ADR-0002's command-level orchestration,
 Pi-native helper relay and parent shadow-state design, not its dependency pins or
 native Browser Harness ownership.
 
@@ -57,7 +58,8 @@ remains a completion claim requiring independent outer verification.
 
 Local tests cross the registered tool, real runner, and actual pinned
 Agent/native helper while substituting only external Browser/CDP and provider
-interactions. They do not establish live model behavior, real-browser/Pi-TUI
-acceptance, provider billing, public-site reliability, or delivery. The
-[owning plan](../RLCD-BRWSR.md) records those remaining acceptance steps; the
+interactions. Separate TUI command checks exercise real Chrome with synthetic
+provider replies. Neither establishes live model behavior, an outer-model-issued
+tool turn, provider billing, public-site reliability or delivery. The
+[owning plan](../RLCD-BRWSR.md) records remaining acceptance steps; the
 [feasibility record](../thin-python-feasibility.md) remains historical evidence.

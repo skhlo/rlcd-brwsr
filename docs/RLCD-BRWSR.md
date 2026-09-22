@@ -1,10 +1,11 @@
 # RLCD-brwsr plan
 
-Status: the approved thin Python-owned rewrite is **implemented and locally
-tested through the registered tool**. Candidate `3f984e54` passed four
-synthetic-provider Pi-TUI/real-Chrome fixture checks, but they have not been
-repeated after the current corrections and do not establish corrected-HEAD
-acceptance. No live Jev/OpenRouter call has been accepted. The user confirmed
+Status: the thin Python-owned rewrite is **implemented and locally verified**.
+Corrected implementation `b3b42036` passes 20 automated tests and four repeated
+Pi-TUI/real-Chrome command checks with synthetic provider replies. Those command
+checks invoke the registered tool, not an outer-LLM-issued tool turn. Live
+Jev/OpenRouter behavior remains untested. See the
+[verification record](thin-python-evidence.md). The user confirmed
 dropping `maxActions`, selected OpenRouter `inclusionai/ling-3.0-flash`, and
 accepted available native usage with explicitly incomplete Pi totals. No live
 model calls, push or PR were authorized for this build.
@@ -235,27 +236,27 @@ first-stop precedence, post-dispatch projection interruption, conservative
 output fitting, cooperative cleanup, non-clean terminal rejection and a reaped
 TERM-ignoring child. No live credentials or model calls were used.
 
-Pending acceptance remains:
+The click/default-close, text/retention, time-budget and TUI-cancellation cases
+were repeated successfully at corrected implementation `b3b42036`, using real
+upstream/Harness/Chrome and synthetic provider replies. Independent observers
+checked exact targets, retained field values, actual runner exits and restored
+browser baselines. This verifies command-invoked execution of the registered
+tool in Pi's TUI, not the whole outer-model agent-turn/tool-scheduling path.
 
-1. Repeat the affected click/text/stop fixtures through the actual Pi TUI and
-   real Chrome after the current corrections; the checks at `3f984e54` do not
-   transfer automatically. Use the new runner with real
-   upstream/Harness/Chrome and synthetic provider replies. Independently
-   inspect known owned targets, test retention/default close and a real bounded
-   stop, and measure resource outcomes instead of inferring them from signals.
-2. Only after host-local key configuration and explicit applicable allowance,
-   test the selected OpenRouter helper payload, then a benign public task using
-   real Jev/helper calls.
-   Preserve earlier ledgers; native step limits do not constitute a billing
-   budget. Report unknown attempts/charges conservatively.
+Live acceptance remains pending. Only after host-local key configuration and
+explicit applicable allowance, test the selected OpenRouter helper payload,
+then a benign public task using real Jev/helper calls through the normal Pi
+agent-turn path. Preserve earlier ledgers; native step limits do not constitute
+a billing budget. Report unknown attempts/charges conservatively.
 
 Do not add a broader test or runtime framework to satisfy every hypothetical
 failure. A discovered limitation may require a narrower disclosed contract,
-not another state owner. This local implementation does not imply live-provider,
-Pi-TUI/real-browser acceptance or delivery.
+not another state owner. These local checks do not imply live-provider or
+general-web acceptance, an outer-model-issued tool turn, or delivery.
 
 ## Evidence and history
 
+- [Thin rewrite verification and limits](thin-python-evidence.md).
 - [Feasibility source/probe record](thin-python-feasibility.md).
 - [Selected OpenRouter helper evidence](openrouter-ling-3.0-flash.md).
 - [Next architecture decision](adr/0003-python-owned-run.md).
