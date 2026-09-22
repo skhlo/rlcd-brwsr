@@ -1,10 +1,13 @@
 # RLCD-brwsr
 
 **Implementation status:** the approved thin Python-owned rewrite is implemented
-and covered by local registered-tool tests. It has **not** been accepted through
-the Pi TUI, real Chrome fixture surface, or live Jev/OpenRouter calls. Current
-GitHub issues still describe the superseded larger implementation and are not
-claimed as satisfied. See the [owning plan](docs/RLCD-BRWSR.md),
+and covered by local registered-tool tests. Candidate `3f984e54` passed four
+synthetic-provider Pi-TUI/real-Chrome fixture checks, but those checks have not
+been repeated after the current corrections, so their actual-surface acceptance
+does not transfer to corrected HEAD. No live Jev/OpenRouter call has been
+accepted. Current GitHub issues still describe the superseded larger
+implementation and are not claimed as satisfied. See the
+[owning plan](docs/RLCD-BRWSR.md),
 [ADR-0003](docs/adr/0003-python-owned-run.md), and the historical
 [feasibility evidence](docs/thin-python-feasibility.md).
 
@@ -31,8 +34,9 @@ scripts/setup-runtime.sh
 export TYPESAFE_API_KEY=...        # Jev; host-local, never commit
 export TEXT_MODEL_API_KEY=...      # OpenRouter; optional for click-only tasks
 
-# These are the only accepted native helper settings. The child supplies them
-# process-locally when absent and rejects conflicting values:
+# These are the only accepted native helper settings. After Browser Harness
+# loads its native workspace environment, the child supplies absent values
+# process-locally and rejects conflicts:
 export TEXT_MODEL_BASE_URL=https://openrouter.ai/api/v1
 export TEXT_MODEL=inclusionai/ling-3.0-flash
 export TEXT_MODEL_REASONING=none
@@ -47,11 +51,14 @@ scripts/preflight-runtime.sh
 32 KiB serialized-request limit, and a 16 KiB terminal/model-visible JSON limit.
 Those two byte budgets have one configuration owner.
 
-Browser Harness remains the only browser-configuration owner. Explicit
-provisioning may start its natively selected daemon. Preflight and tool runs
-require that named daemon to be healthy and already running. Runs reject cloud,
-remote WebSocket, `BU_AUTOSPAWN`, and non-loopback CDP settings; they never
-recover or replace the daemon through upstream `ensure_daemon()`.
+Browser Harness remains the only browser-configuration owner. The runner and
+preflight first load its native workspace `.env`, then one shared runtime owner
+installs missing selected-model defaults and rejects helper-tuple conflicts.
+Conflicts stop before daemon checks or browser startup. Explicit provisioning may
+start the natively selected daemon. Preflight and tool runs require that named
+daemon to be healthy and already running. Runs reject cloud, remote WebSocket,
+`BU_AUTOSPAWN`, and non-loopback CDP settings; they never recover or replace the
+daemon through upstream `ensure_daemon()`.
 
 The helper key is checked only when upstream selects `TYPE_TEXT`, so click-only
 tasks work without it. Native missing-key, provider, and value-validation errors
@@ -85,9 +92,12 @@ decisions. They are not HTTP-attempt or spend caps.
 sends `SIGTERM`, allows a fixed 1.5-second cooperative cleanup grace, then sends
 `SIGKILL` only if process exit has not been observed. It does not guarantee that
 an action cannot cross the deadline. The process is reported reaped only after
-its exit is observed. Abrupt termination, construction interruption, or a
-missing terminal result leaves execution and task-tab cleanup unknown; process
-exit is not rollback and the tool does not retry automatically.
+its exit is observed. Pi trusts child execution and cleanup claims only from one
+structurally valid terminal envelope followed by an observed zero exit without a
+signal. Nonzero, signalled, abrupt, incomplete, or invalid-terminal exits leave
+execution and task-tab cleanup unknown. An exception escaping final projection
+after request acceptance also falls back to unknown rather than `invalid_input`.
+Process exit is not rollback and the tool does not retry automatically.
 
 `retainTab: true` is honored only after a normal completion claim with the known
 task target. Every other handled outcome makes one direct `Target.closeTarget`
@@ -101,7 +111,9 @@ a sanitized diagnostic. Full snapshots, raw prompts/responses, child stderr, and
 invalid terminal fragments are not returned. Complete native key values are
 redacted before any clipping, including diagnostics and usage dictionary keys;
 invalid Unicode and non-finite numbers are normalized. The result discloses
-field/record omissions.
+field/record omissions. If adding supervised process evidence would exceed the
+same terminal cap, Pi omits the child projection conservatively while preserving
+its first cancellation/deadline reason and observed process reap.
 
 Available usage records are source-labelled but incomplete: failed calls,
 attempts, retries, and charges can be absent. The tool deliberately returns no

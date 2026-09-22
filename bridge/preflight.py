@@ -13,9 +13,8 @@ from runtime_support import (
     TEXT_MODEL,
     TEXT_MODEL_BASE_URL,
     TEXT_MODEL_REASONING,
-    configure_native_models,
     require_existing_local_daemon,
-    resolved_local_daemon_name,
+    resolve_native_environment,
 )
 
 JEV_COMMIT = "1231850a0bf1a0c0341fe408ef1668dbbfdfac46"
@@ -42,8 +41,7 @@ def main() -> int:
         if sys.version_info[:2] != (3, 12):
             raise RuntimeError("the project runtime must use Python 3.12")
 
-        configure_native_models()
-        daemon_name = resolved_local_daemon_name()
+        daemon_name = resolve_native_environment()
         checks["daemon"] = daemon_name
         checks["typesafeConfigured"] = bool(
             os.environ.get("TYPESAFE_API_KEY", "").strip()

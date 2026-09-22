@@ -52,7 +52,7 @@ TERMINAL_MAX_UTF8_BYTES = _required_positive_integer(
 )
 
 
-def configure_native_models() -> None:
+def _configure_native_models() -> None:
     """Pin Jev and the selected native helper configuration in this child only."""
     os.environ["TYPESAFE_MODEL"] = JEV_MODEL
     selected = {
@@ -121,6 +121,13 @@ def resolved_local_daemon_name() -> str:
     cdp_url = os.environ.get("BU_CDP_URL", "").strip()
     if cdp_url:
         _validate_loopback_cdp_url(cdp_url)
+    return daemon_name
+
+
+def resolve_native_environment() -> str:
+    """Load Harness's native environment before applying selected model settings."""
+    daemon_name = resolved_local_daemon_name()
+    _configure_native_models()
     return daemon_name
 
 

@@ -1,6 +1,8 @@
 # Let upstream Python own the run
 
-Status: accepted and implemented locally; Pi-TUI/real-browser and live-provider
+Status: accepted and implemented locally. Candidate `3f984e54` passed
+synthetic-provider Pi-TUI/real-browser fixture checks, but they have not been
+repeated after the current corrections; corrected-HEAD and live-provider
 acceptance remain pending. Supersedes ADR-0002's command-level orchestration,
 Pi-native helper relay and parent shadow-state design, not its dependency pins or
 native Browser Harness ownership.
@@ -19,10 +21,12 @@ deadline is coarse and is not a no-dispatch guarantee.
 
 `config/runtime.json` is the single owner for the 32 KiB serialized-request cap,
 16 KiB terminal/model-visible JSON cap, Jev model, and selected native helper:
-OpenRouter `inclusionai/ling-3.0-flash` with reasoning disabled. The runner
+OpenRouter `inclusionai/ling-3.0-flash` with reasoning disabled. One shared
+runtime owner first loads Browser Harness's native workspace environment, then
 supplies the selected `TEXT_MODEL_BASE_URL`, `TEXT_MODEL`, and
-`TEXT_MODEL_REASONING` values in its process when absent and rejects conflicts.
-`TEXT_MODEL_API_KEY` remains optional until upstream selects a fill. There is no
+`TEXT_MODEL_REASONING` values in its process when absent and rejects conflicts
+before daemon checks or browser startup. `TEXT_MODEL_API_KEY` remains optional
+until upstream selects a fill. There is no
 Pi OAuth/Luna completion, backend selector, or replacement helper orchestration.
 
 The implementation retains two revision-pinned integrations:
@@ -40,11 +44,16 @@ before clipping, including usage keys. Full snapshots and raw prompts/responses
 are not projected. Native usage remains source-labelled and incomplete; Pi
 receives no top-level `usage`, so footer/session totals are knowingly incomplete.
 
-Construction interruption, hard stop, or missing/invalid terminal output leaves
-execution and task-tab cleanup unknown. There is no startup target interception,
-parent fallback cleanup, tab-difference inference, automatic retry, progress
-journal, generic protocol framework, or strict action-at-deadline guarantee.
-`DONE` remains a completion claim requiring independent outer verification.
+Only one structurally valid terminal envelope followed by an observed zero exit
+without a signal can carry child execution and cleanup claims. Construction
+interruption, nonzero or forced exit, or missing/invalid terminal output leaves
+execution and task-tab cleanup unknown. An exception escaping projection after
+request acceptance also falls back to unknown rather than `invalid_input`. A
+fitting fallback preserves a parent's first cancellation/deadline and observed
+process reap if adding that evidence would exceed the terminal cap. There is no startup target interception, parent
+fallback cleanup, tab-difference inference, automatic retry, progress journal,
+generic protocol framework, or strict action-at-deadline guarantee. `DONE`
+remains a completion claim requiring independent outer verification.
 
 Local tests cross the registered tool, real runner, and actual pinned
 Agent/native helper while substituting only external Browser/CDP and provider

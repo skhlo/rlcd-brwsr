@@ -6,6 +6,7 @@ Browser Harness transport and the two external provider responses.
 
 from __future__ import annotations
 
+import atexit
 import json
 import math
 import os
@@ -15,11 +16,93 @@ import sys
 import time
 from pathlib import Path
 
+_SCENARIO = os.environ.get("RLCD_TEST_SCENARIO", "click")
+_TERMINAL_LIMIT = 16 * 1024
+
+
+def _terminal_envelope(text: str) -> dict[str, object]:
+    return {
+        "status": "stopped",
+        "stopReason": "cancelled",
+        "completionClaim": {
+            "claimed": False,
+            "requiresIndependentVerification": True,
+        },
+        "execution": "unknown",
+        "lastObservation": {"url": "", "title": "", "text": text},
+        "history": [],
+        "models": {
+            "jev": {"configuredModel": "jev-1.13.0"},
+            "textHelper": {
+                "configuredModel": "inclusionai/ling-3.0-flash",
+                "baseUrl": "https://openrouter.ai/api/v1",
+                "reasoning": "none",
+                "availability": "unknown",
+            },
+        },
+        "usage": {
+            "records": [],
+            "limitations": {
+                "source": "upstream_recorded_only",
+                "providerAttempts": "unknown",
+                "providerRetries": "unknown",
+                "failedCallUsage": "unknown",
+                "piTopLevelUsage": "omitted",
+            },
+        },
+        "targetId": None,
+        "cleanup": {"taskTab": "unknown", "sharedDaemon": "retained"},
+        "diagnostic": None,
+        "output": {
+            "byteLimit": _TERMINAL_LIMIT,
+            "clipped": True,
+            "omissions": ["test padding"],
+        },
+    }
+
+
+if _SCENARIO == "invalid_terminal_envelope":
+    sys.stdout.write("{}")
+    sys.stdout.flush()
+    os._exit(0)
+
+if _SCENARIO == "near_limit_terminal_after_stop":
+    marker = os.environ.get("RLCD_TEST_PID_MARKER")
+    if marker:
+        Path(marker).write_text(str(os.getpid()), encoding="utf-8")
+
+    def _emit_near_limit_terminal(_signum: int, _frame: object) -> None:
+        result = _terminal_envelope("")
+        encoded = json.dumps(
+            result, ensure_ascii=False, separators=(",", ":")
+        ).encode("utf-8")
+        padding = _TERMINAL_LIMIT - 1 - len(encoded)
+        if padding <= 0:
+            raise AssertionError("terminal fixture envelope exceeded its allowance")
+        observation = result["lastObservation"]
+        if not isinstance(observation, dict):
+            raise AssertionError("terminal fixture observation must be an object")
+        observation["text"] = "P" * padding
+        terminal = (
+            json.dumps(result, ensure_ascii=False, separators=(",", ":")).encode(
+                "utf-8"
+            )
+            + b"\n"
+        )
+        if len(terminal) != _TERMINAL_LIMIT:
+            raise AssertionError("terminal fixture did not reach the byte boundary")
+        sys.stdout.buffer.write(terminal)
+        sys.stdout.buffer.flush()
+        os._exit(0)
+
+    signal.signal(signal.SIGTERM, _emit_near_limit_terminal)
+    time.sleep(30)
+    os._exit(32)
+
 import jev_ultrafast
 from browser_harness import admin, helpers as harness_helpers
 from jev_ultrafast import browser, model
 
-_SCENARIO = os.environ.get("RLCD_TEST_SCENARIO", "click")
 _STATE = {
     "url": "about:blank",
     "destination": False,
@@ -72,6 +155,24 @@ if _SCENARIO == "raw_stdout_overflow":
     sys.stdout.flush()
     time.sleep(30)
 
+if _SCENARIO == "terminal_then_nonzero":
+
+    def _exit_nonzero_after_terminal() -> None:
+        os._exit(31)
+
+    atexit.register(_exit_nonzero_after_terminal)
+
+if _SCENARIO == "terminal_then_ignore_term":
+
+    def _hang_after_terminal() -> None:
+        marker = os.environ.get("RLCD_TEST_PID_MARKER")
+        if marker:
+            Path(marker).write_text(str(os.getpid()), encoding="utf-8")
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
+        time.sleep(30)
+
+    atexit.register(_hang_after_terminal)
+
 
 def _require_existing_daemon(name=None):
     daemon_name = name or admin.NAME
@@ -88,6 +189,13 @@ def _daemon_browser_kind(name=None):
 
 admin.require_existing_daemon = _require_existing_daemon
 admin.daemon_browser_kind = _daemon_browser_kind
+
+
+class _ProjectionInterruptPage(dict):
+    def get(self, key, default=None):
+        if key == "title":
+            os.kill(os.getpid(), signal.SIGTERM)
+        return super().get(key, default)
 
 
 def _page():
@@ -142,16 +250,19 @@ def _page():
         )
         if _SCENARIO == "terminal_overflow":
             text += "界" * 100_000
-        return {
-            "url": "https://example.test/destination",
-            "title": title,
-            "text": text,
-            "scroll": {"y": 0},
-            "actions": [{"id": "wait", "kind": "wait", "label": "Wait"}],
-            "marker": "destination",
-            "page_key": "destination",
-            "guards": {},
-        }
+        page_type = _ProjectionInterruptPage if _SCENARIO == "projection_interrupt" else dict
+        return page_type(
+            {
+                "url": "https://example.test/destination",
+                "title": title,
+                "text": text,
+                "scroll": {"y": 0},
+                "actions": [{"id": "wait", "kind": "wait", "label": "Wait"}],
+                "marker": "destination",
+                "page_key": "destination",
+                "guards": {},
+            }
+        )
 
     return {
         "url": _STATE["url"],

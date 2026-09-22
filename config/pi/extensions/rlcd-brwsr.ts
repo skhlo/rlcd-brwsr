@@ -110,6 +110,73 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function hasExactKeys(
+  value: Record<string, unknown>,
+  expected: readonly string[],
+): boolean {
+  const actual = Object.keys(value);
+  return (
+    actual.length === expected.length &&
+    actual.every((key) => expected.includes(key))
+  );
+}
+
+function isTerminalEnvelope(value: unknown): value is Record<string, unknown> {
+  if (!isRecord(value)) return false;
+  const claim = value.completionClaim;
+  const cleanup = value.cleanup;
+  const output = value.output;
+  return (
+    hasExactKeys(value, [
+      "status",
+      "stopReason",
+      "completionClaim",
+      "execution",
+      "lastObservation",
+      "history",
+      "models",
+      "usage",
+      "targetId",
+      "cleanup",
+      "diagnostic",
+      "output",
+    ]) &&
+    typeof value.status === "string" &&
+    ["completion_claim", "blocked", "stopped", "error"].includes(
+      value.status,
+    ) &&
+    typeof value.stopReason === "string" &&
+    value.stopReason.length > 0 &&
+    utf8Bytes(value.stopReason) <= 1_024 &&
+    typeof value.execution === "string" &&
+    ["not_started", "unknown", "completed"].includes(value.execution) &&
+    (value.lastObservation === null || isRecord(value.lastObservation)) &&
+    Array.isArray(value.history) &&
+    isRecord(value.models) &&
+    isRecord(value.usage) &&
+    (value.targetId === null || typeof value.targetId === "string") &&
+    (value.diagnostic === null || isRecord(value.diagnostic)) &&
+    isRecord(claim) &&
+    hasExactKeys(claim, ["claimed", "requiresIndependentVerification"]) &&
+    claim.claimed === (value.status === "completion_claim") &&
+    claim.requiresIndependentVerification === true &&
+    isRecord(cleanup) &&
+    hasExactKeys(cleanup, ["taskTab", "sharedDaemon"]) &&
+    typeof cleanup.taskTab === "string" &&
+    ["not_created", "unknown", "retained", "closed", "unconfirmed"].includes(
+      cleanup.taskTab,
+    ) &&
+    cleanup.sharedDaemon === "retained" &&
+    isRecord(output) &&
+    hasExactKeys(output, ["byteLimit", "clipped", "omissions"]) &&
+    output.byteLimit === runtimeConfig.terminalMaxUtf8Bytes &&
+    typeof output.clipped === "boolean" &&
+    Array.isArray(output.omissions) &&
+    output.omissions.length <= 32 &&
+    output.omissions.every((item) => typeof item === "string")
+  );
+}
+
 function utf8Bytes(value: string): number {
   return Buffer.byteLength(value, "utf8");
 }
@@ -208,16 +275,21 @@ function baseResult(
   };
 }
 
-function asToolResult(details: Record<string, unknown>): ToolResult {
+function asToolResult(
+  details: Record<string, unknown>,
+  overflowFallback?: Record<string, unknown>,
+): ToolResult {
   let text = JSON.stringify(details);
   if (utf8Bytes(text) > runtimeConfig.terminalMaxUtf8Bytes) {
-    details = baseResult(
-      "error",
-      "output_limit",
-      "unknown",
-      "unknown",
-      "Terminal result exceeded its configured byte limit",
-    );
+    details =
+      overflowFallback ??
+      baseResult(
+        "error",
+        "output_limit",
+        "unknown",
+        "unknown",
+        "Terminal result exceeded its configured byte limit",
+      );
     const output = details.output;
     if (isRecord(output)) {
       output.clipped = true;
@@ -338,64 +410,106 @@ function waitForChild(
   });
 }
 
+function requestedStop(
+  outcome: ChildOutcome,
+): "cancelled" | "time_budget" | null {
+  return outcome.firstStop === "cancelled" ||
+    outcome.firstStop === "time_budget"
+    ? outcome.firstStop
+    : null;
+}
+
+function hasCleanExit(outcome: ChildOutcome): boolean {
+  return (
+    outcome.exitObserved &&
+    outcome.exitCode === 0 &&
+    outcome.exitSignal === null &&
+    !outcome.spawnError
+  );
+}
+
 function parseTerminal(outcome: ChildOutcome): Record<string, unknown> | null {
   if (
     outcome.stdoutOverflow ||
-    !outcome.exitObserved ||
-    outcome.spawnError ||
+    !hasCleanExit(outcome) ||
     outcome.terminal.length === 0
   ) {
     return null;
   }
   try {
     const parsed: unknown = JSON.parse(outcome.terminal.toString("utf8"));
-    return isRecord(parsed) ? parsed : null;
+    return isTerminalEnvelope(parsed) ? parsed : null;
   } catch {
     return null;
   }
 }
 
+function conservativeOutcome(
+  outcome: ChildOutcome,
+  fallbackReason: string,
+  message: string,
+): Record<string, unknown> {
+  const stop = requestedStop(outcome);
+  const details = baseResult(
+    stop ? "stopped" : "error",
+    stop ?? outcome.firstStop ?? fallbackReason,
+    "unknown",
+    "unknown",
+    message,
+  );
+  const cleanup = details.cleanup;
+  if (isRecord(cleanup)) {
+    cleanup.bridgeProcess = outcome.exitObserved ? "reaped" : "not_started";
+  }
+  const omissions: string[] = [];
+  if (outcome.terminal.length > 0) omissions.push("child terminal result");
+  if (outcome.stderrBytes > 0) omissions.push("raw child stderr");
+  if (omissions.length > 0) {
+    const output = details.output;
+    if (isRecord(output)) {
+      output.clipped = true;
+      output.omissions = omissions;
+    }
+  }
+  return details;
+}
+
 function resultFromOutcome(outcome: ChildOutcome): ToolResult {
-  let details = parseTerminal(outcome);
+  const details = parseTerminal(outcome);
   if (!details) {
-    const firstStop = outcome.firstStop;
-    const stopped = firstStop === "cancelled" || firstStop === "time_budget";
-    details = baseResult(
-      stopped ? "stopped" : "error",
-      firstStop ??
-        (outcome.stdoutOverflow ? "output_limit" : "missing_terminal"),
-      "unknown",
-      "unknown",
-      outcome.stdoutOverflow
-        ? "Runner output exceeded the terminal byte limit"
-        : "Runner exited without one valid terminal result; raw child output was omitted",
-    );
-    const cleanup = details.cleanup;
-    if (isRecord(cleanup)) {
-      cleanup.bridgeProcess = outcome.exitObserved ? "reaped" : "not_started";
-    }
-    if (outcome.stderrBytes > 0) {
-      const output = details.output;
-      if (isRecord(output)) {
-        output.clipped = true;
-        output.omissions = ["raw child stderr"];
-      }
-    }
-    return asToolResult(details);
+    const noncleanExit = outcome.exitObserved && !hasCleanExit(outcome);
+    const reason = outcome.stdoutOverflow
+      ? "output_limit"
+      : noncleanExit
+        ? "nonclean_exit"
+        : outcome.terminal.length > 0
+          ? "invalid_terminal"
+          : "missing_terminal";
+    const message = outcome.stdoutOverflow
+      ? "Runner output exceeded the terminal byte limit"
+      : noncleanExit
+        ? "Runner did not exit cleanly; child terminal result was not trusted"
+        : "Runner exited without one valid terminal result; raw child output was omitted";
+    return asToolResult(conservativeOutcome(outcome, reason, message));
   }
 
   const cleanup = details.cleanup;
   if (isRecord(cleanup)) cleanup.bridgeProcess = "reaped";
-  if (
-    outcome.firstStop === "cancelled" ||
-    outcome.firstStop === "time_budget"
-  ) {
+  const stop = requestedStop(outcome);
+  if (stop) {
     details.status = "stopped";
-    details.stopReason = outcome.firstStop;
+    details.stopReason = stop;
     const claim = details.completionClaim;
     if (isRecord(claim)) claim.claimed = false;
   }
-  return asToolResult(details);
+  return asToolResult(
+    details,
+    conservativeOutcome(
+      outcome,
+      "output_limit",
+      "Runner terminal result was omitted to fit supervised process evidence",
+    ),
+  );
 }
 
 async function runRegisteredTool(

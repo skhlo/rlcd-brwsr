@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -48,6 +48,8 @@ interface ScenarioOptions {
   signal?: AbortSignal;
   abortWhenModelStarts?: AbortController;
   params?: Partial<RlcdInput>;
+  nativeEnvironment?: string;
+  deferExternalFakesUntilNativeEnvironment?: boolean;
 }
 
 interface ScenarioMarkers {
@@ -61,8 +63,10 @@ interface ScenarioMarkers {
 
 const repositoryRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const fakePythonPath = join(repositoryRoot, "test", "python");
+const deferredFakePythonPath = join(fakePythonPath, "deferred_sitecustomize");
 const syntheticTypesafeKey = "synthetic-typesafe-key-MOON-62";
 const syntheticHelperKey = "synthetic-openrouter-key-STAR-73";
+const syntheticNativeHelperKey = "synthetic-native-env-key-COMET-84";
 const terminalByteLimit = 16 * 1024;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -159,6 +163,9 @@ async function runScenario(
     model: join(directory, "model.log"),
     pid: join(directory, "pid.txt"),
   };
+  if (options.nativeEnvironment !== undefined) {
+    await writeFile(join(directory, ".env"), options.nativeEnvironment, "utf8");
+  }
   const environment: Record<string, string | undefined> = {
     RLCD_TEST_SCENARIO: scenario,
     RLCD_TEST_ARGV_MARKER: markers.argv,
@@ -178,7 +185,13 @@ async function runScenario(
     TEXT_MODEL_BASE_URL: undefined,
     TEXT_MODEL: options.textModel,
     TEXT_MODEL_REASONING: undefined,
-    PYTHONPATH: [fakePythonPath, process.env.PYTHONPATH]
+    RLCD_BASE_FAKE: join(fakePythonPath, "sitecustomize.py"),
+    PYTHONPATH: [
+      options.deferExternalFakesUntilNativeEnvironment
+        ? deferredFakePythonPath
+        : fakePythonPath,
+      process.env.PYTHONPATH,
+    ]
       .filter((value): value is string => Boolean(value))
       .join(delimiter),
   };
@@ -301,6 +314,57 @@ test("native preflight requires the selected helper configuration and existing l
   }
 });
 
+test("native workspace helper conflicts are rejected before browser startup", async () => {
+  await withScenario(
+    "click",
+    {
+      helperKey: null,
+      nativeEnvironment: [
+        "TEXT_MODEL_API_KEY=synthetic-native-conflict-key",
+        "TEXT_MODEL_BASE_URL=https://api.deepseek.com/v1",
+        "TEXT_MODEL=deepseek-chat",
+        "TEXT_MODEL_REASONING=none",
+        "",
+      ].join("\n"),
+      deferExternalFakesUntilNativeEnvironment: true,
+    },
+    async ({ result, markers }) => {
+      const details = detailsOf(result);
+      assert.equal(details.status, "error");
+      assert.equal(details.execution, "not_started");
+      assert.equal(recordField(details, "cleanup").taskTab, "not_created");
+      assert.match(
+        String(recordField(details, "diagnostic").message),
+        /TEXT_MODEL_BASE_URL/,
+      );
+      assert.equal(await readIfPresent(markers.browser), "");
+      assert.equal(await readIfPresent(markers.model), "");
+    },
+  );
+});
+
+test("a helper key loaded only by the native workspace stays out of the public process seam", async () => {
+  await withScenario(
+    "fill",
+    {
+      helperKey: null,
+      nativeEnvironment: `TEXT_MODEL_API_KEY=${syntheticNativeHelperKey}\n`,
+      deferExternalFakesUntilNativeEnvironment: true,
+    },
+    async ({ result, markers }) => {
+      assert.equal(detailsOf(result).status, "completion_claim");
+      assert.match(await readIfPresent(markers.field), /Busan/);
+      for (const value of [
+        result.content[0]?.text ?? "",
+        await readFile(markers.argv, "utf8"),
+        await readFile(markers.stdin, "utf8"),
+      ]) {
+        assert.doesNotMatch(value, new RegExp(syntheticNativeHelperKey));
+      }
+    },
+  );
+});
+
 test("the registered tool consumes native Agent.run for click and completion", async () => {
   await withScenario("click", {}, async ({ result, markers }) => {
     const details = detailsOf(result);
@@ -414,6 +478,25 @@ test("construction interruption reports execution and cleanup unknown", async ()
   );
 });
 
+test("a projection interruption after browser work falls back to unknown state", async () => {
+  await withScenario(
+    "projection_interrupt",
+    {},
+    async ({ result, markers }) => {
+      const details = detailsOf(result);
+      assert.equal(details.status, "stopped");
+      assert.equal(details.stopReason, "cancelled");
+      assert.equal(details.execution, "unknown");
+      const cleanup = recordField(details, "cleanup");
+      assert.equal(cleanup.taskTab, "unknown");
+      assert.equal(cleanup.bridgeProcess, "reaped");
+      const browserLog = await readIfPresent(markers.browser);
+      assert.match(browserLog, /click:continue/);
+      assert.match(browserLog, /close:rlcd-owned-target/);
+    },
+  );
+});
+
 test("first stop wins and cooperative cancellation preserves close evidence", async () => {
   const immediate = new AbortController();
   immediate.abort();
@@ -455,6 +538,42 @@ test("first stop wins and cooperative cancellation preserves close evidence", as
 });
 
 test(
+  "terminal claims require a clean exit and a valid result envelope",
+  { timeout: 8_000 },
+  async () => {
+    for (const [scenario, maxSeconds] of [
+      ["terminal_then_nonzero", 5],
+      ["terminal_then_ignore_term", 1],
+      ["invalid_terminal_envelope", 5],
+    ] as const) {
+      await withScenario(
+        scenario,
+        { params: { maxSeconds } },
+        async ({ result, markers }) => {
+          const details = detailsOf(result);
+          assert.equal(recordField(details, "completionClaim").claimed, false);
+          assert.equal(details.execution, "unknown");
+          const cleanup = recordField(details, "cleanup");
+          assert.equal(cleanup.taskTab, "unknown");
+          assert.equal(cleanup.bridgeProcess, "reaped");
+          if (scenario === "terminal_then_ignore_term") {
+            assert.equal(details.status, "stopped");
+            assert.equal(details.stopReason, "time_budget");
+            const pid = Number((await readFile(markers.pid, "utf8")).trim());
+            assert.throws(
+              () => process.kill(pid, 0),
+              (error: NodeJS.ErrnoException) => error.code === "ESRCH",
+            );
+          } else {
+            assert.equal(details.status, "error");
+          }
+        },
+      );
+    }
+  },
+);
+
+test(
   "a TERM-ignoring child is hard-stopped, observed exited, and actually reaped",
   { timeout: 8_000 },
   async () => {
@@ -474,6 +593,30 @@ test(
         assert.throws(
           () => process.kill(pid, 0),
           (error: NodeJS.ErrnoException) => error.code === "ESRCH",
+        );
+      },
+    );
+  },
+);
+
+test(
+  "output fitting preserves a parent time budget and observed process reap",
+  { timeout: 5_000 },
+  async () => {
+    await withScenario(
+      "near_limit_terminal_after_stop",
+      { params: { maxSeconds: 1 } },
+      ({ result }) => {
+        const details = detailsOf(result);
+        assert.equal(details.status, "stopped");
+        assert.equal(details.stopReason, "time_budget");
+        assert.equal(details.execution, "unknown");
+        const cleanup = recordField(details, "cleanup");
+        assert.equal(cleanup.taskTab, "unknown");
+        assert.equal(cleanup.bridgeProcess, "reaped");
+        assert.ok(
+          Buffer.byteLength(result.content[0]?.text ?? "", "utf8") <=
+            terminalByteLimit,
         );
       },
     );

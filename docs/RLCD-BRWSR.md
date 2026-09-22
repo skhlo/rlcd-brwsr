@@ -1,8 +1,10 @@
 # RLCD-brwsr plan
 
 Status: the approved thin Python-owned rewrite is **implemented and locally
-tested through the registered tool**. It is not yet accepted through the Pi TUI,
-real Chrome fixture surface, or live Jev/OpenRouter calls. The user confirmed
+tested through the registered tool**. Candidate `3f984e54` passed four
+synthetic-provider Pi-TUI/real-Chrome fixture checks, but they have not been
+repeated after the current corrections and do not establish corrected-HEAD
+acceptance. No live Jev/OpenRouter call has been accepted. The user confirmed
 dropping `maxActions`, selected OpenRouter `inclusionai/ling-3.0-flash`, and
 accepted available native usage with explicitly incomplete Pi totals. No live
 model calls, push or PR were authorized for this build.
@@ -134,8 +136,9 @@ Use native `TYPESAFE_API_KEY` and `TEXT_MODEL_*` settings through the authorized
 host-local environment/configuration. Do not introduce a secret store, copy
 existing credentials or read Pi's OAuth credentials. The selected text helper
 is OpenRouter `inclusionai/ling-3.0-flash`; Jev remains the decision model.
-The runner supplies these selected settings process-locally when absent and
-rejects conflicting values:
+After Browser Harness loads its native workspace environment, one shared runtime
+owner supplies these selected settings process-locally when absent and rejects
+conflicting values before daemon checks or browser startup:
 
 ```text
 TEXT_MODEL_BASE_URL=https://openrouter.ai/api/v1
@@ -178,13 +181,20 @@ numbers and complete-key redaction before clipping.
 - Redact complete raw values before clipping or preview. Keep both Jev/helper
   key privacy checks; no OAuth relay exists in this target design.
 - A handled error or cooperative stop may provide available Agent state. A hard
-  kill, failed construction or invalid/missing result may provide none.
-- After forced or incomplete exits, report execution and cleanup as unknown;
-  do not infer zero side effects, zero charges or closed tabs. A task tab can
-  remain for operator inspection. Do not automatically retry uncertain input.
-- Keep the parent's first stop reason when requested shutdown yields no valid
+  kill, failed construction or invalid/missing result may provide none. After a
+  request is accepted for dispatch, an exception escaping final projection falls
+  back to unknown execution and cleanup rather than an input-error claim.
+- Trust child execution and cleanup claims only from one structurally valid
+  terminal envelope followed by an observed zero exit without a signal. After
+  forced, nonzero, signalled, invalid-terminal, or incomplete exits, report
+  execution and cleanup as unknown; do not infer zero side effects, zero charges
+  or closed tabs. A task tab can remain for operator inspection. Do not
+  automatically retry uncertain input.
+- Keep the parent's first stop reason when requested shutdown yields no trusted
   terminal result. Confirm child exit before reporting it reaped; a sent signal
-  is not an exit observation.
+  is not an exit observation. If supervised process evidence would push a child
+  projection over the terminal cap, omit that projection conservatively while
+  retaining the parent's stop and the observed reap.
 - No live phase-by-phase progress, hard-kill evidence recovery or universal
   no-dispatch-after-deadline guarantee is promised.
 
@@ -220,14 +230,17 @@ Steps 1-3 are complete locally. The registered Pi tool tests cross the real new
 runner and actual pinned Agent/native helper while replacing only external
 Browser/CDP and provider interactions. They cover click/fill/DONE/BLOCKED/error,
 missing and malformed helper values, preflight/input failure, byte bounds,
-Unicode/non-finite normalization, native-key privacy, first-stop precedence,
-cooperative cleanup, construction interruption and a reaped TERM-ignoring child.
-No live credentials or model calls were used.
+Unicode/non-finite normalization, native `.env` ordering and key privacy,
+first-stop precedence, post-dispatch projection interruption, conservative
+output fitting, cooperative cleanup, non-clean terminal rejection and a reaped
+TERM-ignoring child. No live credentials or model calls were used.
 
 Pending acceptance remains:
 
-1. Repeat the click/text fixtures through the actual Pi TUI and new runner with
-   real upstream/Harness/Chrome and synthetic provider replies. Independently
+1. Repeat the affected click/text/stop fixtures through the actual Pi TUI and
+   real Chrome after the current corrections; the checks at `3f984e54` do not
+   transfer automatically. Use the new runner with real
+   upstream/Harness/Chrome and synthetic provider replies. Independently
    inspect known owned targets, test retention/default close and a real bounded
    stop, and measure resource outcomes instead of inferring them from signals.
 2. Only after host-local key configuration and explicit applicable allowance,

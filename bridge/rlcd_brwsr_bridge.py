@@ -19,9 +19,8 @@ from runtime_support import (
     TEXT_MODEL,
     TEXT_MODEL_BASE_URL,
     TEXT_MODEL_REASONING,
-    configure_native_models,
     require_existing_local_daemon,
-    resolved_local_daemon_name,
+    resolve_native_environment,
 )
 
 _HISTORY_LIMIT = 24
@@ -392,8 +391,7 @@ def _run(request: dict[str, Any]) -> dict[str, Any]:
     constructing = False
 
     try:
-        configure_native_models()
-        daemon_name = resolved_local_daemon_name()
+        daemon_name = resolve_native_environment()
         require_existing_local_daemon(daemon_name)
 
         from browser_harness import admin
@@ -500,15 +498,35 @@ def _early_result(status: str, stop_reason: str, message: str) -> dict[str, Any]
     )
 
 
+def _postdispatch_result(
+    status: str, stop_reason: str, error: BaseException
+) -> dict[str, Any]:
+    return _raw_projection(
+        status=status,
+        stop_reason=stop_reason,
+        execution="unknown",
+        cleanup="unknown",
+        target_id=None,
+        state=None,
+        diagnostic={"type": type(error).__name__, "message": str(error)},
+    )
+
+
 def main() -> int:
     signal.signal(signal.SIGTERM, _handle_stop)
     try:
         request = _read_request()
-        result = _run(request)
     except StopRequested as error:
         result = _early_result("stopped", "cancelled", str(error))
     except Exception as error:
         result = _early_result("error", "invalid_input", str(error))
+    else:
+        try:
+            result = _run(request)
+        except StopRequested as error:
+            result = _postdispatch_result("stopped", "cancelled", error)
+        except Exception as error:
+            result = _postdispatch_result("error", "error", error)
 
     terminal = _finalize(result)
     if len(terminal) > TERMINAL_MAX_UTF8_BYTES:
