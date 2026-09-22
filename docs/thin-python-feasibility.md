@@ -103,8 +103,8 @@ Normal completion-only retention is source-feasible: after `run()` yields `statu
 ## Source-aligned interface option
 
 This was the source scout's option before synthesis, not the selected proposal.
-The [owning plan](RLCD-BRWSR.md) instead recommends initially omitting a per-call
-step knob, pending confirmation. The sketch below only shows how an optional
+The user subsequently confirmed dropping `maxActions`; the
+[owning plan](RLCD-BRWSR.md) omits a per-call step knob. The sketch below only shows how an optional
 step budget could match upstream semantics; it is not another authoritative
 interface or a claim that it has been tested.
 
@@ -178,6 +178,11 @@ The latest gate was cancelled, not passed, and R23-R26 remain open (`artifacts/t
 - **R26 (phase transition reconstruction):** removed with TypeScript shadow state. Python reports bounded upstream state on normal/handled exits; abrupt exits remain unknown rather than inferred.
 
 ## Source-scout open questions before mechanical probes
+
+This is the historical scout checklist, not the current decision list. The user
+has since dropped `maxActions` and selected OpenRouter Ling 3.0 Flash. The
+[owning plan](RLCD-BRWSR.md) and [provider note](openrouter-ling-3.0-flash.md) record
+those decisions; live provider behavior remains untested.
 
 1. Choose the native helper provider/model; cost is not yet measured. A key alone means native DeepSeek defaults; another provider needs explicit `TEXT_MODEL_BASE_URL` and `TEXT_MODEL`, and its acceptance of upstream reasoning fields must be tested later.
 2. Decide whether the public budget can be renamed/redefined as `maxSteps`. Keeping “mutations only, waits separate” requires returning to command-level control and is not the thin `Agent.run()` direction.
@@ -300,7 +305,8 @@ Detailed source references are retained in
 
 The next implementation plan is owned by [RLCD-BRWSR.md](RLCD-BRWSR.md), not by
 this evidence note. The direction is feasible at the tested pin and on these
-fixtures. Choosing a live helper/provider, implementing the new launcher/runner,
-and repeating acceptance through the actual Pi tool are still future work.
+fixtures. The user has selected OpenRouter Ling 3.0 Flash; validating it live,
+implementing the new launcher/runner, and repeating acceptance through the actual
+Pi tool are still future work.
 The recovered larger branch has four unresolved static gate findings; recovery
 preserved work but did not turn the cancelled gate into a pass.

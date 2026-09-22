@@ -1,8 +1,10 @@
 # RLCD-brwsr plan
 
 Status: the thin Python-owned direction is approved; the replacement is **not
-implemented**. This document owns the next implementation plan. Detailed
-interface choices below are recommendations to confirm before the rewrite.
+implemented**. This document owns the next implementation plan. The user has
+confirmed dropping `maxActions` and selected OpenRouter `inclusionai/ling-3.0-flash`
+as the native text helper. Byte budgets and the accounting policy below remain
+to confirm before the rewrite.
 
 The existing code is the larger experimental Pi-native-helper implementation,
 recovered at `dde01a46dba112dbf9d002aeb2ebe2626363c034`. Its delivery gate was
@@ -71,13 +73,12 @@ rlcd_brwsr_run({
   requires a usable task-target handle and must not retain the runner process.
 - Schedule sequentially within Pi, without claiming a global browser lock.
 
-**Recommended contract reduction:** omit the current mutation-only `maxActions`
-knob initially and preserve upstream's fixed limits. Native history counts waits
-and scrolls as well as clicks/fills; it is capped at 60, with a separate
-120-decision cap. These are not HTTP-attempt or spend caps. If a lower per-call
-limit is needed, consider a clearly named `maxSteps` after testing its semantics;
-do not silently reinterpret `maxActions`. This interface reduction needs
-confirmation before implementation.
+**Confirmed contract reduction:** drop the mutation-only `maxActions` knob from
+the planned interface. Do not add a replacement per-call step knob or a
+compatibility alias. Preserve upstream's native limits: history counts waits
+and scrolls as well as clicks/fills and is capped at 60, with a separate
+120-decision cap. These are not HTTP-attempt or spend caps. The wrapper adds
+only the coarse `maxSeconds` stop request.
 
 ## Ownership and smallest implementation
 
@@ -129,10 +130,25 @@ and tool runs require the already-provisioned local named daemon.
 
 Use native `TYPESAFE_API_KEY` and `TEXT_MODEL_*` settings through the authorized
 host-local environment/configuration. Do not introduce a secret store, copy
-existing credentials or read Pi's OAuth credentials. The future helper provider
-and model have not been chosen. A key alone selects upstream's DeepSeek defaults;
-other providers also require their base URL and model. “OpenAI-compatible” is
-not proof that the provider accepts this pin's reasoning parameters.
+existing credentials or read Pi's OAuth credentials. The selected text helper
+is OpenRouter `inclusionai/ling-3.0-flash`; Jev remains the decision model.
+Planned native helper settings are:
+
+```text
+TEXT_MODEL_BASE_URL=https://openrouter.ai/api/v1
+TEXT_MODEL=inclusionai/ling-3.0-flash
+TEXT_MODEL_REASONING=none
+```
+
+`TEXT_MODEL_API_KEY` must come from a host-local OpenRouter key; none has been
+provided or configured by this planning task. The reasoning setting makes the
+unchanged upstream helper send `reasoning.enabled: false`, appropriate to the
+intended short field-value output. OpenRouter advertises support, but no live
+request has established the actual behavior. Its current JSON-mode route and
+pricing differ from the model's cheapest advertised route; see the
+[provider evidence](openrouter-ling-3.0-flash.md). An offline probe verified the
+native request shape and local value validation only. No provider adapter or
+routing selector is added.
 
 The helper remains optional for click-only tasks. Native missing-key or invalid
 value errors must return useful sanitized errors and available state, without
@@ -177,8 +193,9 @@ request count or missing usage with zero. **Initial accounting recommendation:**
 show bounded source-labelled records and unavailable values in tool details;
 omit Pi top-level `usage` unless its required numeric fields are supportable.
 This leaves Pi footer/session totals incomplete and must be disclosed. Whether
-to add rate-based estimated totals is an open choice after provider selection,
-not a reason to build a billing adapter now.
+to add rate-based estimated totals remains an open choice. Selecting OpenRouter
+and obtaining advertised rates does not recover missing fields or failed-call
+usage, and is not a reason to build a billing adapter now.
 
 ## Reuse and leave behind
 
@@ -196,9 +213,9 @@ raw evidence or the earlier custom-loop work.
 
 ## Implementation and verification sequence
 
-1. Confirm the proposed removal of mutation-only `maxActions` and the initial
-   accounting limitation. Select concrete request/result byte budgets without
-   clipping upstream observations or helper prompts.
+1. Confirm the initial accounting limitation and select concrete request/result
+   byte budgets without clipping upstream observations or helper prompts.
+   `maxActions` removal and the helper model selection are already decided.
 2. Build a small Python runner plus the small Pi launcher. No provider
    credential or live model call is needed for the deterministic work.
 3. Test through the registered Pi tool with the real new runner and external
@@ -209,8 +226,9 @@ raw evidence or the earlier custom-loop work.
    real upstream/Harness/Chrome and synthetic provider replies. Independently
    inspect known owned targets, test retention/default close and a real bounded
    stop, and measure resource outcomes instead of inferring them from signals.
-5. Only after provider selection and explicit applicable allowance, test its
-   native helper payload, then a benign public task using real Jev/helper calls.
+5. Only after host-local key configuration and explicit applicable allowance,
+   test the selected OpenRouter helper payload, then a benign public task using
+   real Jev/helper calls.
    Preserve earlier ledgers; native step limits do not constitute a billing
    budget. Report unknown attempts/charges conservatively.
 
@@ -222,6 +240,7 @@ is implied by this plan.
 ## Evidence and history
 
 - [Feasibility source/probe record](thin-python-feasibility.md).
+- [Selected OpenRouter helper evidence](openrouter-ling-3.0-flash.md).
 - [Next architecture decision](adr/0003-python-owned-run.md).
 - [Recovered architecture and amendments](adr/0002-wrap-pinned-jev-ultrafast-agent.md).
 - Earlier verification: [#10](issue-10-evidence.md), [#11](issue-11-evidence.md),

@@ -6,9 +6,10 @@ implementation, not its dependency pins or native Browser Harness ownership.
 
 Use the pinned `Agent.run()` generator and native API-key text helper behind a
 small Pi process launcher. The user chose an additional native helper-provider
-key over maintaining the Pi OAuth relay and duplicated run state; provider cost
-remains unmeasured and the provider/model are not selected. The trade-off
-is a narrower, explicitly best-effort interruption/recovery contract rather than
+key over maintaining the Pi OAuth relay and duplicated run state, then selected
+OpenRouter `inclusionai/ling-3.0-flash` and confirmed dropping `maxActions`.
+Actual provider behavior and per-run cost remain unmeasured. The trade-off is a
+narrower, explicitly best-effort interruption/recovery contract rather than
 more adapters. Keep the recovered implementation and evidence as history, and do
 not describe source inspection or synthetic-provider fixtures as proof of a
 replacement wrapper or live model behavior.
