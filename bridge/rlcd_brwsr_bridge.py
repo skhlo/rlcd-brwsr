@@ -20,7 +20,7 @@ from runtime_support import (
 
 PROTOCOL_VERSION = 2
 MAX_REQUEST_BYTES = 20_000
-MAX_HELPER_REPLY_BYTES = 16_000
+MAX_HELPER_REPLY_BYTES = 128_000
 MAX_PROTOCOL_LINE_CHARS = 32_000
 MAX_HELPER_REQUEST_LINE_CHARS = 384_000
 MAX_EVIDENCE_CHARS = 4_000
@@ -107,6 +107,11 @@ def _handle_stop(_signum: int, _frame: object) -> None:
 def _bounded_text(value: object, maximum: int) -> str:
     text = str(value)
     return text if len(text) <= maximum else text[:maximum]
+
+
+def _bounded_metadata(value: object, maximum: int) -> tuple[str, bool]:
+    text = str(value)
+    return _bounded_text(text, maximum), len(text) > maximum
 
 
 def _bounded_diagnostic(value: object, maximum: int = MAX_DIAGNOSTIC_CHARS) -> str:
@@ -314,12 +319,16 @@ def _observation(page: object, maximum: int = MAX_EVIDENCE_CHARS) -> dict[str, A
     text = page.get("text")
     if not isinstance(url, str) or not isinstance(title, str) or not isinstance(text, str):
         return None
-    evidence = _bounded_text(text, maximum)
+    bounded_url, url_truncated = _bounded_metadata(url, 2_048)
+    bounded_title, title_truncated = _bounded_metadata(title, 300)
+    evidence, evidence_truncated = _bounded_metadata(text, maximum)
     return {
-        "url": _bounded_text(url, 2_048),
-        "title": _bounded_text(title, 300),
+        "url": bounded_url,
+        "urlTruncated": url_truncated,
+        "title": bounded_title,
+        "titleTruncated": title_truncated,
         "evidence": evidence,
-        "evidenceTruncated": len(evidence) < len(text),
+        "evidenceTruncated": evidence_truncated,
     }
 
 
@@ -358,7 +367,11 @@ def _reconcile_executed_action(
     latest = history[-1]
     trace[-1]["outcome"] = "executed"
     if isinstance(latest, dict):
-        trace[-1]["url"] = _bounded_text(latest.get("url", ""), 2_048)
+        bounded_url, url_truncated = _bounded_metadata(
+            latest.get("url", ""), 2_048
+        )
+        trace[-1]["url"] = bounded_url
+        trace[-1]["urlTruncated"] = url_truncated
     return True, executed_actions
 
 
@@ -375,10 +388,12 @@ def _bounded_usage(value: object) -> object:
 
 
 def _usage_record(decision: dict[str, Any]) -> dict[str, Any]:
+    reported_model, reported_model_truncated = _bounded_metadata(
+        decision.get("model", "unavailable"), 160
+    )
     return {
-        "reportedModel": _bounded_text(
-            decision.get("model", "unavailable"), 160
-        ),
+        "reportedModel": reported_model,
+        "reportedModelTruncated": reported_model_truncated,
         "latencyMs": decision.get("latency_ms")
         if isinstance(decision.get("latency_ms"), int)
         else "unavailable",
@@ -457,10 +472,15 @@ def _terminal(
             continue
         raw_usage = call.get("usage")
         request_id = _helper_usage_request_ids.get(id(raw_usage))
+        field, field_truncated = _bounded_metadata(
+            call.get("field", "unavailable"), 300
+        )
         text_usage.append(
             {
                 "reportedModel": "unavailable",
-                "field": _bounded_text(call.get("field", "unavailable"), 300),
+                "reportedModelTruncated": False,
+                "field": field,
+                "fieldTruncated": field_truncated,
                 "latencyMs": call.get("latency_ms", "unavailable"),
                 "usage": _bounded_usage(raw_usage),
                 **(
@@ -470,6 +490,12 @@ def _terminal(
                 ),
             }
         )
+    bounded_target_id, target_id_truncated = (
+        _bounded_metadata(target_id, 300) if target_id else (None, False)
+    )
+    bounded_daemon_name, daemon_name_truncated = (
+        _bounded_metadata(daemon_name, 200) if daemon_name else (None, False)
+    )
     result: dict[str, Any] = {
         "status": status,
         "stopReason": stop_reason,
@@ -510,9 +536,11 @@ def _terminal(
             "cleanupOverrunMs": 0,
         },
         "ownership": {
-            "targetId": _bounded_text(target_id, 300) if target_id else None,
+            "targetId": bounded_target_id,
+            "targetIdTruncated": target_id_truncated,
             "bridgePid": os.getpid(),
-            "daemon": _bounded_text(daemon_name, 200) if daemon_name else None,
+            "daemon": bounded_daemon_name,
+            "daemonTruncated": daemon_name_truncated,
         },
         "mutationOutcome": mutation_outcome,
         "diagnostic": _bounded_diagnostic(diagnostic) if diagnostic else None,
@@ -526,6 +554,7 @@ def _run(request: dict[str, Any], started_at: float) -> tuple[dict[str, Any], ob
     text_helper_unavailable_reason = request["textHelperUnavailableReason"]
     trace: list[dict[str, Any]] = []
     decisions: list[dict[str, Any]] = []
+    state: dict[str, Any] = {}
     agent: object | None = None
     target_id: str | None = None
     fill_was_selected = False
@@ -644,17 +673,24 @@ def _run(request: dict[str, Any], started_at: float) -> tuple[dict[str, Any], ob
                         "error", "upstream_error", "upstream returned no decision"
                     ), agent
                 action = _selected_action(state)
-                operation = _bounded_text(decision.get("operation", "unavailable"), 80)
-                selected = _bounded_text(decision.get("choice", "unavailable"), 200)
-                action_label = (
-                    _bounded_text(action.get("label", selected), 300)
-                    if action is not None
-                    else selected
+                operation, operation_truncated = _bounded_metadata(
+                    decision.get("operation", "unavailable"), 80
+                )
+                selected, selected_truncated = _bounded_metadata(
+                    decision.get("choice", "unavailable"), 200
+                )
+                action_label, action_truncated = _bounded_metadata(
+                    action.get("label", selected) if action is not None else selected,
+                    300,
                 )
                 entry = {
                     "step": len(trace) + 1,
                     "operation": operation,
+                    "operationTruncated": operation_truncated,
                     "action": action_label,
+                    "actionTruncated": (
+                        action_truncated if action is not None else selected_truncated
+                    ),
                     "outcome": "predicted",
                     "elapsedMs": round((time.perf_counter() - started_at) * 1_000),
                 }
@@ -669,6 +705,10 @@ def _run(request: dict[str, Any], started_at: float) -> tuple[dict[str, Any], ob
                         "executedActions": executed_actions,
                     }
                 )
+
+                if time.perf_counter() >= deadline:
+                    entry["outcome"] = "time_budget"
+                    return finish("stopped", "time_budget"), agent
 
                 if (
                     action is not None
@@ -719,6 +759,15 @@ def _run(request: dict[str, Any], started_at: float) -> tuple[dict[str, Any], ob
                 reconciled, executed_actions = _reconcile_executed_action(
                     state, trace, history_before
                 )
+                if reconciled:
+                    _emit(
+                        {
+                            "type": "progress",
+                            "phase": "action",
+                            "action": trace[-1],
+                            "executedActions": executed_actions,
+                        }
+                    )
                 state["decision"] = None
                 state["status"] = "ready"
                 state["page"] = state["browser"].observe(screenshot=False)
@@ -939,7 +988,7 @@ def main() -> int:
                     browser_instance.target = None
                 else:
                     existing = result.get("diagnostic")
-                    cleanup_error = "task-tab cleanup was not confirmed"
+                    cleanup_error = "primary task-tab cleanup was not confirmed"
                     result["diagnostic"] = _bounded_diagnostic(
                         f"{existing}; {cleanup_error}" if existing else cleanup_error
                     )
@@ -947,7 +996,8 @@ def main() -> int:
                 cleanup["taskTab"] = "unconfirmed"
                 existing = result.get("diagnostic")
                 cleanup_error = (
-                    f"task-tab cleanup failed: {_bounded_diagnostic(error, 240)}"
+                    "primary task-tab cleanup failed: "
+                    f"{_bounded_diagnostic(error, 240)}"
                 )
                 result["diagnostic"] = _bounded_diagnostic(
                     f"{existing}; {cleanup_error}" if existing else cleanup_error

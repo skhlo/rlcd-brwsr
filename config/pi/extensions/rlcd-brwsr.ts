@@ -79,7 +79,9 @@ type Measurement = number | "unavailable";
 
 interface Observation {
   url: string;
+  urlTruncated: boolean;
   title: string;
+  titleTruncated: boolean;
   evidence: string;
   evidenceTruncated: boolean;
 }
@@ -87,15 +89,20 @@ interface Observation {
 interface TraceEntry {
   step: number;
   operation: string;
+  operationTruncated: boolean;
   action: string;
+  actionTruncated: boolean;
   outcome: string;
   elapsedMs: number;
   url?: string;
+  urlTruncated?: boolean;
 }
 
 interface ModelMeasurement {
   reportedModel: string;
+  reportedModelTruncated: boolean;
   field?: string;
+  fieldTruncated?: boolean;
   helperRequestId?: number;
   latencyMs: Measurement;
   usage: JsonValue;
@@ -194,8 +201,10 @@ export interface RlcdRunResult {
   };
   ownership: {
     targetId: string | null;
+    targetIdTruncated: boolean;
     bridgePid: number | null;
     daemon: string | null;
+    daemonTruncated: boolean;
   };
   mutationOutcome: "not_in_flight" | "unknown";
   diagnostic: string | null;
@@ -246,6 +255,25 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function codePointLength(value: string): number {
+  return Array.from(value).length;
+}
+
+function takeCodePoints(value: string, maximum: number): string {
+  return Array.from(value).slice(0, maximum).join("");
+}
+
+function boundedCodePoints(
+  value: string,
+  maximum: number,
+): { text: string; truncated: boolean } {
+  const length = codePointLength(value);
+  return {
+    text: length <= maximum ? value : takeCodePoints(value, maximum),
+    truncated: length > maximum,
+  };
+}
+
 function loadRuntimeConfig(): { jevModel: string } {
   const path = resolve(projectRoot, "config", "runtime.json");
   let value: unknown;
@@ -270,7 +298,7 @@ function validateInput(value: RlcdRunInput): string | undefined {
   if (typeof value.url !== "string" || !value.url.trim()) {
     return "url must be a non-empty absolute HTTP(S) URL";
   }
-  if (value.url.length > MAX_URL_CHARS) {
+  if (codePointLength(value.url) > MAX_URL_CHARS) {
     return `url must not exceed ${MAX_URL_CHARS} characters`;
   }
   let parsed: URL;
@@ -290,7 +318,7 @@ function validateInput(value: RlcdRunInput): string | undefined {
   if (typeof value.goal !== "string" || !value.goal.trim()) {
     return "goal must be a non-empty string";
   }
-  if (value.goal.length > MAX_GOAL_CHARS) {
+  if (codePointLength(value.goal) > MAX_GOAL_CHARS) {
     return `goal must not exceed ${MAX_GOAL_CHARS} characters`;
   }
   const maxActions = value.maxActions ?? DEFAULT_MAX_ACTIONS;
@@ -323,6 +351,7 @@ function basicResult(
   daemon: string | null,
   status: RlcdRunResult["status"] = "error",
 ): RlcdRunResult {
+  const boundedDaemon = daemon === null ? null : boundedCodePoints(daemon, 200);
   return {
     status,
     stopReason,
@@ -356,7 +385,13 @@ function basicResult(
       cleanupElapsedMs: 0,
       cleanupOverrunMs: Math.max(0, elapsedMs - maxSeconds * 1_000),
     },
-    ownership: { targetId: null, bridgePid: null, daemon },
+    ownership: {
+      targetId: null,
+      targetIdTruncated: false,
+      bridgePid: null,
+      daemon: boundedDaemon?.text ?? null,
+      daemonTruncated: boundedDaemon?.truncated ?? false,
+    },
     mutationOutcome: "not_in_flight",
     diagnostic,
     cleanup: {
@@ -570,7 +605,9 @@ function normalizedObservation(
   if (
     !isRecord(value) ||
     typeof value.url !== "string" ||
+    typeof value.urlTruncated !== "boolean" ||
     typeof value.title !== "string" ||
+    typeof value.titleTruncated !== "boolean" ||
     typeof value.evidence !== "string" ||
     typeof value.evidenceTruncated !== "boolean"
   ) {
@@ -578,7 +615,9 @@ function normalizedObservation(
   }
   return {
     url: redactText(value.url, credentials),
+    urlTruncated: value.urlTruncated,
     title: redactText(value.title, credentials),
+    titleTruncated: value.titleTruncated,
     evidence: redactText(value.evidence, credentials),
     evidenceTruncated: value.evidenceTruncated,
   };
@@ -593,21 +632,31 @@ function normalizedTraceEntry(
     !Number.isInteger(value.step) ||
     !isNonnegativeFinite(value.step) ||
     typeof value.operation !== "string" ||
+    typeof value.operationTruncated !== "boolean" ||
     typeof value.action !== "string" ||
+    typeof value.actionTruncated !== "boolean" ||
     typeof value.outcome !== "string" ||
     !isNonnegativeFinite(value.elapsedMs) ||
-    (value.url !== undefined && typeof value.url !== "string")
+    (value.url !== undefined && typeof value.url !== "string") ||
+    (value.urlTruncated !== undefined &&
+      typeof value.urlTruncated !== "boolean") ||
+    (value.url === undefined) !== (value.urlTruncated === undefined)
   ) {
     return undefined;
   }
   return {
     step: value.step,
     operation: redactText(value.operation, credentials),
+    operationTruncated: value.operationTruncated,
     action: redactText(value.action, credentials),
+    actionTruncated: value.actionTruncated,
     outcome: redactText(value.outcome, credentials),
     elapsedMs: value.elapsedMs,
-    ...(typeof value.url === "string"
-      ? { url: redactText(value.url, credentials) }
+    ...(typeof value.url === "string" && typeof value.urlTruncated === "boolean"
+      ? {
+          url: redactText(value.url, credentials),
+          urlTruncated: value.urlTruncated,
+        }
       : {}),
   };
 }
@@ -625,7 +674,11 @@ function normalizedModelMeasurement(
   if (
     !isRecord(value) ||
     typeof value.reportedModel !== "string" ||
+    typeof value.reportedModelTruncated !== "boolean" ||
     (value.field !== undefined && typeof value.field !== "string") ||
+    (value.fieldTruncated !== undefined &&
+      typeof value.fieldTruncated !== "boolean") ||
+    (value.field === undefined) !== (value.fieldTruncated === undefined) ||
     (value.helperRequestId !== undefined &&
       (!Number.isInteger(value.helperRequestId) ||
         !isNonnegativeFinite(value.helperRequestId))) ||
@@ -637,8 +690,13 @@ function normalizedModelMeasurement(
   if (usage === undefined) return undefined;
   return {
     reportedModel: redactText(value.reportedModel, credentials),
-    ...(typeof value.field === "string"
-      ? { field: redactText(value.field, credentials) }
+    reportedModelTruncated: value.reportedModelTruncated,
+    ...(typeof value.field === "string" &&
+    typeof value.fieldTruncated === "boolean"
+      ? {
+          field: redactText(value.field, credentials),
+          fieldTruncated: value.fieldTruncated,
+        }
       : {}),
     ...(typeof value.helperRequestId === "number"
       ? { helperRequestId: value.helperRequestId }
@@ -769,11 +827,13 @@ function normalizedBridgeResult(
     !isRecord(value.ownership) ||
     (value.ownership.targetId !== null &&
       typeof value.ownership.targetId !== "string") ||
+    typeof value.ownership.targetIdTruncated !== "boolean" ||
     (value.ownership.bridgePid !== null &&
       (!Number.isInteger(value.ownership.bridgePid) ||
         !isNonnegativeFinite(value.ownership.bridgePid))) ||
     (value.ownership.daemon !== null &&
       typeof value.ownership.daemon !== "string") ||
+    typeof value.ownership.daemonTruncated !== "boolean" ||
     (value.mutationOutcome !== "not_in_flight" &&
       value.mutationOutcome !== "unknown") ||
     (value.diagnostic !== null && typeof value.diagnostic !== "string") ||
@@ -819,6 +879,7 @@ function normalizedBridgeResult(
         typeof value.ownership.targetId === "string"
           ? redactText(value.ownership.targetId, credentials)
           : null,
+      targetIdTruncated: value.ownership.targetIdTruncated,
       bridgePid:
         typeof value.ownership.bridgePid === "number"
           ? value.ownership.bridgePid
@@ -827,6 +888,7 @@ function normalizedBridgeResult(
         typeof value.ownership.daemon === "string"
           ? redactText(value.ownership.daemon, credentials)
           : null,
+      daemonTruncated: value.ownership.daemonTruncated,
     },
     mutationOutcome: value.mutationOutcome,
     diagnostic:
@@ -949,7 +1011,7 @@ function boundedJsonText(
   value: string,
   maximumSerializedChars: number,
 ): { text: string; truncated: boolean } {
-  if (JSON.stringify(value).length <= maximumSerializedChars) {
+  if (codePointLength(JSON.stringify(value)) <= maximumSerializedChars) {
     return { text: value, truncated: false };
   }
 
@@ -957,18 +1019,19 @@ function boundedJsonText(
   let serializedChars = 2;
   for (const character of value) {
     const encodedCharacter = JSON.stringify(character).slice(1, -1);
-    if (serializedChars + encodedCharacter.length > maximumSerializedChars) {
+    const encodedLength = codePointLength(encodedCharacter);
+    if (serializedChars + encodedLength > maximumSerializedChars) {
       break;
     }
     text += character;
-    serializedChars += encodedCharacter.length;
+    serializedChars += encodedLength;
   }
   return { text, truncated: true };
 }
 
 function toolContent(result: RlcdRunResult): string {
   const serialized = JSON.stringify(result, null, 2);
-  if (serialized.length <= MAX_TOOL_CONTENT_CHARS) return serialized;
+  if (codePointLength(serialized) <= MAX_TOOL_CONTENT_CHARS) return serialized;
 
   const omissions: string[] = ["usage"];
   const clipped = (
@@ -992,11 +1055,13 @@ function toolContent(result: RlcdRunResult): string {
       ? null
       : {
           url: clipped("lastObservation.url", result.lastObservation.url, 800),
+          urlTruncated: result.lastObservation.urlTruncated,
           title: clipped(
             "lastObservation.title",
             result.lastObservation.title,
             400,
           ),
+          titleTruncated: result.lastObservation.titleTruncated,
           evidence: observationEvidence.text,
           evidenceTruncated:
             result.lastObservation.evidenceTruncated ||
@@ -1007,12 +1072,17 @@ function toolContent(result: RlcdRunResult): string {
     return {
       step: entry.step,
       operation: clipped(`${path}.operation`, entry.operation, 160),
+      operationTruncated: entry.operationTruncated,
       action: clipped(`${path}.action`, entry.action, 400),
+      actionTruncated: entry.actionTruncated,
       outcome: clipped(`${path}.outcome`, entry.outcome, 160),
       elapsedMs: entry.elapsedMs,
       ...(entry.url === undefined
         ? {}
-        : { url: clipped(`${path}.url`, entry.url, 400) }),
+        : {
+            url: clipped(`${path}.url`, entry.url, 400),
+            urlTruncated: entry.urlTruncated,
+          }),
     };
   });
   if (result.traceTruncated || result.trace.length > trace.length) {
@@ -1041,8 +1111,10 @@ function toolContent(result: RlcdRunResult): string {
     timing: result.timing,
     ownership: {
       targetId,
+      targetIdTruncated: result.ownership.targetIdTruncated,
       bridgePid: result.ownership.bridgePid,
       daemon,
+      daemonTruncated: result.ownership.daemonTruncated,
     },
     mutationOutcome: result.mutationOutcome,
     diagnostic,
@@ -1054,7 +1126,7 @@ function toolContent(result: RlcdRunResult): string {
     },
   };
   const compactSerialized = JSON.stringify(compact, null, 2);
-  if (compactSerialized.length <= MAX_TOOL_CONTENT_CHARS) {
+  if (codePointLength(compactSerialized) <= MAX_TOOL_CONTENT_CHARS) {
     return compactSerialized;
   }
 
@@ -1131,15 +1203,22 @@ function boundedDiagnostic(
     .filter((part): part is string => Boolean(part))
     .join("; ");
   if (!joined) return null;
-  if (joined.length <= MAX_STDERR_CHARS) return joined;
-  const suffix = ` [diagnostic truncated from ${joined.length} characters]`;
-  return `${joined.slice(0, MAX_STDERR_CHARS - suffix.length)}${suffix}`;
+  const joinedLength = codePointLength(joined);
+  if (joinedLength <= MAX_STDERR_CHARS) return joined;
+  const suffix = ` [diagnostic truncated from ${joinedLength} characters]`;
+  return `${takeCodePoints(joined, MAX_STDERR_CHARS - codePointLength(suffix))}${suffix}`;
 }
 
 function publicTextHelperCall(call: ModelMeasurement): ModelMeasurement {
   return {
     reportedModel: call.reportedModel,
-    ...(call.field === undefined ? {} : { field: call.field }),
+    reportedModelTruncated: call.reportedModelTruncated,
+    ...(call.field === undefined
+      ? {}
+      : {
+          field: call.field,
+          fieldTruncated: call.fieldTruncated ?? false,
+        }),
     latencyMs: call.latencyMs,
     usage: call.usage,
   };
@@ -1173,10 +1252,16 @@ function partialBridgeResult(
   if (state.textHelperCallsTruncated) {
     result.usage.textHelper.callsTruncated = true;
   }
+  const targetId =
+    state.targetId === null ? null : boundedCodePoints(state.targetId, 300);
+  const daemon =
+    state.daemon === null ? null : boundedCodePoints(state.daemon, 200);
   result.ownership = {
-    targetId: state.targetId,
+    targetId: targetId?.text ?? null,
+    targetIdTruncated: targetId?.truncated ?? false,
     bridgePid: state.bridgePid,
-    daemon: state.daemon,
+    daemon: daemon?.text ?? null,
+    daemonTruncated: daemon?.truncated ?? false,
   };
   result.mutationOutcome = state.mutationOutcome;
   result.cleanup.taskTab = "unconfirmed";
@@ -1246,7 +1331,7 @@ function progressToolResult(
 ): ToolResult {
   const serialized = JSON.stringify(record);
   const text =
-    serialized.length <= 2_000
+    codePointLength(serialized) <= 2_000
       ? serialized
       : JSON.stringify({
           type: record.type,
@@ -1303,15 +1388,19 @@ async function targetedCleanup(
   let forced = false;
   child.stdout.setEncoding("utf8");
   child.stdout.on("data", (chunk: string) => {
-    if (stdout.length < MAX_PROTOCOL_LINE_CHARS + 1) {
-      stdout += chunk.slice(0, MAX_PROTOCOL_LINE_CHARS + 1 - stdout.length);
-    }
+    const available = Math.max(
+      0,
+      MAX_PROTOCOL_LINE_CHARS + 1 - codePointLength(stdout),
+    );
+    stdout += takeCodePoints(chunk, available);
   });
   child.stderr.setEncoding("utf8");
   child.stderr.on("data", (chunk: string) => {
-    const available = Math.max(0, MAX_STDERR_CHARS - stderr.length);
-    stderr += chunk.slice(0, available);
-    stderrOmitted += Math.max(0, chunk.length - available);
+    const chunkLength = codePointLength(chunk);
+    const available = Math.max(0, MAX_STDERR_CHARS - codePointLength(stderr));
+    const retained = takeCodePoints(chunk, available);
+    stderr += retained;
+    stderrOmitted += chunkLength - codePointLength(retained);
   });
   child.stdin.end(
     `${JSON.stringify({ requestType: "cleanup_target", targetId })}\n`,
@@ -1332,7 +1421,10 @@ async function targetedCleanup(
 
   let record: Record<string, unknown> | undefined;
   const lines = stdout.trim().split("\n").filter(Boolean);
-  if (lines.length === 1 && lines[0]!.length <= MAX_PROTOCOL_LINE_CHARS) {
+  if (
+    lines.length === 1 &&
+    codePointLength(lines[0]!) <= MAX_PROTOCOL_LINE_CHARS
+  ) {
     try {
       const parsed: unknown = JSON.parse(lines[0]!);
       if (isRecord(parsed)) record = parsed;
@@ -1377,6 +1469,7 @@ async function waitForBridge(
   signal: AbortSignal | undefined,
   onUpdate: ((result: ToolResult) => void) | undefined,
   startedAt: number,
+  deadlineAt: number,
 ): Promise<BridgeRunOutcome> {
   const credentials = knownCredentials();
   const state: PartialBridgeState = {
@@ -1443,7 +1536,7 @@ async function waitForBridge(
       return;
     }
     const line = JSON.stringify(record);
-    if (line.length > MAX_PROTOCOL_LINE_CHARS) {
+    if (codePointLength(line) > MAX_PROTOCOL_LINE_CHARS) {
       failProtocol("text helper reply exceeded the bridge protocol bound");
       return;
     }
@@ -1472,8 +1565,10 @@ async function waitForBridge(
           state.textHelperCalls.shift();
           state.textHelperCallsTruncated = true;
         }
+        const reportedModel = boundedCodePoints(completion.reportedModel, 160);
         state.textHelperCalls.push({
-          reportedModel: completion.reportedModel,
+          reportedModel: reportedModel.text,
+          reportedModelTruncated: reportedModel.truncated,
           helperRequestId: request.requestId,
           latencyMs: completion.latencyMs,
           usage: completion.usage,
@@ -1493,7 +1588,9 @@ async function waitForBridge(
             requestId: request.requestId,
             error: completion.failure,
           });
-        } else if (completion.response.length > MAX_HELPER_RESPONSE_CHARS) {
+        } else if (
+          codePointLength(completion.response) > MAX_HELPER_RESPONSE_CHARS
+        ) {
           writeToBridge({
             type: "text_helper_response",
             requestId: request.requestId,
@@ -1532,15 +1629,14 @@ async function waitForBridge(
   const onAbort = () => requestStop("cancelled");
   signal?.addEventListener("abort", onAbort, { once: true });
   if (signal?.aborted) requestStop("cancelled");
-  const deadline = setTimeout(
-    () => requestStop("time_budget"),
-    input.maxSeconds * 1_000,
-  );
+  const remainingMs = Math.max(0, deadlineAt - Date.now());
+  const deadline = setTimeout(() => requestStop("time_budget"), remainingMs);
   deadline.unref();
+  if (remainingMs === 0) requestStop("time_budget");
 
   const handleLine = (rawLine: string) => {
     if (!rawLine || protocolError) return;
-    if (rawLine.length > MAX_HELPER_REQUEST_LINE_CHARS) {
+    if (codePointLength(rawLine) > MAX_HELPER_REQUEST_LINE_CHARS) {
       failProtocol(
         `bridge emitted a line longer than ${MAX_HELPER_REQUEST_LINE_CHARS} characters`,
       );
@@ -1561,7 +1657,7 @@ async function waitForBridge(
       parsed.type === "text_helper_request"
         ? MAX_HELPER_REQUEST_LINE_CHARS
         : MAX_PROTOCOL_LINE_CHARS;
-    if (rawLine.length > maximumLineChars) {
+    if (codePointLength(rawLine) > maximumLineChars) {
       failProtocol(
         `bridge emitted a line longer than ${maximumLineChars} characters`,
       );
@@ -1610,8 +1706,11 @@ async function waitForBridge(
       stdoutBuffer = stdoutBuffer.slice(newline + 1);
       newline = stdoutBuffer.indexOf("\n");
     }
-    if (stdoutBuffer.length > MAX_HELPER_REQUEST_LINE_CHARS) {
-      stdoutBuffer = stdoutBuffer.slice(0, MAX_HELPER_REQUEST_LINE_CHARS + 1);
+    if (codePointLength(stdoutBuffer) > MAX_HELPER_REQUEST_LINE_CHARS) {
+      stdoutBuffer = takeCodePoints(
+        stdoutBuffer,
+        MAX_HELPER_REQUEST_LINE_CHARS + 1,
+      );
       failProtocol(
         `bridge emitted a line longer than ${MAX_HELPER_REQUEST_LINE_CHARS} characters`,
       );
@@ -1619,9 +1718,11 @@ async function waitForBridge(
   });
   child.stderr.setEncoding("utf8");
   child.stderr.on("data", (chunk: string) => {
-    const available = Math.max(0, MAX_STDERR_CHARS - stderr.length);
-    stderr += chunk.slice(0, available);
-    stderrOmitted += Math.max(0, chunk.length - available);
+    const chunkLength = codePointLength(chunk);
+    const available = Math.max(0, MAX_STDERR_CHARS - codePointLength(stderr));
+    const retained = takeCodePoints(chunk, available);
+    stderr += retained;
+    stderrOmitted += chunkLength - codePointLength(retained);
   });
 
   child.stdin.on("error", (error) => {
@@ -1716,10 +1817,16 @@ async function waitForBridge(
   }
 
   const resultHelperCalls = result.usage.textHelper.calls;
-  const fieldsByRequestId = new Map<number, string>();
+  const fieldsByRequestId = new Map<
+    number,
+    { field: string; fieldTruncated: boolean }
+  >();
   for (const call of resultHelperCalls) {
     if (call.helperRequestId !== undefined && call.field !== undefined) {
-      fieldsByRequestId.set(call.helperRequestId, call.field);
+      fieldsByRequestId.set(call.helperRequestId, {
+        field: call.field,
+        fieldTruncated: call.fieldTruncated ?? false,
+      });
     }
   }
   result.usage.textHelper.availability = state.textHelperAvailability;
@@ -1731,7 +1838,12 @@ async function waitForBridge(
         : fieldsByRequestId.get(call.helperRequestId);
     return publicTextHelperCall({
       ...call,
-      ...(field === undefined ? {} : { field }),
+      ...(field === undefined
+        ? {}
+        : {
+            field: field.field,
+            fieldTruncated: field.fieldTruncated,
+          }),
     });
   });
   if (
@@ -1797,7 +1909,9 @@ async function waitForBridge(
     exitDiagnostic,
     stderrDiagnostic,
     helperSettleDiagnostic,
-    targeted?.diagnostic,
+    targeted?.confirmed
+      ? "targeted fallback cleanup confirmed"
+      : targeted?.diagnostic,
   ]);
   return {
     result,
@@ -1813,12 +1927,24 @@ async function runRegisteredTool(
 ): Promise<ToolResult> {
   const startedAt = Date.now();
   const maxSeconds = params.maxSeconds ?? DEFAULT_MAX_SECONDS;
+  const deadlineAt = startedAt + maxSeconds * 1_000;
   const daemon = null;
   const cancelledBeforeBridge = () =>
     asToolResult(
       basicResult(
         "cancelled",
         "Pi cancelled before bridge startup",
+        Date.now() - startedAt,
+        maxSeconds,
+        daemon,
+        "stopped",
+      ),
+    );
+  const expiredBeforeBridge = () =>
+    asToolResult(
+      basicResult(
+        "time_budget",
+        "Wall budget expired before bridge startup",
         Date.now() - startedAt,
         maxSeconds,
         daemon,
@@ -1838,12 +1964,15 @@ async function runRegisteredTool(
     );
   }
   if (signal?.aborted) return cancelledBeforeBridge();
+  if (Date.now() >= deadlineAt) return expiredBeforeBridge();
   try {
     await access(pythonExecutable, constants.X_OK);
     if (signal?.aborted) return cancelledBeforeBridge();
+    if (Date.now() >= deadlineAt) return expiredBeforeBridge();
     await access(bridgeExecutable, constants.R_OK);
   } catch {
     if (signal?.aborted) return cancelledBeforeBridge();
+    if (Date.now() >= deadlineAt) return expiredBeforeBridge();
     return asToolResult(
       basicResult(
         "setup_error",
@@ -1856,8 +1985,11 @@ async function runRegisteredTool(
   }
 
   if (signal?.aborted) return cancelledBeforeBridge();
+  if (Date.now() >= deadlineAt) return expiredBeforeBridge();
 
   const textHelper = createPiTextHelper(ctx);
+  if (signal?.aborted) return cancelledBeforeBridge();
+  if (Date.now() >= deadlineAt) return expiredBeforeBridge();
   const input: BridgeRunInput = {
     url: params.url,
     goal: params.goal.trim(),
@@ -1879,6 +2011,8 @@ async function runRegisteredTool(
       ),
     );
   }
+  if (signal?.aborted) return cancelledBeforeBridge();
+  if (Date.now() >= deadlineAt) return expiredBeforeBridge();
   const childEnvironment: NodeJS.ProcessEnv = {
     ...process.env,
     TYPESAFE_MODEL: runtimeConfig.jevModel,
@@ -1898,6 +2032,7 @@ async function runRegisteredTool(
     signal,
     onUpdate,
     startedAt,
+    deadlineAt,
   );
   return asToolResult(outcome.result, outcome.usage);
 }
@@ -1906,11 +2041,11 @@ export default function rlcdBrwsrExtension(pi: ExtensionAPI): void {
   pi.registerTool({
     name: "rlcd_brwsr_run",
     label: "RLCD Browser",
-    description: `Run one bounded Jev Ultrafast browser task in an owned tab. Defaults: ${DEFAULT_MAX_ACTIONS} executed actions and ${DEFAULT_MAX_SECONDS} seconds; maxima: ${MAX_ACTIONS} actions and ${MAX_SECONDS} seconds. Set retainTab only to keep a completion-claimed tab for inspection; other outcomes still attempt cleanup. Browser Harness natively selects the required existing local daemon, which the tool preserves along with unrelated tabs. A completion claim requires independent verification. Output is bounded to ${MAX_TOOL_CONTENT_CHARS} model-visible characters.`,
+    description: `Run one bounded Jev Ultrafast browser task in an owned tab for the initial benign, unauthenticated, non-booking operating scope. Defaults: ${DEFAULT_MAX_ACTIONS} executed actions and ${DEFAULT_MAX_SECONDS} seconds; maxima: ${MAX_ACTIONS} actions and ${MAX_SECONDS} seconds. Set retainTab only to keep a completion-claimed tab for inspection; other outcomes still attempt cleanup. Browser Harness natively selects the required existing local daemon, which the tool preserves along with unrelated tabs. A completion claim requires independent verification. Output is bounded to ${MAX_TOOL_CONTENT_CHARS} model-visible characters.`,
     promptSnippet:
-      "Delegate one already-authorized benign browser task to the bounded Jev Ultrafast loop",
+      "Delegate one already-authorized benign, unauthenticated, non-booking browser task to the bounded Jev Ultrafast loop",
     promptGuidelines: [
-      "Use rlcd_brwsr_run only for an already-authorized benign browser task, and independently verify every completion claim.",
+      "Use rlcd_brwsr_run only for an already-authorized benign, unauthenticated, non-booking browser task, and independently verify every completion claim.",
     ],
     parameters: rlcdBrwsrParameters,
     executionMode: "sequential",

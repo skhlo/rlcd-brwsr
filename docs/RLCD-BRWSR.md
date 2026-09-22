@@ -255,12 +255,14 @@ completion and prevent a late reply from being written into a closed or later
 exchange.
 
 Diagnostics use standard error. The parent bounds ordinary protocol lines to
-32,000 characters and the unchanged upstream text-helper request to 384,000
-characters, with the same serialized bounds enforced by the bridge. It streams
-validated progress without retaining an unbounded record list or imposing a
-competing record-count stop. Model-visible results are
-bounded to 12,000 characters, last-observation evidence to 4,000 characters,
-and terminal trace/decision lists to 24 entries. After native Harness
+32,000 Unicode code points and the unchanged upstream text-helper request to
+384,000 Unicode code points, with the same serialized bounds enforced by the
+bridge. It streams validated progress without retaining an unbounded record
+list or imposing a competing record-count stop. Model-visible results are
+bounded to 12,000 Unicode code points, last-observation evidence to 4,000 code
+points, and terminal trace/decision lists to 24 entries. Bounded URL, title,
+action, field, model, target and daemon metadata carries an adjacent truncation
+indicator. After native Harness
 configuration resolution, the child redacts its known credentials from every
 protocol record and diagnostic stream before emission. The parent separately
 retains its defense for values it knows. Redaction therefore covers retained

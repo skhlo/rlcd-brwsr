@@ -7,10 +7,12 @@ Browser Harness CDP transport, exact-daemon check, and model provider response.
 import json
 import os
 import re
+import signal
 import sys
 import time
 from pathlib import Path
 
+import jev_ultrafast
 from browser_harness import admin, helpers as harness_helpers
 from jev_ultrafast import browser, model
 
@@ -27,6 +29,30 @@ _STATE = {
     "context_revision": 0,
     "post_action_observations": 0,
 }
+
+if _SCENARIO == "cancel_after_agent_construction":
+    _OriginalAgent = jev_ultrafast.Agent
+
+    class _AgentProxy:
+        def __init__(self, *args, **kwargs):
+            self._agent = _OriginalAgent(*args, **kwargs)
+            self._interrupt_browser_access = True
+
+        @property
+        def browser(self):
+            if self._interrupt_browser_access:
+                self._interrupt_browser_access = False
+                os.kill(os.getpid(), signal.SIGTERM)
+            return self._agent.browser
+
+        @property
+        def state(self):
+            return self._agent.state
+
+        def __getattr__(self, name):
+            return getattr(self._agent, name)
+
+    jev_ultrafast.Agent = _AgentProxy
 
 
 def _mark_external_work(environment_key, value="called"):
@@ -150,8 +176,16 @@ def _page():
         if len(typed_values) >= helper_target:
             accepted = ", then ".join(typed_values)
             return {
-                "url": _STATE["url"],
-                "title": "Generated field fixture complete",
+                "url": (
+                    "https://example.test/" + "u" * 3_000
+                    if _SCENARIO == "text_large_metadata"
+                    else _STATE["url"]
+                ),
+                "title": (
+                    "T" * 500
+                    if _SCENARIO == "text_large_metadata"
+                    else "Generated field fixture complete"
+                ),
                 "text": (
                     "Accepted generated destinations: "
                     f"{accepted}. Marker: FIELD-41"
@@ -172,7 +206,9 @@ def _page():
             else "destination-city"
         )
         field_label = (
-            f"Field {field_number}"
+            "F" * 500
+            if _SCENARIO == "text_large_metadata"
+            else f"Field {field_number}"
             if many_fields
             else "Country code"
             if second_field
@@ -200,7 +236,11 @@ def _page():
         )
         return {
             "url": _STATE["url"],
-            "title": "Generated field fixture",
+            "title": (
+                "T" * 500
+                if _SCENARIO == "text_large_metadata"
+                else "Generated field fixture"
+            ),
             "text": page_text,
             "scroll": {"y": 0},
             "actions": [
@@ -223,6 +263,8 @@ def _page():
         destination_url = "http://127.0.0.1:43113/destination.html"
         if _SCENARIO == "large_trace":
             destination_url += f"?state={_STATE['clicks']}-" + "u" * 1_900
+        if _SCENARIO == "astral_trace":
+            destination_url += f"?state={_STATE['clicks']}-" + "😀" * 1_900
         return {
             "url": destination_url,
             "title": "Fixture destination",
@@ -330,6 +372,8 @@ def _cdp(method, session_id=None, **params):
             if _SCENARIO == "cancel_dispatched_input":
                 _mark_external_work("RLCD_TEST_PHASE_MARKER", "input-dispatched")
                 time.sleep(30)
+            if _SCENARIO == "prediction_crosses_deadline":
+                _mark_external_work("RLCD_TEST_INPUT_DISPATCH_MARKER")
         return {}
     if method == "Input.insertText":
         _mark_external_work("RLCD_TEST_INPUT_DISPATCH_MARKER")
@@ -386,12 +430,18 @@ def _cdp(method, session_id=None, **params):
             ):
                 raise RuntimeError("post-action observation failed after execution")
             if (
-                _SCENARIO == "post_action_stale_reobservation"
+                _SCENARIO
+                in {
+                    "post_action_stale_reobservation",
+                    "post_action_stale_bridge_death",
+                }
                 and _STATE["destination"]
             ):
                 _STATE["post_action_observations"] += 1
                 if _STATE["post_action_observations"] <= 10:
                     return {"exceptionDetails": {"text": "document changed"}}
+                if _SCENARIO == "post_action_stale_bridge_death":
+                    os._exit(26)
             value = _page()
         elif "return state?.marker ?? null" in expression:
             value = forced_marker if forced_marker is not None else _page()["marker"]
@@ -441,7 +491,9 @@ def _post_json(url, key, body):
             "phase": "observation",
             "observation": {
                 "url": "u" * 14_000,
+                "urlTruncated": False,
                 "title": "synthetic" * 1_000 + "t" * 4_000 + '"' * 1_000,
+                "titleTruncated": False,
                 "evidence": "bounded partial evidence",
                 "evidenceTruncated": False,
             },
@@ -469,6 +521,8 @@ def _post_json(url, key, body):
         raise RuntimeError("provider rejected request: " + "X" * 2_000)
     if _SCENARIO in {"slow_model", "cancel_model", "slow_primary_cleanup"}:
         time.sleep(30)
+    if _SCENARIO == "prediction_crosses_deadline":
+        time.sleep(1.05)
 
     questions = body["questions"]
     operations = questions["operation"]["criteria"]
@@ -482,7 +536,7 @@ def _post_json(url, key, body):
         operation = "DONE" if _STATE["typed_text"] else "TYPE_TEXT"
     elif _SCENARIO == "blocked":
         operation = "BLOCKED"
-    elif _SCENARIO in {"always_click", "large_trace"}:
+    elif _SCENARIO in {"always_click", "large_trace", "astral_trace"}:
         operation = "CLICK"
     elif _SCENARIO == "wait_heavy":
         operation = "WAIT"
@@ -496,7 +550,11 @@ def _post_json(url, key, body):
         selected = next(iter(candidates))
         answers[target_name] = _choice(candidates, selected)
     return {
-        "model": "deterministic-jev-external-fake",
+        "model": (
+            "M" * 500
+            if _SCENARIO == "text_large_metadata"
+            else "deterministic-jev-external-fake"
+        ),
         "answers": answers,
         "usage": {"input_tokens": 17, "output_tokens": 3},
     }

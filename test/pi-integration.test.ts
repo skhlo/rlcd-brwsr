@@ -39,6 +39,9 @@ interface ToolResult {
 
 interface RegisteredTool {
   name: string;
+  description: string;
+  promptSnippet: string;
+  promptGuidelines: string[];
   executionMode?: string;
   execute(
     toolCallId: string,
@@ -86,6 +89,10 @@ const fakePythonPath = join(repositoryRoot, "test", "python");
 const nativeDaemonName = "rlcd-brwsr-test";
 const nativeCdpUrl = "http://127.0.0.1:43114";
 const nativeHarnessConfiguration = `BU_NAME=${nativeDaemonName}\nBU_CDP_URL=${nativeCdpUrl}\n`;
+
+function codePointLength(value: string): number {
+  return Array.from(value).length;
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -168,6 +175,9 @@ function registeredTool(options: RegisteredToolOptions = {}): RegisteredTool {
   const context = {
     modelRegistry: {
       find(provider: string, model: string) {
+        if (process.env.RLCD_TEST_SCENARIO === "pre_spawn_delay") {
+          Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1_100);
+        }
         if (
           options.helperModelAvailable === false ||
           provider !== "openai-codex" ||
@@ -268,7 +278,9 @@ function registeredTool(options: RegisteredToolOptions = {}): RegisteredTool {
           responseModel:
             scenario === "text_many_helpers_missing_last"
               ? `helper-attempt-${helperCompletionCount}`
-              : "gpt-5.6-luna-synthetic-provider",
+              : scenario === "text_large_metadata"
+                ? "R".repeat(500)
+                : "gpt-5.6-luna-synthetic-provider",
           usage: syntheticPiUsage,
           stopReason,
           ...(scenario === "text_status_failure"
@@ -283,6 +295,9 @@ function registeredTool(options: RegisteredToolOptions = {}): RegisteredTool {
   } as unknown as ExtensionContext;
   return {
     name: captured.name,
+    description: captured.description,
+    promptSnippet: captured.promptSnippet,
+    promptGuidelines: captured.promptGuidelines,
     ...(captured.executionMode === undefined
       ? {}
       : { executionMode: captured.executionMode }),
@@ -416,6 +431,13 @@ test("registered Pi tool loads native Harness workspace configuration and comple
     const tool = registeredTool({ helperModelAvailable: false });
     assert.equal(tool.name, "rlcd_brwsr_run");
     assert.equal(tool.executionMode, "sequential");
+    for (const guidance of [
+      tool.description,
+      tool.promptSnippet,
+      ...tool.promptGuidelines,
+    ]) {
+      assert.match(guidance, /benign, unauthenticated, non-booking/i);
+    }
 
     const result = await tool.execute(
       "click-journey",
@@ -689,6 +711,55 @@ test("helper measurements retain an aligned bounded suffix", async () => {
       assert.equal(numberField(combinedUsage, "totalTokens"), 575);
     },
   );
+});
+
+test("bounded metadata discloses every clipped source field", async () => {
+  await withFakeExternalInteractions("text_large_metadata", async () => {
+    const result = await registeredTool().execute(
+      "large-metadata",
+      baseInput(),
+      new AbortController().signal,
+    );
+    const details = detailsOf(result);
+    const observation = nullableRecordField(details, "lastObservation");
+    assert.ok(observation);
+    const trace = arrayField(details, "trace").map((entry, index) =>
+      recordValue(entry, `trace[${index}]`),
+    );
+    const fill = trace.find(
+      (entry) => stringField(entry, "operation") === "TYPE_TEXT",
+    );
+    assert.ok(fill);
+    const usage = recordField(details, "usage");
+    const decision = recordValue(
+      arrayField(recordField(usage, "jev"), "decisions")[0],
+      "first Jev decision",
+    );
+    const helperCall = recordValue(
+      arrayField(recordField(usage, "textHelper"), "calls")[0],
+      "text helper call",
+    );
+
+    assert.equal(stringField(details, "status"), "completion_claim");
+    assert.equal(codePointLength(stringField(observation, "url")), 2_048);
+    assert.equal(booleanField(observation, "urlTruncated"), true);
+    assert.equal(codePointLength(stringField(observation, "title")), 300);
+    assert.equal(booleanField(observation, "titleTruncated"), true);
+    assert.equal(codePointLength(stringField(fill, "action")), 300);
+    assert.equal(booleanField(fill, "actionTruncated"), true);
+    assert.equal(booleanField(fill, "operationTruncated"), false);
+    assert.equal(codePointLength(stringField(fill, "url")), 2_048);
+    assert.equal(booleanField(fill, "urlTruncated"), true);
+    assert.equal(codePointLength(stringField(decision, "reportedModel")), 160);
+    assert.equal(booleanField(decision, "reportedModelTruncated"), true);
+    assert.equal(
+      codePointLength(stringField(helperCall, "reportedModel")),
+      160,
+    );
+    assert.equal(booleanField(helperCall, "reportedModelTruncated"), true);
+    assert.equal(codePointLength(stringField(helperCall, "field")), 300);
+    assert.equal(booleanField(helperCall, "fieldTruncated"), true);
+  });
 });
 
 test("unusable helper generations and provider failures stop before field mutation", async () => {
@@ -1020,8 +1091,8 @@ test("valid Unicode URL and goal bounds cross the serialized request", async () 
     const result = await registeredTool().execute(
       "unicode-request",
       baseInput({
-        url: `https://example.test/${"界".repeat(2_000)}`,
-        goal: "目".repeat(1_200),
+        url: `https://example.test/${"😀".repeat(2_027)}`,
+        goal: "🧭".repeat(1_200),
       }),
       new AbortController().signal,
     );
@@ -1408,6 +1479,67 @@ test("valid WAIT-heavy progress reaches the wall budget instead of a record-coun
   });
 });
 
+test("pre-spawn work consumes the original wall budget", async () => {
+  await withFakeExternalInteractions("pre_spawn_delay", async (harnessHome) => {
+    const targetMarker = join(harnessHome, "pre-spawn-targets");
+    process.env.RLCD_TEST_TARGET_EVENTS_MARKER = targetMarker;
+
+    const result = await registeredTool().execute(
+      "pre-spawn-deadline",
+      baseInput({ maxSeconds: 1 }),
+      new AbortController().signal,
+    );
+    const details = detailsOf(result);
+
+    assert.equal(stringField(details, "status"), "stopped");
+    assert.equal(stringField(details, "stopReason"), "time_budget");
+    assert.equal(recordField(details, "ownership").bridgePid, null);
+    assert.deepEqual(recordField(details, "cleanup"), {
+      taskTab: "not_created",
+      bridgeProcess: "reaped",
+      sharedDaemon: "retained",
+    });
+    await assert.rejects(access(targetMarker));
+  });
+});
+
+test("a prediction crossing the deadline cannot dispatch an action", async () => {
+  await withFakeExternalInteractions(
+    "prediction_crosses_deadline",
+    async (harnessHome) => {
+      const inputMarker = join(harnessHome, "deadline-input");
+      process.env.RLCD_TEST_INPUT_DISPATCH_MARKER = inputMarker;
+
+      let parentBlocked = false;
+      const result = await registeredTool().execute(
+        "prediction-deadline",
+        baseInput({ maxSeconds: 1 }),
+        new AbortController().signal,
+        (update) => {
+          if (
+            !parentBlocked &&
+            update.content[0]?.text.includes('"phase":"observation"')
+          ) {
+            parentBlocked = true;
+            Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1_200);
+          }
+        },
+      );
+      const details = detailsOf(result);
+      const trace = arrayField(details, "trace").map((entry, index) =>
+        recordValue(entry, `trace[${index}]`),
+      );
+
+      assert.equal(parentBlocked, true);
+      assert.equal(stringField(details, "status"), "stopped");
+      assert.equal(stringField(details, "stopReason"), "time_budget");
+      assert.equal(stringField(trace[0]!, "outcome"), "time_budget");
+      assert.equal(stringField(details, "mutationOutcome"), "not_in_flight");
+      await assert.rejects(access(inputMarker));
+    },
+  );
+});
+
 test("immediate Pi cancellation does not start browser or model work", async () => {
   await withFakeExternalInteractions("click_done", async (harnessHome) => {
     const browserWorkMarker = join(harnessHome, "browser-work");
@@ -1431,8 +1563,10 @@ test("immediate Pi cancellation does not start browser or model work", async () 
     assert.equal(stringField(details, "stopReason"), "cancelled");
     assert.deepEqual(recordField(details, "ownership"), {
       targetId: null,
+      targetIdTruncated: false,
       bridgePid: null,
       daemon: null,
+      daemonTruncated: false,
     });
     assert.deepEqual(recordField(details, "cleanup"), {
       taskTab: "not_created",
@@ -1443,6 +1577,34 @@ test("immediate Pi cancellation does not start browser or model work", async () 
     await assert.rejects(access(modelWorkMarker));
     await assert.rejects(access(targetMarker));
   });
+});
+
+test("cancellation after Agent construction still closes the owned tab", async () => {
+  await withFakeExternalInteractions(
+    "cancel_after_agent_construction",
+    async (harnessHome) => {
+      const targetMarker = join(harnessHome, "constructed-agent-targets");
+      process.env.RLCD_TEST_TARGET_EVENTS_MARKER = targetMarker;
+
+      const result = await registeredTool().execute(
+        "cancel-after-agent-construction",
+        baseInput(),
+        new AbortController().signal,
+      );
+      const details = detailsOf(result);
+
+      assert.equal(stringField(details, "status"), "stopped");
+      assert.equal(stringField(details, "stopReason"), "cancelled");
+      assert.equal(
+        stringField(recordField(details, "cleanup"), "taskTab"),
+        "closed",
+      );
+      assert.deepEqual(await targetEvents(targetMarker), [
+        "created:rlcd-owned-target",
+        "close:rlcd-owned-target",
+      ]);
+    },
+  );
 });
 
 test("Pi cancellation cooperatively closes the owned tab and reaps the bridge", async () => {
@@ -1569,6 +1731,39 @@ test("post-action observation errors retain authoritative execution history", as
   );
 });
 
+test("reconciled stale execution survives bridge death", async () => {
+  await withFakeExternalInteractions(
+    "post_action_stale_bridge_death",
+    async (harnessHome) => {
+      const targetMarker = join(harnessHome, "stale-death-targets");
+      process.env.RLCD_TEST_TARGET_EVENTS_MARKER = targetMarker;
+
+      const result = await registeredTool().execute(
+        "stale-reobservation-death",
+        baseInput(),
+        new AbortController().signal,
+      );
+      const details = detailsOf(result);
+      const trace = arrayField(details, "trace").map((entry, index) =>
+        recordValue(entry, `trace[${index}]`),
+      );
+
+      assert.equal(stringField(details, "status"), "error");
+      assert.equal(stringField(details, "stopReason"), "bridge_error");
+      assert.equal(stringField(trace[0]!, "outcome"), "executed");
+      assert.equal(stringField(details, "mutationOutcome"), "not_in_flight");
+      assert.equal(
+        stringField(recordField(details, "cleanup"), "taskTab"),
+        "closed",
+      );
+      assert.deepEqual(await targetEvents(targetMarker), [
+        "created:rlcd-owned-target",
+        "close:rlcd-owned-target",
+      ]);
+    },
+  );
+});
+
 test("bridge death retains reported ownership and progress and targets only that tab for cleanup", async () => {
   await withFakeExternalInteractions(
     "bridge_death_cleanup_confirmed",
@@ -1646,7 +1841,11 @@ test("an unconfirmed primary close uses targeted fallback cleanup", async () => 
       );
       assert.match(
         stringField(details, "diagnostic"),
-        /task-tab cleanup was not confirmed/i,
+        /primary task-tab cleanup was not confirmed/i,
+      );
+      assert.match(
+        stringField(details, "diagnostic"),
+        /targeted fallback cleanup confirmed/i,
       );
       assert.deepEqual(await targetEvents(targetMarker), [
         "created:rlcd-owned-target",
@@ -1758,7 +1957,7 @@ test("malformed, truncated, and oversized bridge streams retain bounded partial 
       );
       assert.match(stringField(observation, "evidence"), /Click Continue/);
       assert.ok(stringField(details, "diagnostic").length <= 4_000);
-      assert.ok((result.content[0]?.text.length ?? Infinity) <= 12_000);
+      assert.ok(codePointLength(result.content[0]?.text ?? "") <= 12_000);
       assert.equal(
         stringField(recordField(details, "cleanup"), "taskTab"),
         "closed",
@@ -1799,8 +1998,8 @@ test("malformed output after a large valid observation still has hard-bounded mo
 
       const content = result.content[0]?.text ?? "";
       assert.ok(
-        content.length <= 12_000,
-        `content was ${content.length} chars`,
+        codePointLength(content) <= 12_000,
+        `content was ${codePointLength(content)} characters`,
       );
       assert.doesNotMatch(content, /synthetic/);
       const modelVisible: unknown = JSON.parse(content);
@@ -2061,8 +2260,32 @@ test("model-visible output stays bounded while disclosing truncated evidence", a
 
     assert.equal(stringField(details, "stopReason"), "done_claim");
     assert.equal(booleanField(observation, "evidenceTruncated"), true);
-    assert.ok(stringField(observation, "evidence").length <= 4_000);
-    assert.ok((result.content[0]?.text.length ?? Infinity) <= 12_000);
+    assert.ok(codePointLength(stringField(observation, "evidence")) <= 4_000);
+    assert.ok(codePointLength(result.content[0]?.text ?? "") <= 12_000);
+  });
+});
+
+test("astral-Unicode terminal framing uses code-point bounds", async () => {
+  await withFakeExternalInteractions("astral_trace", async () => {
+    const result = await registeredTool().execute(
+      "astral-trace",
+      baseInput({ maxActions: 20 }),
+      new AbortController().signal,
+    );
+    const details = detailsOf(result);
+    const trace = arrayField(details, "trace").map((entry, index) =>
+      recordValue(entry, `trace[${index}]`),
+    );
+
+    assert.equal(stringField(details, "status"), "stopped");
+    assert.equal(stringField(details, "stopReason"), "action_budget");
+    assert.ok(trace.length > 0);
+    assert.ok(
+      trace.some(
+        (entry) => typeof entry.url === "string" && entry.url.includes("😀"),
+      ),
+    );
+    assert.ok(codePointLength(result.content[0]?.text ?? "") <= 12_000);
   });
 });
 
