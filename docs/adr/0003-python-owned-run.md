@@ -35,10 +35,19 @@ Pi OAuth/Luna completion, backend selector, or replacement helper orchestration.
 The implementation retains two revision-pinned integrations:
 
 1. Rebind upstream's imported `ensure_daemon` symbol to Browser Harness's
-   `require_existing_daemon` after enforcing native local-only configuration.
+   `require_existing_daemon` after rejecting currently resolved remote/cloud
+   configuration and unsupported reported modes.
 2. After `Agent` construction returns, retain its known target only for a normal
    completion claim when requested; otherwise make one direct
    `Target.closeTarget` call and report `closed` only for `success: true`.
+
+The existing-daemon check does not bind a same-named `cdp` daemon to the current
+endpoint, profile, or local-vs-remote settings; the reported mode is not endpoint
+attestation. Browser Harness consumes those settings at daemon startup. After a
+browser setting changes, the operator must stop the existing daemon, restart it,
+and reprovision before preflight or another run, or the stale daemon can still
+reach a remote or otherwise wrong browser. This accepted limitation avoids a
+second configuration-to-daemon binding owner.
 
 Python consumes `Agent.run()` rather than calling `predict` and `act`. Its result
 contains only bounded existing page/history/model/usage state, target and cleanup

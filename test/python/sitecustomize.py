@@ -12,6 +12,7 @@ import math
 import os
 import re
 import signal
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -63,6 +64,22 @@ def _terminal_envelope(text: str) -> dict[str, object]:
 
 if _SCENARIO == "invalid_terminal_envelope":
     sys.stdout.write("{}")
+    sys.stdout.flush()
+    os._exit(0)
+
+if _SCENARIO == "unsafe_terminal_number":
+    result = _terminal_envelope("")
+    usage = result["usage"]
+    if not isinstance(usage, dict):
+        raise AssertionError("terminal fixture usage must be an object")
+    usage["records"] = [
+        {
+            "source": "jev_decision",
+            "model": "jev-1.13.0",
+            "usage": {"unsafe_integer": 10**400},
+        }
+    ]
+    sys.stdout.write(json.dumps(result, separators=(",", ":")))
     sys.stdout.flush()
     os._exit(0)
 
@@ -154,6 +171,13 @@ if _SCENARIO == "raw_stdout_overflow":
     sys.stdout.write(f"raw-child-secret {secret} " + "X" * 100_000)
     sys.stdout.flush()
     time.sleep(30)
+
+if _SCENARIO == "exit_before_stdio_close":
+    subprocess.Popen(
+        [sys.executable, "-S", "-c", "import time; time.sleep(1.4)"],
+        stdin=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
 
 if _SCENARIO == "terminal_then_nonzero":
 
@@ -432,8 +456,11 @@ def _post_json(url, key, body):
     if _SCENARIO == "surrogate_usage":
         reported_model = "deterministic-\ud800-model"
         usage = {
-            os.environ.get("TYPESAFE_API_KEY", "missing"): math.nan,
-            os.environ.get("TEXT_MODEL_API_KEY", "missing"): math.inf,
+            os.environ.get("TYPESAFE_API_KEY", "missing"): 11,
+            os.environ.get("TEXT_MODEL_API_KEY", "missing"): 22,
+            "unsafe_integer": 10**400,
+            "fractional_cost": 0.125,
+            "not_finite": math.inf,
         }
     if _SCENARIO == "terminal_overflow":
         usage = {f"large-key-{index}": "V" * 5_000 for index in range(40)}

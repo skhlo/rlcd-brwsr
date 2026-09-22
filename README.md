@@ -50,6 +50,11 @@ scripts/provision-browser.sh
 scripts/preflight-runtime.sh
 ```
 
+After changing any native Browser Harness browser selector, endpoint, or profile
+setting, stop the existing same-named daemon with Harness's native controls,
+then restart it through `scripts/provision-browser.sh` before preflight or tool
+use.
+
 `uv.lock` fixes Python 3.12, Jev Ultrafast commit
 `1231850a0bf1a0c0341fe408ef1668dbbfdfac46`, and Browser Harness 0.1.13.
 `config/runtime.json` fixes Jev to `jev-1.13.0`, the helper tuple above, a
@@ -60,10 +65,17 @@ Browser Harness remains the only browser-configuration owner. The runner and
 preflight first load its native workspace `.env`, then one shared runtime owner
 installs missing selected-model defaults and rejects helper-tuple conflicts.
 Conflicts stop before daemon checks or browser startup. Explicit provisioning may
-start the natively selected daemon. Preflight and tool runs require that named
-daemon to be healthy and already running. Runs reject cloud, remote WebSocket,
-`BU_AUTOSPAWN`, and non-loopback CDP settings; they never recover or replace the
-daemon through upstream `ensure_daemon()`.
+start the natively configured daemon. Preflight and tool runs require that named
+daemon to be healthy and already running. Runs reject currently resolved cloud,
+remote WebSocket, `BU_AUTOSPAWN`, and non-loopback CDP settings; they never
+recover or replace the daemon through upstream `ensure_daemon()`.
+
+These checks do not attest that an already-running same-named `cdp` daemon still
+uses the current endpoint, profile, or local-vs-remote settings. Browser Harness
+consumes those settings when the daemon starts, and its reported `cdp` mode does
+not identify the live endpoint. Skipping the required stop/restart/reprovision
+step after a settings change can therefore route a run to a stale remote or
+otherwise wrong browser.
 
 The helper key is checked only when upstream selects `TYPE_TEXT`, so click-only
 tasks work without it. Native missing-key, provider, and value-validation errors

@@ -88,7 +88,8 @@ export const rlcdBrwsrParameters = Type.Object(
 
 export type RlcdRunInput = Static<typeof rlcdBrwsrParameters>;
 
-type StopReason = "cancelled" | "time_budget" | "output_limit";
+type ParentStopReason = "cancelled" | "time_budget";
+type StopReason = ParentStopReason | "output_limit";
 
 interface ChildOutcome {
   terminal: Buffer;
@@ -106,8 +107,26 @@ interface ToolResult {
   details: Record<string, unknown>;
 }
 
+interface StopArbiter {
+  current(): ParentStopReason | null;
+  attach(handler: (reason: ParentStopReason) => void): () => void;
+  dispose(): void;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function hasOnlySafeNumbers(value: unknown): boolean {
+  if (typeof value === "number") {
+    return (
+      Number.isFinite(value) &&
+      (!Number.isInteger(value) || Number.isSafeInteger(value))
+    );
+  }
+  if (Array.isArray(value)) return value.every(hasOnlySafeNumbers);
+  if (isRecord(value)) return Object.values(value).every(hasOnlySafeNumbers);
+  return true;
 }
 
 function hasExactKeys(
@@ -122,7 +141,7 @@ function hasExactKeys(
 }
 
 function isTerminalEnvelope(value: unknown): value is Record<string, unknown> {
-  if (!isRecord(value)) return false;
+  if (!isRecord(value) || !hasOnlySafeNumbers(value)) return false;
   const claim = value.completionClaim;
   const cleanup = value.cleanup;
   const output = value.output;
@@ -181,6 +200,11 @@ function utf8Bytes(value: string): number {
   return Buffer.byteLength(value, "utf8");
 }
 
+const GOAL_LEADING_WHITESPACE =
+  /^[\u0009-\u000d\u001c-\u0020\u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]+/u;
+const GOAL_TRAILING_WHITESPACE =
+  /[\u0009-\u000d\u001c-\u0020\u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]+$/u;
+
 function normalizedHttpUrl(value: unknown): string | null {
   if (typeof value !== "string" || Array.from(value).length > MAX_URL_CHARS) {
     return null;
@@ -201,9 +225,20 @@ function normalizedHttpUrl(value: unknown): string | null {
   }
 }
 
+function normalizedGoal(value: unknown): string | null {
+  if (typeof value !== "string" || Array.from(value).length > MAX_GOAL_CHARS) {
+    return null;
+  }
+  const normalized = value
+    .replace(GOAL_LEADING_WHITESPACE, "")
+    .replace(GOAL_TRAILING_WHITESPACE, "");
+  return normalized || null;
+}
+
 function invalidInput(
   params: RlcdRunInput,
   normalizedUrl: string | null,
+  normalizedGoalValue: string | null,
 ): string | null {
   const raw = params as Record<string, unknown>;
   const allowed = new Set(["url", "goal", "maxSeconds", "retainTab"]);
@@ -213,11 +248,7 @@ function invalidInput(
   if (normalizedUrl === null) {
     return `url must be an absolute HTTP(S) URL without credentials and at most ${MAX_URL_CHARS} characters`;
   }
-  if (
-    typeof params.goal !== "string" ||
-    !params.goal.trim() ||
-    Array.from(params.goal).length > MAX_GOAL_CHARS
-  ) {
+  if (normalizedGoalValue === null) {
     return `goal must be nonempty and at most ${MAX_GOAL_CHARS} characters`;
   }
   if (
@@ -310,7 +341,7 @@ function asToolResult(
   return { content: [{ type: "text", text }], details };
 }
 
-function requestStopResult(reason: "cancelled" | "time_budget"): ToolResult {
+function requestStopResult(reason: ParentStopReason): ToolResult {
   return asToolResult(
     baseResult(
       "stopped",
@@ -324,11 +355,55 @@ function requestStopResult(reason: "cancelled" | "time_budget"): ToolResult {
   );
 }
 
+function createStopArbiter(
+  deadlineAt: number,
+  signal: AbortSignal | undefined,
+): StopArbiter {
+  let firstStop: ParentStopReason | null = null;
+  let deadlineTimer: NodeJS.Timeout | undefined;
+  let disposed = false;
+  const listeners = new Set<(reason: ParentStopReason) => void>();
+  const onAbort = () => requestStop("cancelled");
+  const requestStop = (reason: ParentStopReason) => {
+    if (disposed || firstStop !== null) return;
+    firstStop = reason;
+    if (deadlineTimer) clearTimeout(deadlineTimer);
+    signal?.removeEventListener("abort", onAbort);
+    for (const listener of listeners) listener(reason);
+    listeners.clear();
+  };
+
+  if (signal?.aborted) {
+    requestStop("cancelled");
+  } else {
+    signal?.addEventListener("abort", onAbort, { once: true });
+    const remaining = Math.max(0, deadlineAt - Date.now());
+    if (remaining === 0) requestStop("time_budget");
+    else
+      deadlineTimer = setTimeout(() => requestStop("time_budget"), remaining);
+  }
+
+  return {
+    current: () => firstStop,
+    attach(handler) {
+      if (firstStop !== null) handler(firstStop);
+      else if (!disposed) listeners.add(handler);
+      return () => listeners.delete(handler);
+    },
+    dispose() {
+      if (disposed) return;
+      disposed = true;
+      if (deadlineTimer) clearTimeout(deadlineTimer);
+      signal?.removeEventListener("abort", onAbort);
+      listeners.clear();
+    },
+  };
+}
+
 function waitForChild(
   child: ChildProcessWithoutNullStreams,
   serializedRequest: string,
-  deadlineAt: number,
-  signal: AbortSignal | undefined,
+  stopArbiter: StopArbiter,
 ): Promise<ChildOutcome> {
   return new Promise((resolvePromise) => {
     const chunks: Buffer[] = [];
@@ -343,9 +418,9 @@ function waitForChild(
     let hardStopTimer: NodeJS.Timeout | undefined;
 
     const requestStop = (reason: StopReason) => {
-      if (firstStop !== null) return;
+      if (firstStop !== null || exitObserved) return;
       firstStop = reason;
-      if (exitObserved || child.pid === undefined) return;
+      if (child.pid === undefined) return;
       try {
         child.kill("SIGTERM");
       } catch {
@@ -361,12 +436,7 @@ function waitForChild(
       }, STOP_GRACE_MS);
     };
 
-    const onAbort = () => requestStop("cancelled");
-    signal?.addEventListener("abort", onAbort, { once: true });
-    const deadlineTimer = setTimeout(
-      () => requestStop("time_budget"),
-      Math.max(0, deadlineAt - Date.now()),
-    );
+    const detachStop = stopArbiter.attach(requestStop);
 
     child.stdout.on("data", (chunk: Buffer) => {
       stdoutBytes += chunk.length;
@@ -391,13 +461,15 @@ function waitForChild(
       exitObserved = true;
       exitCode = code;
       exitSignal = childSignal;
+      detachStop();
+      stopArbiter.dispose();
       if (hardStopTimer) clearTimeout(hardStopTimer);
     });
     child.on("close", () => {
       if (child.pid !== undefined && !exitObserved) return;
-      clearTimeout(deadlineTimer);
+      detachStop();
+      stopArbiter.dispose();
       if (hardStopTimer) clearTimeout(hardStopTimer);
-      signal?.removeEventListener("abort", onAbort);
       resolvePromise({
         terminal: Buffer.concat(chunks),
         stdoutOverflow: stdoutBytes > runtimeConfig.terminalMaxUtf8Bytes,
@@ -414,9 +486,6 @@ function waitForChild(
       // EPIPE is represented by the missing/invalid terminal result after exit.
     });
     child.stdin.end(serializedRequest, "utf8");
-
-    // A pre-aborted signal does not reliably dispatch a newly added listener.
-    if (signal?.aborted) onAbort();
   });
 }
 
@@ -530,8 +599,13 @@ async function runRegisteredTool(
   const maxSeconds = params.maxSeconds ?? DEFAULT_MAX_SECONDS;
   const deadlineAt = startedAt + maxSeconds * 1_000;
   const normalizedUrl = normalizedHttpUrl(params.url);
-  const inputError = invalidInput(params, normalizedUrl);
-  if (inputError !== null || normalizedUrl === null) {
+  const normalizedGoalValue = normalizedGoal(params.goal);
+  const inputError = invalidInput(params, normalizedUrl, normalizedGoalValue);
+  if (
+    inputError !== null ||
+    normalizedUrl === null ||
+    normalizedGoalValue === null
+  ) {
     return asToolResult(
       baseResult(
         "error",
@@ -542,12 +616,9 @@ async function runRegisteredTool(
       ),
     );
   }
-  if (signal?.aborted) return requestStopResult("cancelled");
-  if (Date.now() >= deadlineAt) return requestStopResult("time_budget");
-
   const input = {
     url: normalizedUrl,
-    goal: params.goal.trim(),
+    goal: normalizedGoalValue,
     retainTab: params.retainTab ?? false,
   };
   const serializedRequest = `${JSON.stringify(input)}\n`;
@@ -563,59 +634,63 @@ async function runRegisteredTool(
     );
   }
 
+  const stopArbiter = createStopArbiter(deadlineAt, signal);
   try {
-    await access(pythonExecutable, constants.X_OK);
-    await access(runnerExecutable, constants.R_OK);
-  } catch {
-    if (signal?.aborted) return requestStopResult("cancelled");
-    if (Date.now() >= deadlineAt) return requestStopResult("time_budget");
-    return asToolResult(
-      baseResult(
-        "error",
-        "setup_error",
-        "not_started",
-        "not_created",
-        "Project runtime is missing; run scripts/setup-runtime.sh",
-      ),
-    );
-  }
-  if (signal?.aborted) return requestStopResult("cancelled");
-  if (Date.now() >= deadlineAt) return requestStopResult("time_budget");
+    const initialStop = stopArbiter.current();
+    if (initialStop) return requestStopResult(initialStop);
 
-  let child: ChildProcessWithoutNullStreams;
-  try {
-    child = spawn(pythonExecutable, [runnerExecutable], {
-      cwd: projectRoot,
-      env: { ...process.env },
-      shell: false,
-      stdio: ["pipe", "pipe", "pipe"],
-    });
-  } catch {
-    return asToolResult(
-      baseResult(
-        "error",
-        "setup_error",
-        "not_started",
-        "not_created",
-        "Runner process could not be started",
-      ),
-    );
-  }
+    try {
+      await access(pythonExecutable, constants.X_OK);
+      await access(runnerExecutable, constants.R_OK);
+    } catch {
+      const stop = stopArbiter.current();
+      if (stop) return requestStopResult(stop);
+      return asToolResult(
+        baseResult(
+          "error",
+          "setup_error",
+          "not_started",
+          "not_created",
+          "Project runtime is missing; run scripts/setup-runtime.sh",
+        ),
+      );
+    }
 
-  const outcome = await waitForChild(
-    child,
-    serializedRequest,
-    deadlineAt,
-    signal,
-  );
-  return resultFromOutcome(outcome);
+    const preSpawnStop = stopArbiter.current();
+    if (preSpawnStop) return requestStopResult(preSpawnStop);
+
+    let child: ChildProcessWithoutNullStreams;
+    try {
+      child = spawn(pythonExecutable, [runnerExecutable], {
+        cwd: projectRoot,
+        env: { ...process.env },
+        shell: false,
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+    } catch {
+      return asToolResult(
+        baseResult(
+          "error",
+          "setup_error",
+          "not_started",
+          "not_created",
+          "Runner process could not be started",
+        ),
+      );
+    }
+
+    const outcome = await waitForChild(child, serializedRequest, stopArbiter);
+    return resultFromOutcome(outcome);
+  } finally {
+    stopArbiter.dispose();
+  }
 }
 
 export default function rlcdBrwsrExtension(pi: ExtensionAPI): void {
   pi.registerTool({
     name: "rlcd_brwsr_run",
     label: "RLCD Browser",
-    description: `Run one bounded Jev Ultrafast browser task for the initial benign, unauthenticated, non-booking scope. The parent requests stop after maxSeconds (default ${DEFAULT_MAX_SECONDS}, maximum ${MAX_SECONDS}) but cannot guarantee no action crosses that deadline. retainTab applies only to a normal completion claim. Browser Harness must already have the selected local daemon running. Completion claims require independent verification. Terminal JSON, including escaping, is capped at ${runtimeConfig.terminalMaxUtf8Bytes} UTF-8 bytes; omissions are disclosed. Native usage records are incomplete and are omitted from Pi totals.`,
+    description: `Run one bounded Jev Ultrafast browser task for the initial benign, unauthenticated, non-booking scope. The parent requests stop after maxSeconds (default ${DEFAULT_MAX_SECONDS}, maximum ${MAX_SECONDS}) but cannot guarantee no action crosses that deadline. retainTab applies only to a normal completion claim. Browser Harness must already have the named daemon running; after browser-setting changes, stop and reprovision it because current checks do not attest an existing daemon's endpoint or profile. Completion claims require independent verification. Terminal JSON, including escaping, is capped at ${runtimeConfig.terminalMaxUtf8Bytes} UTF-8 bytes; omissions are disclosed. Native usage records are incomplete and are omitted from Pi totals.`,
     promptSnippet:
       "Delegate one already-authorized benign, unauthenticated, non-booking browser task to the bounded fast loop",
     promptGuidelines: [

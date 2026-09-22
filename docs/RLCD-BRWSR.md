@@ -92,7 +92,7 @@ only the coarse `maxSeconds` stop request.
 ```text
 Pi tool
   -> validate input; start fixed project-local Python with one JSON stdin request
-  -> Python resolves native configuration and requires the existing local Harness
+  -> Python resolves native configuration and requires the existing named Harness daemon
   -> Python constructs Agent and consumes Agent.run()
   -> upstream owns observation, Jev selection, native helper HTTP and browser input
   -> Python projects available state, makes the normal cleanup/retention decision
@@ -118,8 +118,9 @@ history and page data.
 Two small pinned integrations remain justified:
 
 1. Bind upstream's imported `ensure_daemon` startup symbol to Harness's
-   `require_existing_daemon`, retaining the existing small local-mode check.
-   Calling direct `Agent` otherwise permits automatic setup/recovery.
+   `require_existing_daemon`, retaining the current resolved-configuration and
+   reported-mode checks. Calling direct `Agent` otherwise permits automatic
+   setup/recovery.
 2. Once construction returns a known target, use its pinned handle for optional
    retention and one direct `Target.closeTarget` call. Report confirmed closure
    only from a successful response; `Agent.close()` returning is not proof.
@@ -134,7 +135,16 @@ Retain the uv-managed Python 3.12 environment, Jev Ultrafast commit
 `1231850a0bf1a0c0341fe408ef1668dbbfdfac46`, Browser Harness 0.1.13 and evaluated
 Jev model pin. Browser Harness remains the single browser-configuration owner.
 Loading the Pi extension stays inert; installation/provisioning is explicit,
-and tool runs require the already-provisioned local named daemon.
+and tool runs require the already-provisioned named daemon while rejecting
+currently resolved remote/cloud configuration and unsupported reported modes.
+
+This intentionally does not attest that an already-running same-named `cdp`
+daemon matches the current endpoint, profile, or local-vs-remote settings.
+Browser Harness consumes those settings at daemon startup, and `cdp` is only a
+reported mode. After any browser setting changes, the operator must explicitly
+stop the existing daemon, restart it, and reprovision through the project setup
+path before preflight or another tool run. Otherwise the stale daemon can still
+reach a remote or otherwise wrong browser.
 
 Use native `TYPESAFE_API_KEY` and `TEXT_MODEL_*` settings through the authorized
 host-local environment/configuration. Do not introduce a secret store, copy

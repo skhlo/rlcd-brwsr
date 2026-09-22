@@ -1,4 +1,4 @@
-"""Shared runtime pins, byte limits, and local Browser Harness checks."""
+"""Shared runtime pins, byte limits, and Browser Harness scope checks."""
 
 from __future__ import annotations
 
@@ -132,7 +132,7 @@ def resolve_native_environment() -> str:
 
 
 def require_existing_local_daemon(daemon_name: str) -> str:
-    """Require the natively selected existing daemon and reject cloud mode."""
+    """Require the configured named daemon and reject unsupported reported modes."""
     from browser_harness import admin
 
     admin.require_existing_daemon()

@@ -31,6 +31,12 @@ _URL_MAX_BYTES = 2_048
 _TITLE_MAX_BYTES = 512
 _DIAGNOSTIC_MAX_BYTES = 1_024
 _TARGET_MAX_BYTES = 512
+_MAX_SAFE_INTEGER = (1 << 53) - 1
+_GOAL_WHITESPACE = (
+    "\u0009\u000a\u000b\u000c\u000d\u001c\u001d\u001e\u001f\u0020"
+    "\u0085\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006"
+    "\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff"
+)
 _ALLOWED_REQUEST_KEYS = {"url", "goal", "retainTab"}
 
 
@@ -69,19 +75,31 @@ def _redact_text(value: str, credentials: tuple[str, ...]) -> str:
 
 def _sanitize(value: Any, credentials: tuple[str, ...]) -> Any:
     """Redact and normalize complete values before any clipping occurs."""
-    if value is None or isinstance(value, (bool, int)):
+    if value is None or isinstance(value, bool):
         return value
+    if isinstance(value, int):
+        return value if abs(value) <= _MAX_SAFE_INTEGER else None
     if isinstance(value, float):
-        return value if math.isfinite(value) else None
+        if not math.isfinite(value):
+            return None
+        if value.is_integer() and abs(value) > _MAX_SAFE_INTEGER:
+            return None
+        return value
     if isinstance(value, str):
         return _redact_text(value, credentials)
     if isinstance(value, (list, tuple)):
         return [_sanitize(item, credentials) for item in value]
     if isinstance(value, dict):
-        return {
-            _redact_text(str(key), credentials): _sanitize(item, credentials)
-            for key, item in value.items()
-        }
+        sanitized: dict[str, Any] = {}
+        for key, item in value.items():
+            base_key = _redact_text(str(key), credentials)
+            safe_key = base_key
+            suffix = 2
+            while safe_key in sanitized:
+                safe_key = f"{base_key}#{suffix}"
+                suffix += 1
+            sanitized[safe_key] = _sanitize(item, credentials)
+        return sanitized
     return _redact_text(str(value), credentials)
 
 
@@ -122,6 +140,10 @@ def _clip_field(
         _append_omission(omissions, label)
 
 
+def _normalize_goal(value: str) -> str:
+    return value.strip(_GOAL_WHITESPACE)
+
+
 def _validate_request(value: Any) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValueError("request must be a JSON object")
@@ -142,13 +164,16 @@ def _validate_request(value: Any) -> dict[str, Any]:
         or parsed.password is not None
     ):
         raise ValueError("url must be an absolute HTTP(S) URL without credentials")
-    if not isinstance(goal, str) or not goal.strip():
+    if not isinstance(goal, str):
+        raise ValueError("goal must be a string")
+    normalized_goal = _normalize_goal(goal)
+    if not normalized_goal:
         raise ValueError("goal must be a nonempty string")
     if type(retain_tab) is not bool:
         raise ValueError("retainTab must be a boolean")
     return {
         "url": url,
-        "goal": goal.strip(),
+        "goal": normalized_goal,
         "retainTab": retain_tab,
     }
 

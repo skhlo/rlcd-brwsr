@@ -280,6 +280,7 @@ test("invalid input and request overflow stop before Python or external work", a
     { url: "file:///tmp/nope" },
     { url: "https://user:secret@example.test/" },
     { goal: "   " },
+    { goal: "\u001c" },
     { maxSeconds: 0 },
     { maxSeconds: 1.5 },
     { retainTab: "yes" as unknown as boolean },
@@ -318,15 +319,21 @@ test("URL validation counts code points and passes one canonical URL to Python",
   }
 });
 
-test("maxSeconds remains public but is omitted from the child request", async () => {
+test("maxSeconds remains public while normalized goals enter the child request", async () => {
   await withScenario(
     "click",
-    { params: { maxSeconds: 5 } },
+    {
+      params: {
+        goal: "\u001c Complete the deterministic fixture \u001c",
+        maxSeconds: 5,
+      },
+    },
     async ({ result, markers }) => {
       assert.equal(detailsOf(result).status, "completion_claim");
       const request = JSON.parse(
         await readFile(markers.stdin, "utf8"),
       ) as Record<string, unknown>;
+      assert.equal(request.goal, "Complete the deterministic fixture");
       assert.equal(Object.hasOwn(request, "maxSeconds"), false);
     },
   );
@@ -590,6 +597,74 @@ test("first stop wins and cooperative cancellation preserves close evidence", as
 });
 
 test(
+  "a clean exit before stdio close preserves completion and retention",
+  { timeout: 4_000 },
+  async () => {
+    await withScenario(
+      "exit_before_stdio_close",
+      { params: { maxSeconds: 1, retainTab: true } },
+      ({ result }) => {
+        const details = detailsOf(result);
+        assert.equal(details.status, "completion_claim");
+        assert.equal(details.stopReason, "done");
+        const cleanup = recordField(details, "cleanup");
+        assert.equal(cleanup.taskTab, "retained");
+        assert.equal(cleanup.bridgeProcess, "reaped");
+      },
+    );
+  },
+);
+
+test("a pre-spawn deadline remains first when cancellation follows", async () => {
+  let abortedReads = 0;
+  let abortListener: (() => void) | undefined;
+  const signal = {
+    get aborted() {
+      abortedReads += 1;
+      return abortedReads > 1;
+    },
+    addEventListener(_type: string, listener: () => void) {
+      abortListener = listener;
+    },
+    removeEventListener() {},
+  } as unknown as AbortSignal;
+  const originalSetTimeout = globalThis.setTimeout;
+  globalThis.setTimeout = ((
+    callback: (...args: unknown[]) => void,
+    delayMs?: number,
+    ...args: unknown[]
+  ) => {
+    if ((delayMs ?? 0) > 0) {
+      const timer = originalSetTimeout(() => {}, 60_000);
+      queueMicrotask(() => {
+        callback(...args);
+        abortListener?.();
+      });
+      return timer;
+    }
+    return originalSetTimeout(callback, delayMs, ...args);
+  }) as typeof setTimeout;
+
+  try {
+    const result = await registeredTool().execute(
+      "test-call",
+      {
+        url: "https://example.test/start",
+        goal: "Complete the deterministic fixture",
+        maxSeconds: 1,
+      },
+      signal,
+    );
+    const details = detailsOf(result);
+    assert.equal(details.status, "stopped");
+    assert.equal(details.stopReason, "time_budget");
+    assert.equal(details.execution, "not_started");
+  } finally {
+    globalThis.setTimeout = originalSetTimeout;
+  }
+});
+
+test(
   "terminal claims require a clean exit and a valid result envelope",
   { timeout: 8_000 },
   async () => {
@@ -675,7 +750,7 @@ test(
   },
 );
 
-test("terminal JSON stays bounded and safe for Unicode, NaN, and oversized native state", async () => {
+test("terminal JSON stays bounded and safe for Unicode, numbers, and oversized native state", async () => {
   for (const scenario of ["surrogate_usage", "terminal_overflow"]) {
     await withScenario(scenario, {}, ({ result }) => {
       const details = detailsOf(result);
@@ -692,9 +767,34 @@ test("terminal JSON stays bounded and safe for Unicode, NaN, and oversized nativ
         assert.doesNotMatch(text, new RegExp(syntheticTypesafeKey));
         assert.doesNotMatch(text, new RegExp(syntheticHelperKey));
         assert.match(text, /\[REDACTED\]/);
+        const records = arrayField(recordField(details, "usage"), "records");
+        assert.ok(records.length > 0);
+        const usage = recordField(
+          records[0] as Record<string, unknown>,
+          "usage",
+        );
+        assert.equal(usage.unsafe_integer, null);
+        assert.equal(usage.fractional_cost, 0.125);
+        assert.equal(usage.not_finite, null);
+        assert.ok(Object.values(usage).includes(11));
+        assert.ok(Object.values(usage).includes(22));
+        assert.equal(
+          Object.keys(usage).filter((key) => key.startsWith("[REDACTED]"))
+            .length,
+          2,
+        );
       }
     });
   }
+});
+
+test("unsafe numbers in a child terminal envelope are rejected", async () => {
+  await withScenario("unsafe_terminal_number", {}, ({ result }) => {
+    const details = detailsOf(result);
+    assert.equal(details.status, "error");
+    assert.equal(details.stopReason, "invalid_terminal");
+    assert.equal(details.execution, "unknown");
+  });
 });
 
 test("terminal fitting discloses history records removed after field clipping", async () => {
