@@ -181,27 +181,37 @@ function utf8Bytes(value: string): number {
   return Buffer.byteLength(value, "utf8");
 }
 
-function invalidInput(params: RlcdRunInput): string | null {
-  const raw = params as Record<string, unknown>;
-  const allowed = new Set(["url", "goal", "maxSeconds", "retainTab"]);
-  if (Object.keys(raw).some((key) => !allowed.has(key))) {
-    return "input contains unsupported fields";
-  }
-  if (typeof params.url !== "string" || params.url.length > MAX_URL_CHARS) {
-    return `url must be a string of at most ${MAX_URL_CHARS} characters`;
+function normalizedHttpUrl(value: unknown): string | null {
+  if (typeof value !== "string" || Array.from(value).length > MAX_URL_CHARS) {
+    return null;
   }
   try {
-    const parsed = new URL(params.url);
+    const parsed = new URL(value);
     if (
       !["http:", "https:"].includes(parsed.protocol) ||
       !parsed.hostname ||
       parsed.username ||
       parsed.password
     ) {
-      return "url must be an absolute HTTP(S) URL without credentials";
+      return null;
     }
+    return parsed.href;
   } catch {
-    return "url must be an absolute HTTP(S) URL without credentials";
+    return null;
+  }
+}
+
+function invalidInput(
+  params: RlcdRunInput,
+  normalizedUrl: string | null,
+): string | null {
+  const raw = params as Record<string, unknown>;
+  const allowed = new Set(["url", "goal", "maxSeconds", "retainTab"]);
+  if (Object.keys(raw).some((key) => !allowed.has(key))) {
+    return "input contains unsupported fields";
+  }
+  if (normalizedUrl === null) {
+    return `url must be an absolute HTTP(S) URL without credentials and at most ${MAX_URL_CHARS} characters`;
   }
   if (
     typeof params.goal !== "string" ||
@@ -519,15 +529,16 @@ async function runRegisteredTool(
   const startedAt = Date.now();
   const maxSeconds = params.maxSeconds ?? DEFAULT_MAX_SECONDS;
   const deadlineAt = startedAt + maxSeconds * 1_000;
-  const inputError = invalidInput(params);
-  if (inputError) {
+  const normalizedUrl = normalizedHttpUrl(params.url);
+  const inputError = invalidInput(params, normalizedUrl);
+  if (inputError !== null || normalizedUrl === null) {
     return asToolResult(
       baseResult(
         "error",
         "invalid_input",
         "not_started",
         "not_created",
-        inputError,
+        inputError ?? "url validation failed",
       ),
     );
   }
@@ -535,9 +546,8 @@ async function runRegisteredTool(
   if (Date.now() >= deadlineAt) return requestStopResult("time_budget");
 
   const input = {
-    url: params.url,
+    url: normalizedUrl,
     goal: params.goal.trim(),
-    maxSeconds,
     retainTab: params.retainTab ?? false,
   };
   const serializedRequest = `${JSON.stringify(input)}\n`;

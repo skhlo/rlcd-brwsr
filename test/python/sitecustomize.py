@@ -446,3 +446,41 @@ def _post_json(url, key, body):
 
 
 model.post_json = _post_json
+
+
+if _SCENARIO in {"post_constructor_interrupt", "omission_overflow"}:
+    _OriginalAgent = jev_ultrafast.Agent
+
+    class _ScenarioAgent:
+        def __init__(self, *args, **kwargs):
+            self._agent = _OriginalAgent(*args, **kwargs)
+            self._interrupted = False
+
+        @property
+        def browser(self):
+            if _SCENARIO == "post_constructor_interrupt" and not self._interrupted:
+                self._interrupted = True
+                os.kill(os.getpid(), signal.SIGTERM)
+            return self._agent.browser
+
+        @property
+        def state(self):
+            return self._agent.state
+
+        def run(self):
+            yield from self._agent.run()
+            if _SCENARIO == "omission_overflow":
+                self._agent.state["history"] = [
+                    {
+                        "step": index,
+                        "kind": "click",
+                        "action": "A" * 600,
+                        "operation": "CLICK",
+                        "page_changed": False,
+                        "url": "https://example.test/" + "U" * 1_100,
+                        "elapsed_ms": index,
+                    }
+                    for index in range(16)
+                ]
+
+    jev_ultrafast.Agent = _ScenarioAgent

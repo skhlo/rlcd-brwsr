@@ -298,6 +298,40 @@ test("invalid input and request overflow stop before Python or external work", a
   }
 });
 
+test("URL validation counts code points and passes one canonical URL to Python", async () => {
+  const unicodeUrl = `https://example.test/${"😀".repeat(1_014)}`;
+  assert.ok(Array.from(unicodeUrl).length <= 2_048);
+  assert.ok(unicodeUrl.length > 2_048);
+
+  for (const url of [unicodeUrl, "https:example.com"]) {
+    await withScenario(
+      "click",
+      { params: { url } },
+      async ({ result, markers }) => {
+        assert.equal(detailsOf(result).status, "completion_claim");
+        const request = JSON.parse(await readFile(markers.stdin, "utf8")) as {
+          url: string;
+        };
+        assert.equal(request.url, new URL(url).href);
+      },
+    );
+  }
+});
+
+test("maxSeconds remains public but is omitted from the child request", async () => {
+  await withScenario(
+    "click",
+    { params: { maxSeconds: 5 } },
+    async ({ result, markers }) => {
+      assert.equal(detailsOf(result).status, "completion_claim");
+      const request = JSON.parse(
+        await readFile(markers.stdin, "utf8"),
+      ) as Record<string, unknown>;
+      assert.equal(Object.hasOwn(request, "maxSeconds"), false);
+    },
+  );
+});
+
 test("native preflight requires the selected helper configuration and existing local daemon", async () => {
   for (const [scenario, options] of [
     ["click", { textModel: "deepseek-chat" }],
@@ -478,6 +512,24 @@ test("construction interruption reports execution and cleanup unknown", async ()
   );
 });
 
+test("post-construction interruption closes the recovered task target", async () => {
+  await withScenario(
+    "post_constructor_interrupt",
+    {},
+    async ({ result, markers }) => {
+      const details = detailsOf(result);
+      assert.equal(details.status, "stopped");
+      assert.equal(details.execution, "unknown");
+      assert.equal(details.targetId, "rlcd-owned-target");
+      assert.equal(recordField(details, "cleanup").taskTab, "closed");
+      assert.match(
+        await readIfPresent(markers.browser),
+        /close:rlcd-owned-target/,
+      );
+    },
+  );
+});
+
 test("a projection interruption after browser work falls back to unknown state", async () => {
   await withScenario(
     "projection_interrupt",
@@ -643,6 +695,19 @@ test("terminal JSON stays bounded and safe for Unicode, NaN, and oversized nativ
       }
     });
   }
+});
+
+test("terminal fitting discloses history records removed after field clipping", async () => {
+  await withScenario("omission_overflow", {}, ({ result }) => {
+    const details = detailsOf(result);
+    const output = recordField(details, "output");
+    assert.equal(output.clipped, true);
+    assert.ok(arrayField(details, "history").length < 16);
+    const omissions = arrayField(output, "omissions");
+    assert.ok(omissions.includes("history action fields"));
+    assert.ok(omissions.includes("history URL fields"));
+    assert.ok(omissions.includes("history records"));
+  });
 });
 
 test("both native keys are redacted before clipping and never enter argv or stdin", async () => {

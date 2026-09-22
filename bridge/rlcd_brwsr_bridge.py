@@ -31,7 +31,7 @@ _URL_MAX_BYTES = 2_048
 _TITLE_MAX_BYTES = 512
 _DIAGNOSTIC_MAX_BYTES = 1_024
 _TARGET_MAX_BYTES = 512
-_ALLOWED_REQUEST_KEYS = {"url", "goal", "maxSeconds", "retainTab"}
+_ALLOWED_REQUEST_KEYS = {"url", "goal", "retainTab"}
 
 
 class StopRequested(Exception):
@@ -131,7 +131,6 @@ def _validate_request(value: Any) -> dict[str, Any]:
 
     url = value.get("url")
     goal = value.get("goal")
-    max_seconds = value.get("maxSeconds")
     retain_tab = value.get("retainTab")
     if not isinstance(url, str):
         raise ValueError("url must be a string")
@@ -145,14 +144,11 @@ def _validate_request(value: Any) -> dict[str, Any]:
         raise ValueError("url must be an absolute HTTP(S) URL without credentials")
     if not isinstance(goal, str) or not goal.strip():
         raise ValueError("goal must be a nonempty string")
-    if type(max_seconds) is not int or not 1 <= max_seconds <= 120:
-        raise ValueError("maxSeconds must be an integer from 1 through 120")
     if type(retain_tab) is not bool:
         raise ValueError("retainTab must be a boolean")
     return {
         "url": url,
         "goal": goal.strip(),
-        "maxSeconds": max_seconds,
         "retainTab": retain_tab,
     }
 
@@ -314,26 +310,28 @@ def _bound_projection(result: dict[str, Any]) -> dict[str, Any]:
         if len(history) > _HISTORY_LIMIT:
             del history[: len(history) - _HISTORY_LIMIT]
             _append_omission(omissions, "history prefix")
-        for index, entry in enumerate(history):
+        for entry in history:
             if not isinstance(entry, dict):
                 continue
-            _clip_field(entry, "action", 512, f"history[{index}].action", omissions)
-            _clip_field(entry, "operation", 128, f"history[{index}].operation", omissions)
-            _clip_field(entry, "url", 1_024, f"history[{index}].url", omissions)
+            _clip_field(entry, "action", 512, "history action fields", omissions)
+            _clip_field(
+                entry, "operation", 128, "history operation fields", omissions
+            )
+            _clip_field(entry, "url", 1_024, "history URL fields", omissions)
 
     records = result.get("usage", {}).get("records", [])
     if isinstance(records, list):
         if len(records) > _USAGE_RECORD_LIMIT:
             del records[: len(records) - _USAGE_RECORD_LIMIT]
             _append_omission(omissions, "usage record prefix")
-        for index, record in enumerate(records):
+        for record in records:
             if not isinstance(record, dict):
                 continue
-            _clip_field(record, "model", 512, f"usage.records[{index}].model", omissions)
+            _clip_field(record, "model", 512, "usage record model fields", omissions)
             usage = record.get("usage")
             if len(_json_bytes(usage)) > _USAGE_VALUE_MAX_BYTES:
                 record["usage"] = {"omitted": "record exceeded its byte allowance"}
-                _append_omission(omissions, f"usage.records[{index}].usage")
+                _append_omission(omissions, "usage record values")
 
     if omissions:
         output["clipped"] = True
@@ -439,6 +437,11 @@ def _run(request: dict[str, Any]) -> dict[str, Any]:
     finally:
         if agent is not None:
             state = _state_from(agent)
+            if target_id is None:
+                try:
+                    target_id = getattr(getattr(agent, "browser", None), "target", None)
+                except Exception:
+                    pass
             normal_retention = (
                 status == "completion_claim"
                 and request["retainTab"]
