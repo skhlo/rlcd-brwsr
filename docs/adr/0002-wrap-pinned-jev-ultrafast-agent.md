@@ -2,8 +2,8 @@
 
 Status: records the recovered implementation and its earlier accepted amendments.
 [ADR-0003](0003-python-owned-run.md) supersedes the orchestration/helper direction
-for the planned replacement, which is not implemented. The history below is
-retained; it is not a claim that the cancelled delivery gate passed.
+for the implemented thin replacement. The history below is retained; it is not
+a claim that the cancelled delivery gate passed or evidence for the replacement.
 
 This decision originally superseded ADR-0001 for the active implementation.
 

@@ -1,17 +1,18 @@
 # RLCD-brwsr plan
 
-Status: the thin Python-owned direction is approved; the replacement is **not
-implemented**. This document owns the next implementation plan. The user has
-confirmed dropping `maxActions` and selected OpenRouter `inclusionai/ling-3.0-flash`
-as the native text helper. Byte budgets and the accounting policy below remain
-to confirm before the rewrite.
+Status: the approved thin Python-owned rewrite is **implemented and locally
+tested through the registered tool**. It is not yet accepted through the Pi TUI,
+real Chrome fixture surface, or live Jev/OpenRouter calls. The user confirmed
+dropping `maxActions`, selected OpenRouter `inclusionai/ling-3.0-flash`, and
+accepted available native usage with explicitly incomplete Pi totals. No live
+model calls, push or PR were authorized for this build.
 
-The existing code is the larger experimental Pi-native-helper implementation,
-recovered at `dde01a46dba112dbf9d002aeb2ebe2626363c034`. Its delivery gate was
-cancelled, not passed; four static review findings remain recorded. Recovery
-preserved all three gate correction commits. Nothing was pushed and no new PR
-was created. The as-built contract remains available in this document's Git
-history at that commit, with historical verification in the issue evidence files.
+The larger experimental Pi-native-helper implementation remains historical at
+`dde01a46dba112dbf9d002aeb2ebe2626363c034`. Its delivery gate was cancelled,
+not passed; four static review findings remain recorded. Recovery preserved all
+three gate correction commits. Nothing was pushed and no new PR was created.
+The old as-built contract remains available in this document's Git history at
+that commit, with historical verification in the issue evidence files.
 
 ## Decision and reason
 
@@ -44,14 +45,14 @@ and probe findings. The evidence is narrow:
   inspectable after its Python child exited and was reaped, then closed that
   target. A preceding harness setup failure is retained; this was not a
   first-attempt reliability result.
-- No new Pi wrapper was tested. No live Jev/helper inference, provider
-  compatibility, public-site reliability, general cancellation guarantee or
-  speed improvement was established.
+- At that stage no new Pi wrapper had been tested. No live Jev/helper inference,
+  provider compatibility, public-site reliability, general cancellation
+  guarantee or speed improvement was established.
 
-The source/probe distinction matters: direct upstream fixture viability is a
-reason to try the small wrapper, not acceptance of a wrapper that does not exist.
+The source/probe distinction still matters: those direct upstream fixtures were
+a reason to build the wrapper, not acceptance evidence for the implementation.
 
-## Proposed interface
+## Implemented interface
 
 Keep `rlcd_brwsr_run` and initially expose only:
 
@@ -73,9 +74,9 @@ rlcd_brwsr_run({
   requires a usable task-target handle and must not retain the runner process.
 - Schedule sequentially within Pi, without claiming a global browser lock.
 
-**Confirmed contract reduction:** drop the mutation-only `maxActions` knob from
-the planned interface. Do not add a replacement per-call step knob or a
-compatibility alias. Preserve upstream's native limits: history counts waits
+**Implemented contract reduction:** `maxActions` is absent. There is no
+replacement per-call step knob or compatibility alias. Upstream's native limits
+remain unchanged: history counts waits
 and scrolls as well as clicks/fills and is capped at 60, with a separate
 120-decision cap. These are not HTTP-attempt or spend caps. The wrapper adds
 only the coarse `maxSeconds` stop request.
@@ -97,7 +98,8 @@ its stop reason, stop/reap handling and presentation. It does not reconstruct
 browser phases or merge helper replies with Python history. Installed Pi 0.85.1
 `pi.exec` lacks the stdin and output-bound controls this interface needs; use a
 small Node built-in `spawn` helper rather than another process package/framework.
-The source scout's escalation concern has not been runtime-probed.
+The supervisor's escalation and observed-exit reaping path is exercised locally
+with a child that ignores `SIGTERM`.
 
 Python owns the Agent reference, current upstream state, known task target,
 provider configuration, result projection, redaction and normal cleanup. Iterate
@@ -118,7 +120,7 @@ Two small pinned integrations remain justified:
 
 No startup target interception, parent fallback-cleanup mode, tab-difference
 ownership inference, generic RPC framework, new daemon or durable run journal
-is part of this proposal.
+is part of the implementation.
 
 ## Configuration and operating scope
 
@@ -132,7 +134,8 @@ Use native `TYPESAFE_API_KEY` and `TEXT_MODEL_*` settings through the authorized
 host-local environment/configuration. Do not introduce a secret store, copy
 existing credentials or read Pi's OAuth credentials. The selected text helper
 is OpenRouter `inclusionai/ling-3.0-flash`; Jev remains the decision model.
-Planned native helper settings are:
+The runner supplies these selected settings process-locally when absent and
+rejects conflicting values:
 
 ```text
 TEXT_MODEL_BASE_URL=https://openrouter.ai/api/v1
@@ -140,8 +143,8 @@ TEXT_MODEL=inclusionai/ling-3.0-flash
 TEXT_MODEL_REASONING=none
 ```
 
-`TEXT_MODEL_API_KEY` must come from a host-local OpenRouter key; none has been
-provided or configured by this planning task. The reasoning setting makes the
+`TEXT_MODEL_API_KEY` must come from a host-local OpenRouter key; this build did
+not read or configure one. The reasoning setting makes the
 unchanged upstream helper send `reasoning.enabled: false`, appropriate to the
 intended short field-value output. OpenRouter advertises support, but no live
 request has established the actual behavior. Its current JSON-mode route and
@@ -151,8 +154,8 @@ native request shape and local value validation only. No provider adapter or
 routing selector is added.
 
 The helper remains optional for click-only tasks. Native missing-key or invalid
-value errors must return useful sanitized errors and available state, without
-inventing a field value or switching to the outer Pi model.
+value errors return sanitized errors and available state, without inventing a
+field value or switching to the outer Pi model.
 
 Initial tasks remain benign, unauthenticated and non-booking. The outer agent
 owns permissions and verification. Neither the wrapper nor upstream guarantees
@@ -165,10 +168,11 @@ LLM, recordings or automatic rollout is added.
 Python returns a small projection: completion claim or stop/error, last actually
 observed page when available, bounded recorded history, configured model names,
 upstream-retained usage, known target, cleanup outcome and a sanitized diagnostic.
-Use one explicit UTF-8 byte budget for the projected terminal result and report
-omitted fields/records. The same projection can serve content and details;
-there is no need for competing detailed state reconstructions. Final cap values
-and pathological Unicode/metadata behavior still require executable tests.
+`config/runtime.json` owns a 32 KiB serialized-request cap and one 16 KiB
+terminal/model-visible JSON cap, including JSON escaping and terminal framing.
+The result reports omitted fields/records. Content and details use the same final
+projection. Local executable tests cover overflow, malformed Unicode, non-finite
+numbers and complete-key redaction before clipping.
 
 - `DONE` is a completion claim, never independent proof of the goal.
 - Redact complete raw values before clipping or preview. Keep both Jev/helper
@@ -189,12 +193,11 @@ the exception rather than translating solely from upstream's status field.
 
 Available usage is only the subset upstream retained. Invalid helper responses,
 failed requests and retry counts can be absent. Do not equate record count with
-request count or missing usage with zero. **Initial accounting recommendation:**
+request count or missing usage with zero. **Confirmed initial accounting policy:**
 show bounded source-labelled records and unavailable values in tool details;
-omit Pi top-level `usage` unless its required numeric fields are supportable.
-This leaves Pi footer/session totals incomplete and must be disclosed. Whether
-to add rate-based estimated totals remains an open choice. Selecting OpenRouter
-and obtaining advertised rates does not recover missing fields or failed-call
+omit Pi top-level `usage`. This leaves Pi footer/session totals incomplete and
+must be disclosed. Rate-based estimated totals are outside this initial build.
+Selecting OpenRouter and obtaining advertised rates does not recover missing fields or failed-call
 usage, and is not a reason to build a billing adapter now.
 
 ## Reuse and leave behind
@@ -204,29 +207,30 @@ checks, inert Pi registration, browser fixtures, independent observation helpers
 and the redaction/bounding/cleanup lessons. Reuse behavior tests where the
 contract is unchanged; do not preserve the old implementation solely for tests.
 
-Replace the current TypeScript protocol engine and Python command-level bridge.
-Remove the Pi-Luna completion adapter, helper reply channel and sentinel backend,
-shadow state, phase validators/reducers, usage-to-field merge and parent fallback
-cleanup mode. Retire tests for deliberately removed promises and replace them
-with the reduced public contract. Do not delete historical branches, reports,
-raw evidence or the earlier custom-loop work.
+The rewrite replaced the TypeScript protocol engine and Python command-level
+bridge. It removed the Pi-Luna completion adapter, helper reply channel and
+sentinel backend, shadow state, phase validators/reducers, usage-to-field merge
+and parent fallback cleanup mode. Tests for deliberately removed promises were
+replaced with the reduced public contract. Historical branches, reports, raw
+evidence and the earlier custom-loop work remain retained.
 
 ## Implementation and verification sequence
 
-1. Confirm the initial accounting limitation and select concrete request/result
-   byte budgets without clipping upstream observations or helper prompts.
-   `maxActions` removal and the helper model selection are already decided.
-2. Build a small Python runner plus the small Pi launcher. No provider
-   credential or live model call is needed for the deterministic work.
-3. Test through the registered Pi tool with the real new runner and external
-   fakes: native click/fill/DONE/BLOCKED/error behavior, empty/malformed helper
-   values, preflight/input failure, output overflow/Unicode/privacy, stop
-   precedence, cooperative cleanup and unknown-on-hard-kill/construction.
-4. Repeat the click/text fixtures through the actual Pi TUI and new runner with
+Steps 1-3 are complete locally. The registered Pi tool tests cross the real new
+runner and actual pinned Agent/native helper while replacing only external
+Browser/CDP and provider interactions. They cover click/fill/DONE/BLOCKED/error,
+missing and malformed helper values, preflight/input failure, byte bounds,
+Unicode/non-finite normalization, native-key privacy, first-stop precedence,
+cooperative cleanup, construction interruption and a reaped TERM-ignoring child.
+No live credentials or model calls were used.
+
+Pending acceptance remains:
+
+1. Repeat the click/text fixtures through the actual Pi TUI and new runner with
    real upstream/Harness/Chrome and synthetic provider replies. Independently
    inspect known owned targets, test retention/default close and a real bounded
    stop, and measure resource outcomes instead of inferring them from signals.
-5. Only after host-local key configuration and explicit applicable allowance,
+2. Only after host-local key configuration and explicit applicable allowance,
    test the selected OpenRouter helper payload, then a benign public task using
    real Jev/helper calls.
    Preserve earlier ledgers; native step limits do not constitute a billing
@@ -234,8 +238,8 @@ raw evidence or the earlier custom-loop work.
 
 Do not add a broader test or runtime framework to satisfy every hypothetical
 failure. A discovered limitation may require a narrower disclosed contract,
-not another state owner. No implementation, live-provider acceptance or delivery
-is implied by this plan.
+not another state owner. This local implementation does not imply live-provider,
+Pi-TUI/real-browser acceptance or delivery.
 
 ## Evidence and history
 
@@ -244,12 +248,13 @@ is implied by this plan.
 - [Next architecture decision](adr/0003-python-owned-run.md).
 - [Recovered architecture and amendments](adr/0002-wrap-pinned-jev-ultrafast-agent.md).
 - Earlier verification: [#10](issue-10-evidence.md), [#11](issue-11-evidence.md),
-  [#12](issue-12-evidence.md). Those are not tests of the proposed rewrite.
+  [#12](issue-12-evidence.md). Those are not tests of this rewrite.
 - Local raw probes and recovery receipts: `artifacts/thin-python-plan/`.
 - Cancelled gate: `01M33MP2Y3PGGAM3EARNPYQMTQ`; unresolved static findings R23-R26
   are preserved in the local review log, not represented as fixed or reproduced.
 
 GitHub issues #9-#13 still describe the prior implementation and have not been
-rewritten by this planning task. The later approved direction and this plan
-must be reconciled with those issues before implementation is presented as
-satisfying them. PR #8 and the sibling experiment checkout remain untouched.
+rewritten by this local implementation task. The approved direction and this
+current implementation must be reconciled with those issues before the work is
+presented as satisfying them. PR #8 and the sibling experiment checkout remain
+untouched.

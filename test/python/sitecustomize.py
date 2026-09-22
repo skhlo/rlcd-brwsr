@@ -1,10 +1,13 @@
-"""Deterministic external browser/model adapters for registered-tool tests.
+"""External Browser/model/provider substitutes for registered-tool tests.
 
-The production bridge and pinned Jev Agent stay real. Tests replace only the
-Browser Harness CDP transport, exact-daemon check, and model provider response.
+The production runner and pinned Agent stay real. This module replaces only the
+Browser Harness transport and the two external provider responses.
 """
 
+from __future__ import annotations
+
 import json
+import math
 import os
 import re
 import signal
@@ -16,419 +19,179 @@ import jev_ultrafast
 from browser_harness import admin, helpers as harness_helpers
 from jev_ultrafast import browser, model
 
-_SCENARIO = os.environ.get("RLCD_TEST_SCENARIO", "click_done")
+_SCENARIO = os.environ.get("RLCD_TEST_SCENARIO", "click")
 _STATE = {
     "url": "about:blank",
     "destination": False,
-    "clicks": 0,
-    "typed_text": "",
-    "typed_values": [],
-    "fresh_checks": 0,
-    "stale_click_checks": 0,
-    "many_fresh_checks": 0,
-    "context_revision": 0,
-    "post_action_observations": 0,
+    "typed": "",
 }
 
-if _SCENARIO == "cancel_after_agent_construction":
-    _OriginalAgent = jev_ultrafast.Agent
 
-    class _AgentProxy:
-        def __init__(self, *args, **kwargs):
-            self._agent = _OriginalAgent(*args, **kwargs)
-            self._interrupt_browser_access = True
-
-        @property
-        def browser(self):
-            if self._interrupt_browser_access:
-                self._interrupt_browser_access = False
-                os.kill(os.getpid(), signal.SIGTERM)
-            return self._agent.browser
-
-        @property
-        def state(self):
-            return self._agent.state
-
-        def __getattr__(self, name):
-            return getattr(self._agent, name)
-
-    jev_ultrafast.Agent = _AgentProxy
+def _append(environment_name: str, value: str) -> None:
+    path = os.environ.get(environment_name)
+    if path:
+        with Path(path).open("a", encoding="utf-8", errors="replace") as output:
+            output.write(value + "\n")
 
 
-def _mark_external_work(environment_key, value="called"):
-    marker = os.environ.get(environment_key)
-    if marker:
-        with Path(marker).open("a", encoding="utf-8") as marker_file:
-            marker_file.write(f"{value}\n")
+argv_marker = os.environ.get("RLCD_TEST_ARGV_MARKER")
+if argv_marker:
+    Path(argv_marker).write_text(json.dumps(sys.argv), encoding="utf-8")
 
+stdin_marker = os.environ.get("RLCD_TEST_STDIN_MARKER")
+if stdin_marker:
+    original_stdin = sys.stdin.buffer
 
-_argv_marker = os.environ.get("RLCD_TEST_ARGV_MARKER")
-if _argv_marker:
-    Path(_argv_marker).write_text(json.dumps(sys.argv), encoding="utf-8")
-
-_stdin_marker = os.environ.get("RLCD_TEST_STDIN_MARKER")
-if _stdin_marker:
-    _stdin_buffer = sys.stdin.buffer
-
-    class _CapturedInputBuffer:
-        def _record(self, value):
-            with Path(_stdin_marker).open("ab") as capture:
+    class _CapturedBuffer:
+        def read(self, size: int = -1) -> bytes:
+            value = original_stdin.read(size)
+            with Path(stdin_marker).open("ab") as capture:
                 capture.write(value)
             return value
 
-        def readline(self, size=-1):
-            return self._record(_stdin_buffer.readline(size))
-
-        def read(self, size=-1):
-            return self._record(_stdin_buffer.read(size))
-
-        def __getattr__(self, name):
-            return getattr(_stdin_buffer, name)
+        def __getattr__(self, name: str):
+            return getattr(original_stdin, name)
 
     class _CapturedInput:
-        buffer = _CapturedInputBuffer()
+        buffer = _CapturedBuffer()
 
-        def __getattr__(self, name):
+        def __getattr__(self, name: str):
             return getattr(sys.__stdin__, name)
 
     sys.stdin = _CapturedInput()
 
-if _SCENARIO in {"terminal_abnormal", "retained_terminal_hang"}:
-    _terminal_output = sys.stdout
+if _SCENARIO == "raw_stderr_exit":
+    secret = os.environ.get("TYPESAFE_API_KEY", "")
+    sys.stderr.write((f"raw-child-secret {secret} " + "X" * 100_000) + "\n")
+    sys.stderr.flush()
+    os._exit(31)
 
-    class _TerminalExitBehavior:
-        def write(self, value):
-            written = _terminal_output.write(value)
-            _terminal_output.flush()
-            if '\"type\":\"result\"' in value:
-                if _SCENARIO == "terminal_abnormal":
-                    os._exit(25)
-                time.sleep(30)
-            return written
-
-        def flush(self):
-            return _terminal_output.flush()
-
-        def __getattr__(self, name):
-            return getattr(_terminal_output, name)
-
-    sys.stdout = _TerminalExitBehavior()
-
-if _SCENARIO in {
-    "ownership_switch_protocol",
-    "inconsistent_retained_terminal",
-    "oversized_terminal_lists",
-}:
-    _invariant_output = sys.stdout
-
-    class _ProtocolInvariantOutput:
-        def __init__(self):
-            self._ownership_injected = False
-
-        def write(self, value):
-            if (
-                _SCENARIO == "inconsistent_retained_terminal"
-                and '"type":"result"' in value
-            ):
-                record = json.loads(value)
-                record["result"]["cleanup"]["taskTab"] = "retained"
-                value = (
-                    json.dumps(record, ensure_ascii=False, separators=(",", ":"))
-                    + "\n"
-                )
-            if (
-                _SCENARIO == "oversized_terminal_lists"
-                and '"type":"result"' in value
-            ):
-                record = json.loads(value)
-                result = record["result"]
-                if result["trace"]:
-                    result["trace"] = [result["trace"][0]] * 30
-                decisions = result["usage"]["jev"]["decisions"]
-                if decisions:
-                    result["usage"]["jev"]["decisions"] = [decisions[0]] * 30
-                value = (
-                    json.dumps(record, ensure_ascii=False, separators=(",", ":"))
-                    + "\n"
-                )
-            written = _invariant_output.write(value)
-            if (
-                _SCENARIO == "ownership_switch_protocol"
-                and not self._ownership_injected
-                and '"type":"ownership"' in value
-            ):
-                self._ownership_injected = True
-                _invariant_output.write(
-                    '{"type":"ownership","targetId":"unrelated-target"}\n'
-                )
-                _invariant_output.flush()
-            return written
-
-        def flush(self):
-            return _invariant_output.flush()
-
-        def __getattr__(self, name):
-            return getattr(_invariant_output, name)
-
-    sys.stdout = _ProtocolInvariantOutput()
-
-
-_protocol_marker = os.environ.get("RLCD_TEST_PROTOCOL_MARKER")
-if _protocol_marker:
-    _protocol_output = sys.stdout
-    _protocol_capture = Path(_protocol_marker).open("w", encoding="utf-8")
-
-    class _ProtocolTee:
-        def write(self, value):
-            _protocol_capture.write(value)
-            _protocol_capture.flush()
-            return _protocol_output.write(value)
-
-        def flush(self):
-            _protocol_capture.flush()
-            return _protocol_output.flush()
-
-        def __getattr__(self, name):
-            return getattr(_protocol_output, name)
-
-    sys.stdout = _ProtocolTee()
-
-
-def _resolved_daemon_name(name):
-    return name or admin.NAME
+if _SCENARIO == "raw_stdout_overflow":
+    secret = os.environ.get("TYPESAFE_API_KEY", "")
+    sys.stdout.write(f"raw-child-secret {secret} " + "X" * 100_000)
+    sys.stdout.flush()
+    time.sleep(30)
 
 
 def _require_existing_daemon(name=None):
-    resolved_name = _resolved_daemon_name(name)
-    expected = os.environ.get("RLCD_TEST_EXPECTED_DAEMON", "rlcd-brwsr-test")
+    daemon_name = name or admin.NAME
     if _SCENARIO == "missing_daemon":
-        raise RuntimeError(f"required daemon {resolved_name!r} is not running")
-    if resolved_name != expected:
-        raise RuntimeError(
-            f"unexpected daemon {resolved_name!r}; expected {expected!r}"
-        )
+        raise RuntimeError(f"required daemon {daemon_name!r} is not running")
+    if daemon_name != "rlcd-brwsr-test":
+        raise RuntimeError(f"unexpected daemon {daemon_name!r}")
 
 
 def _daemon_browser_kind(name=None):
     _require_existing_daemon(name)
-    return "cloud" if _SCENARIO == "remote_daemon" else "cdp"
+    return "cdp"
 
 
-def _ensure_daemon(wait=None, name=None, env=None):
-    del wait, env
-    _mark_external_work("RLCD_TEST_DAEMON_START_MARKER")
-    _require_existing_daemon(name)
-
-
-admin.ensure_daemon = _ensure_daemon
 admin.require_existing_daemon = _require_existing_daemon
 admin.daemon_browser_kind = _daemon_browser_kind
 
 
 def _page():
-    if _SCENARIO.startswith("text_"):
-        typed_values = _STATE["typed_values"]
-        many_fields = _SCENARIO == "text_many_helpers_missing_last"
-        helper_target = (
-            20 if many_fields else 2 if _SCENARIO == "text_two_helpers" else 1
-        )
-        if len(typed_values) >= helper_target:
-            accepted = ", then ".join(typed_values)
+    if _SCENARIO in {
+        "fill",
+        "helper_invalid_empty",
+        "helper_invalid_extra",
+        "secret_error",
+    }:
+        if _STATE["typed"]:
             return {
-                "url": (
-                    "https://example.test/" + "u" * 3_000
-                    if _SCENARIO == "text_large_metadata"
-                    else _STATE["url"]
-                ),
-                "title": (
-                    "T" * 500
-                    if _SCENARIO == "text_large_metadata"
-                    else "Generated field fixture complete"
-                ),
-                "text": (
-                    "Accepted generated destinations: "
-                    f"{accepted}. Marker: FIELD-41"
-                ),
+                "url": _STATE["url"],
+                "title": "Generated field complete",
+                "text": f"Accepted {_STATE['typed']}. Marker FIELD-41",
                 "scroll": {"y": 0},
                 "actions": [{"id": "wait", "kind": "wait", "label": "Wait"}],
-                "marker": "text-complete",
-                "page_key": "text-complete",
+                "marker": "field-complete",
+                "page_key": "field-complete",
                 "guards": {},
             }
-        second_field = _SCENARIO == "text_two_helpers" and len(typed_values) == 1
-        field_number = len(typed_values) + 1
-        field_id = (
-            f"field-{field_number}"
-            if many_fields
-            else "country-code"
-            if second_field
-            else "destination-city"
-        )
-        field_label = (
-            "F" * 500
-            if _SCENARIO == "text_large_metadata"
-            else f"Field {field_number}"
-            if many_fields
-            else "Country code"
-            if second_field
-            else "Destination city"
-        )
-        field_node = (
-            20 + field_number if many_fields else 22 if second_field else 21
-        )
-        marker = (
-            f"text-many-{field_number}-{_STATE['context_revision']}"
-            if many_fields
-            else "text-second"
-            if second_field
-            else "text-start"
-        )
-        page_text = (
-            "界" * 6_000
-            if _SCENARIO == "text_unicode_context"
-            else (
-                "Enter the destination values requested by the goal. "
-                f"Values already accepted: {', '.join(typed_values) or 'none'}. "
-                f"Context revision: {_STATE['context_revision']}. "
-                "Completing the fixture reveals marker FIELD-41."
-            )
-        )
         return {
             "url": _STATE["url"],
-            "title": (
-                "T" * 500
-                if _SCENARIO == "text_large_metadata"
-                else "Generated field fixture"
-            ),
-            "text": page_text,
+            "title": "Generated field fixture",
+            "text": "Enter the city requested by the goal.",
             "scroll": {"y": 0},
             "actions": [
                 {
-                    "id": field_id,
+                    "id": "destination-city",
                     "kind": "fill",
-                    "label": field_label,
+                    "label": "Destination city",
                     "role": "textbox",
                     "value": "",
-                    "node": field_node,
+                    "node": 21,
                 },
                 {"id": "wait", "kind": "wait", "label": "Wait"},
             ],
-            "marker": marker,
-            "page_key": marker,
-            "guards": {str(field_node): f"guard-{field_node}"},
+            "marker": "field-start",
+            "page_key": "field-start",
+            "guards": {"21": "guard-21"},
         }
+
     if _STATE["destination"]:
-        suffix = "X" * 20_000 if _SCENARIO == "large_evidence" else ""
-        destination_url = "http://127.0.0.1:43113/destination.html"
-        if _SCENARIO == "large_trace":
-            destination_url += f"?state={_STATE['clicks']}-" + "u" * 1_900
-        if _SCENARIO == "astral_trace":
-            destination_url += f"?state={_STATE['clicks']}-" + "😀" * 1_900
+        title = (
+            "Fixture \ud800 destination"
+            if _SCENARIO == "surrogate_usage"
+            else "Fixture destination"
+        )
+        text = (
+            "Verified ORBIT-27 \udfff"
+            if _SCENARIO == "surrogate_usage"
+            else "Verified fixture destination marker ORBIT-27"
+        )
+        if _SCENARIO == "terminal_overflow":
+            text += "界" * 100_000
         return {
-            "url": destination_url,
-            "title": (
-                "Fixture \ud800 destination"
-                if _SCENARIO == "surrogate_page"
-                else "Fixture destination"
-            ),
-            "text": (
-                "Verified fixture destination marker: ORBIT-27 \udfff"
-                if _SCENARIO == "surrogate_page"
-                else "Verified fixture destination marker: ORBIT-27 " + suffix
-            ),
+            "url": "https://example.test/destination",
+            "title": title,
+            "text": text,
             "scroll": {"y": 0},
-            "actions": [
-                {
-                    "id": "again",
-                    "kind": "click",
-                    "label": "Advance again",
-                    "role": "button",
-                    "value": "",
-                    "node": 11,
-                },
-                {"id": "wait", "kind": "wait", "label": "Wait"},
-            ],
-            "marker": f"destination-{_STATE['clicks']}",
-            "page_key": f"destination-{_STATE['clicks']}",
-            "guards": {"11": "guard-11"},
+            "actions": [{"id": "wait", "kind": "wait", "label": "Wait"}],
+            "marker": "destination",
+            "page_key": "destination",
+            "guards": {},
         }
-    typesafe_secret = (
-        os.environ.get("TYPESAFE_API_KEY", "")
-        if _SCENARIO == "provider_secret_error"
-        else ""
-    )
+
     return {
         "url": _STATE["url"],
         "title": "Fixture start",
-        "text": (
-            "Click Continue to reach the independently verifiable marker. "
-            f"{typesafe_secret}"
-        ).strip(),
+        "text": "Click Continue to reveal marker ORBIT-27.",
         "scroll": {"y": 0},
         "actions": [
             {
                 "id": "continue",
                 "kind": "click",
                 "label": "Continue to fixture destination",
-                "role": "link",
+                "role": "button",
                 "value": "",
                 "node": 10,
-            },
-            {
-                "id": "search",
-                "kind": "fill",
-                "label": "Optional search",
-                "role": "textbox",
-                "value": "",
-                "node": 12,
             },
             {"id": "wait", "kind": "wait", "label": "Wait"},
         ],
         "marker": "start",
         "page_key": "start",
-        "guards": {"10": "guard-10", "12": "guard-12"},
+        "guards": {"10": "guard-10"},
     }
 
 
 def _cdp(method, session_id=None, **params):
     del session_id
-    _mark_external_work("RLCD_TEST_BROWSER_WORK_MARKER")
     if method == "Target.createTarget":
-        _mark_external_work("RLCD_TEST_TARGET_EVENTS_MARKER", "created:rlcd-owned-target")
+        _append("RLCD_TEST_BROWSER_MARKER", "created:rlcd-owned-target")
         return {"targetId": "rlcd-owned-target"}
     if method == "Target.attachToTarget":
-        if _SCENARIO == "cancel_during_agent_construction":
+        if _SCENARIO == "constructor_interrupt":
             os.kill(os.getpid(), signal.SIGTERM)
         return {"sessionId": "rlcd-owned-session"}
     if method == "Target.closeTarget":
         target_id = params.get("targetId")
-        _mark_external_work("RLCD_TEST_TARGET_EVENTS_MARKER", f"close:{target_id}")
+        _append("RLCD_TEST_BROWSER_MARKER", f"close:{target_id}")
         if target_id != "rlcd-owned-target":
-            raise RuntimeError(f"attempted to close unrelated target {target_id!r}")
-        if _SCENARIO == "bridge_death_cleanup_unconfirmed":
-            secret = os.environ.get("TYPESAFE_API_KEY", "")
-            raise RuntimeError(
-                f"targeted cleanup transport unavailable for credential {secret}"
-            )
-        if _SCENARIO == "primary_cleanup_unconfirmed":
-            marker = os.environ.get("RLCD_TEST_TARGET_EVENTS_MARKER")
-            close_count = (
-                Path(marker).read_text(encoding="utf-8").count("close:")
-                if marker
-                else 0
-            )
-            if close_count == 1:
-                return {"success": False}
-        if _SCENARIO == "slow_primary_cleanup":
-            marker = os.environ.get("RLCD_TEST_TARGET_EVENTS_MARKER")
-            close_count = (
-                Path(marker).read_text(encoding="utf-8").count("close:")
-                if marker
-                else 0
-            )
-            if close_count == 1:
-                time.sleep(30)
-        return {"success": True}
+            raise RuntimeError("attempted to close an unrelated target")
+        return {"success": _SCENARIO not in {"close_false", "slow_close_false"}}
+    if method == "Target.getTargets":
+        return {"targetInfos": []}
     if method == "Page.navigate":
         _STATE["url"] = params["url"]
         return {"frameId": "fixture-frame"}
@@ -436,97 +199,31 @@ def _cdp(method, session_id=None, **params):
         return {}
     if method == "Input.dispatchMouseEvent":
         if params.get("type") == "mouseReleased":
-            _STATE["clicks"] += 1
             _STATE["destination"] = True
-            if _SCENARIO == "cancel_dispatched_input":
-                _mark_external_work("RLCD_TEST_PHASE_MARKER", "input-dispatched")
-                time.sleep(30)
-            if _SCENARIO in {"prediction_crosses_deadline", "remaining_deadline"}:
-                _mark_external_work("RLCD_TEST_INPUT_DISPATCH_MARKER")
-        return {}
-    if method == "Input.insertText":
-        _mark_external_work("RLCD_TEST_INPUT_DISPATCH_MARKER")
-        if _SCENARIO == "text_cached_fill_failure":
-            raise RuntimeError("cached fill failed after dispatched browser input")
-        _STATE["typed_text"] = params["text"]
-        _STATE["typed_values"].append(params["text"])
-        _mark_external_work("RLCD_TEST_FIELD_MUTATION_MARKER")
+            _append("RLCD_TEST_BROWSER_MARKER", "click:continue")
         return {}
     if method == "Input.dispatchKeyEvent":
         return {}
+    if method == "Input.insertText":
+        value = params["text"]
+        _STATE["typed"] = value
+        _append("RLCD_TEST_FIELD_MARKER", f"value:{value}")
+        return {}
     if method == "Runtime.evaluate":
         expression = params.get("expression", "")
-        forced_marker = None
-        if "return state?.marker ?? null" in expression:
-            _STATE["fresh_checks"] += 1
-            if (
-                _SCENARIO == "text_freshness_failure"
-                and _STATE["fresh_checks"] == 2
-            ):
-                raise RuntimeError(
-                    "Browser Harness transport failed during the pre-helper freshness check"
-                )
-            if (
-                _SCENARIO == "text_cached_fill_failure"
-                and _STATE["fresh_checks"] == 3
-            ):
-                forced_marker = "stale-before-first-fill"
-            if (
-                _SCENARIO == "text_many_helpers_missing_last"
-                and not _STATE["typed_values"]
-            ):
-                _STATE["many_fresh_checks"] += 1
-                if (
-                    _STATE["many_fresh_checks"] % 3 == 0
-                    and _STATE["context_revision"] < 5
-                ):
-                    _STATE["context_revision"] += 1
-                    forced_marker = _page()["marker"]
         if expression == "document.readyState":
             value = "complete"
-        elif (
-            "if (!document.body) return null" in expression
-            and "const state=" not in expression
-        ):
-            if _SCENARIO == "initial_observation_failure":
-                raise RuntimeError("initial observation failed before ownership")
-            if _SCENARIO == "cancel_observation" and _STATE["destination"]:
-                _mark_external_work("RLCD_TEST_PHASE_MARKER", "observation-started")
-                time.sleep(30)
-            if (
-                _SCENARIO == "post_action_observation_failure"
-                and _STATE["destination"]
-            ):
-                raise RuntimeError("post-action observation failed after execution")
-            if (
-                _SCENARIO
-                in {
-                    "post_action_stale_reobservation",
-                    "post_action_stale_bridge_death",
-                }
-                and _STATE["destination"]
-            ):
-                _STATE["post_action_observations"] += 1
-                if _STATE["post_action_observations"] <= 10:
-                    return {"exceptionDetails": {"text": "document changed"}}
-                if _SCENARIO == "post_action_stale_bridge_death":
-                    os._exit(26)
-            value = _page()
         elif "return state?.marker ?? null" in expression:
-            value = forced_marker if forced_marker is not None else _page()["marker"]
+            value = _page()["marker"]
         elif "return c ? [c.pageKey()" in expression:
             match = re.search(r"nodes\.get\((\d+)\)", expression)
             node = match.group(1) if match else ""
-            current = _page()
-            _STATE["stale_click_checks"] += 1
-            value = [current["page_key"], current["guards"].get(node)]
-            if (
-                _SCENARIO == "stale_click_once"
-                and _STATE["stale_click_checks"] == 1
-            ):
-                value = ["stale-page", "stale-guard"]
+            page = _page()
+            value = [page["page_key"], page["guards"].get(node)]
         elif "return {x,y}" in expression:
             value = {"x": 100, "y": 100}
+        elif "if (!document.body) return null" in expression:
+            value = _page()
         else:
             value = None
         return {"result": {"value": value}}
@@ -545,98 +242,95 @@ def _choice(criteria, selected):
     }
 
 
-def _post_json(url, key, body):
-    _mark_external_work("RLCD_TEST_MODEL_WORK_MARKER")
-    if os.environ.get("TYPESAFE_MODEL") != "jev-1.13.0":
-        raise RuntimeError("the wrapper did not select the pinned Jev model")
-    if _SCENARIO in {
-        "bridge_death_cleanup_confirmed",
-        "bridge_death_cleanup_unconfirmed",
-    }:
-        os._exit(23)
-    if _SCENARIO == "large_progress_malformed":
-        progress = {
-            "type": "progress",
-            "phase": "observation",
-            "observation": {
-                "url": "u" * 14_000,
-                "urlTruncated": False,
-                "title": "synthetic" * 1_000 + "t" * 4_000 + '"' * 1_000,
-                "titleTruncated": False,
-                "evidence": "bounded partial evidence",
-                "evidenceTruncated": False,
-            },
-            "executedActions": 0,
-        }
-        sys.stdout.write(json.dumps(progress, separators=(",", ":")) + "\n")
-        sys.stdout.write("not-json-from-bridge\n")
-        sys.stdout.flush()
-        time.sleep(30)
-    if _SCENARIO == "malformed_protocol":
-        sys.stdout.write("not-json-from-bridge\n")
-        sys.stdout.flush()
-        time.sleep(30)
-    if _SCENARIO == "truncated_protocol":
-        sys.stdout.write('{"type":"progress"')
-        sys.stdout.flush()
-        os._exit(24)
-    if _SCENARIO == "oversized_protocol":
-        sys.stdout.write("X" * 32_001 + "\n")
-        sys.stdout.flush()
-        time.sleep(30)
-    if _SCENARIO == "provider_secret_error":
-        raise RuntimeError(f"provider rejected synthetic credential {key}")
-    if _SCENARIO == "long_provider_error":
-        raise RuntimeError("provider rejected request: " + "X" * 2_000)
-    if _SCENARIO == "boundary_secret_error":
+def _helper_response(key, body):
+    if os.environ.get("TEXT_MODEL_BASE_URL") != "https://openrouter.ai/api/v1":
+        raise RuntimeError("runner did not select the OpenRouter helper base URL")
+    if os.environ.get("TEXT_MODEL") != "inclusionai/ling-3.0-flash":
+        raise RuntimeError("runner did not select Ling 3.0 Flash")
+    if os.environ.get("TEXT_MODEL_REASONING") != "none":
+        raise RuntimeError("runner did not disable helper reasoning")
+    if key != os.environ.get("TEXT_MODEL_API_KEY"):
+        raise RuntimeError("native helper did not receive its child environment key")
+    if body.get("reasoning") != {"enabled": False}:
+        raise RuntimeError("native helper request did not disable reasoning")
+
+    if _SCENARIO == "helper_invalid_empty":
+        content = json.dumps({"text": " "})
+    elif _SCENARIO == "helper_invalid_extra":
+        content = json.dumps({"text": "Busan", "extra": True})
+    elif _SCENARIO == "secret_error":
+        typesafe_key = os.environ.get("TYPESAFE_API_KEY", "")
+        helper_key = os.environ.get("TEXT_MODEL_API_KEY", "")
         raise RuntimeError(
-            "X" * 530 + os.environ.get("TYPESAFE_API_KEY", "") + " rejected"
+            f"helper failed Authorization: Bearer {helper_key}; jev={typesafe_key}"
         )
-    if _SCENARIO in {"slow_model", "cancel_model", "slow_primary_cleanup"}:
+    else:
+        content = json.dumps({"text": "Busan"})
+    return {
+        "choices": [{"message": {"content": content}}],
+        "usage": {"prompt_tokens": 11, "completion_tokens": 2},
+    }
+
+
+def _post_json(url, key, body):
+    _append("RLCD_TEST_MODEL_MARKER", f"request:{url}")
+    if "questions" not in body:
+        return _helper_response(key, body)
+
+    if os.environ.get("TYPESAFE_MODEL") != "jev-1.13.0":
+        raise RuntimeError("runner did not select the pinned Jev model")
+    if key != os.environ.get("TYPESAFE_API_KEY"):
+        raise RuntimeError("native Jev call did not receive its child environment key")
+    if _SCENARIO == "model_error":
+        raise RuntimeError("provider failed before a decision")
+    if _SCENARIO in {"slow_model", "slow_close_false"}:
         time.sleep(30)
-    if _SCENARIO == "prediction_crosses_deadline":
-        time.sleep(1.05)
-    if _SCENARIO == "remaining_deadline":
-        time.sleep(0.45)
+    if _SCENARIO == "ignore_term":
+        Path(os.environ["RLCD_TEST_PID_MARKER"]).write_text(
+            str(os.getpid()), encoding="utf-8"
+        )
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
+        time.sleep(30)
+    if _SCENARIO == "missing_terminal":
+        os._exit(29)
 
     questions = body["questions"]
     operations = questions["operation"]["criteria"]
-    if _SCENARIO == "needs_text":
-        operation = "TYPE_TEXT"
-    elif _SCENARIO == "text_two_helpers":
-        operation = "DONE" if len(_STATE["typed_values"]) >= 2 else "TYPE_TEXT"
-    elif _SCENARIO == "text_many_helpers_missing_last":
-        operation = "DONE" if len(_STATE["typed_values"]) >= 20 else "TYPE_TEXT"
-    elif _SCENARIO.startswith("text_"):
-        operation = "DONE" if _STATE["typed_text"] else "TYPE_TEXT"
+    if _SCENARIO in {
+        "fill",
+        "helper_invalid_empty",
+        "helper_invalid_extra",
+        "secret_error",
+    }:
+        operation = "DONE" if _STATE["typed"] else "TYPE_TEXT"
+    elif _SCENARIO == "done" or _STATE["destination"]:
+        operation = "DONE"
     elif _SCENARIO == "blocked":
         operation = "BLOCKED"
-    elif _SCENARIO in {
-        "always_click",
-        "large_trace",
-        "astral_trace",
-        "remaining_deadline",
-    }:
-        operation = "CLICK"
-    elif _SCENARIO == "wait_heavy":
-        operation = "WAIT"
     else:
-        operation = "DONE" if _STATE["destination"] else "CLICK"
+        operation = "CLICK"
 
     answers = {"operation": _choice(operations, operation)}
-    target_name = operation.lower() + "_target"
     if operation in {"CLICK", "TYPE_TEXT", "SELECT"}:
+        target_name = operation.lower() + "_target"
         candidates = questions[target_name]["criteria"]
-        selected = next(iter(candidates))
-        answers[target_name] = _choice(candidates, selected)
+        answers[target_name] = _choice(candidates, next(iter(candidates)))
+
+    usage = {"input_tokens": 17, "output_tokens": 3}
+    reported_model = "deterministic-jev-external-fake"
+    if _SCENARIO == "surrogate_usage":
+        reported_model = "deterministic-\ud800-model"
+        usage = {
+            os.environ.get("TYPESAFE_API_KEY", "missing"): math.nan,
+            os.environ.get("TEXT_MODEL_API_KEY", "missing"): math.inf,
+        }
+    if _SCENARIO == "terminal_overflow":
+        usage = {f"large-key-{index}": "V" * 5_000 for index in range(40)}
+
     return {
-        "model": (
-            "M" * 500
-            if _SCENARIO == "text_large_metadata"
-            else "deterministic-jev-external-fake"
-        ),
+        "model": reported_model,
         "answers": answers,
-        "usage": {"input_tokens": 17, "output_tokens": 3},
+        "usage": usage,
     }
 
 

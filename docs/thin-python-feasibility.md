@@ -1,6 +1,6 @@
 # Thin Python wrapper feasibility
 
-> **Evidence, not implementation acceptance.** The source-scout sections below were produced without runtime tests, browser/model calls, or secret/configuration reads. Their local repository line references describe recovered commit `dde01a46dba112dbf9d002aeb2ebe2626363c034`; installed-source references identify the pinned dependencies. Later mechanical results are separately labelled at the end. No replacement wrapper has been implemented.
+> **Historical evidence, not implementation acceptance.** The source-scout sections below were produced without runtime tests, browser/model calls, or secret/configuration reads. Their local repository line references describe recovered commit `dde01a46dba112dbf9d002aeb2ebe2626363c034`; installed-source references identify the pinned dependencies. Later mechanical results are separately labelled at the end. The replacement wrapper was implemented afterward; its current status is owned by `RLCD-BRWSR.md`, not established by this note.
 
 ## Bottom line
 
@@ -11,7 +11,7 @@ The pinned `Agent.run()` can own the complete browser loop and the pinned native
 - The wrapper does **not** promise strict “no dispatch after deadline,” mutation certainty after interruption, partial progress after a hard kill, target ownership during incomplete construction, or confirmed closure merely because `Agent.close()` returned.
 - `maxActions` cannot honestly retain its current “mutations only; waits separate” meaning when implemented over `Agent.run()`. The smallest source-aligned budget is an upstream **step** budget based on `len(state["history"])`; it includes `wait`, scroll, click, select, and fill.
 
-This is not the current branch implementation. The branch still contains the larger command-level Python/TypeScript protocol and Pi-native Luna callback described in `docs/RLCD-BRWSR.md` and ADR-0002.
+At the time of this scout, the branch still contained the larger command-level Python/TypeScript protocol and Pi-native Luna callback described by the historical ADR-0002. The later rewrite replaced it; this note remains the pre-implementation evidence record.
 
 ## What upstream can own
 
@@ -303,10 +303,10 @@ Detailed source references are retained in
 
 ## Plan handoff
 
-The next implementation plan is owned by [RLCD-BRWSR.md](RLCD-BRWSR.md), not by
-this evidence note. The direction is feasible at the tested pin and on these
-fixtures. The user has selected OpenRouter Ling 3.0 Flash; validating it live,
-implementing the new launcher/runner, and repeating acceptance through the actual
-Pi tool are still future work.
+The implementation and remaining acceptance plan are owned by
+[RLCD-BRWSR.md](RLCD-BRWSR.md), not by this evidence note. The direction was
+feasible at the tested pin and the thin wrapper was implemented afterward with
+local registered-tool tests. Live OpenRouter and actual Pi-TUI/real-browser
+acceptance remain future work.
 The recovered larger branch has four unresolved static gate findings; recovery
 preserved work but did not turn the cancelled gate into a pass.

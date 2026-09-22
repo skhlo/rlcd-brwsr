@@ -1,130 +1,123 @@
 # RLCD-brwsr
 
-**Planning status:** this branch preserves the larger experimental implementation
-recovered from a cancelled, not-passed delivery gate. The approved next direction
-is a thinner Python-owned wrapper with a native API-key text helper; that rewrite
-has **not** been implemented. See the [next plan](docs/RLCD-BRWSR.md) and
-[source/probe evidence](docs/thin-python-feasibility.md). Setup and behavior below
-describe the recovered Pi-native-helper code, not the proposed replacement.
+**Implementation status:** the approved thin Python-owned rewrite is implemented
+and covered by local registered-tool tests. It has **not** been accepted through
+the Pi TUI, real Chrome fixture surface, or live Jev/OpenRouter calls. Current
+GitHub issues still describe the superseded larger implementation and are not
+claimed as satisfied. See the [owning plan](docs/RLCD-BRWSR.md),
+[ADR-0003](docs/adr/0003-python-owned-run.md), and the historical
+[feasibility evidence](docs/thin-python-feasibility.md).
 
-The recovered RLCD-brwsr extension wraps the pinned Jev Ultrafast Agent. It runs
-one bounded browser task in an owned tab through the existing local daemon
-selected by Browser Harness's native configuration. A Jev `DONE` response is a
-completion claim, not proof; the outer agent must independently verify the page
-outcome.
-
-The next design and operating scope are owned by
-[the plan](docs/RLCD-BRWSR.md); the recovered implementation's decisions are
-preserved in [ADR-0002](docs/adr/0002-wrap-pinned-jev-ultrafast-agent.md). The
-earlier custom Chrome DevTools CLI experiment remains historical evidence, not
-an active runtime or fallback.
+RLCD-brwsr delegates one bounded browser task to the pinned Jev Ultrafast Agent.
+Python constructs the upstream `Agent` and consumes `Agent.run()`; upstream owns
+observation, decisions, native field-text generation, and Browser Harness input.
+Pi validates the request, supervises one Python process, and returns one bounded
+terminal JSON result. A Jev `DONE` response is a completion claim, not proof; the
+outer agent must independently verify the visible result.
 
 ## Project-local setup
 
-The setup is explicit. Loading the extension never installs packages, starts a
-daemon, opens Chrome, or requests browser permission.
+Setup is explicit. Loading the extension only registers `rlcd_brwsr_run`; it does
+not install packages, start services, open Chrome, or make model calls.
 
 ```bash
 pnpm install --frozen-lockfile
 scripts/setup-runtime.sh
 
-# Edit Browser Harness's trusted host-local configuration. Its default location
-# is ~/.config/browser-harness/agent-workspace/.env:
+# In Browser Harness's normal host-local environment/workspace configuration:
 #   BU_NAME=rlcd-brwsr
 #   BU_CDP_URL=http://127.0.0.1:<selected-chrome-port>
 
-export TYPESAFE_API_KEY=... # host-local; never commit it
+export TYPESAFE_API_KEY=...        # Jev; host-local, never commit
+export TEXT_MODEL_API_KEY=...      # OpenRouter; optional for click-only tasks
 
-# Text entry uses Pi's existing OpenAI Codex login. RLCD-brwsr does not
-# configure or copy that login.
+# These are the only accepted native helper settings. The child supplies them
+# process-locally when absent and rejects conflicting values:
+export TEXT_MODEL_BASE_URL=https://openrouter.ai/api/v1
+export TEXT_MODEL=inclusionai/ling-3.0-flash
+export TEXT_MODEL_REASONING=none
 
 scripts/provision-browser.sh
 scripts/preflight-runtime.sh
 ```
 
 `uv.lock` fixes Python 3.12, Jev Ultrafast commit
-`1231850a0bf1a0c0341fe408ef1668dbbfdfac46`, and Browser Harness 0.1.13. The
-runtime configuration fixes the Jev model to `jev-1.13.0`.
+`1231850a0bf1a0c0341fe408ef1668dbbfdfac46`, and Browser Harness 0.1.13.
+`config/runtime.json` fixes Jev to `jev-1.13.0`, the helper tuple above, a
+32 KiB serialized-request limit, and a 16 KiB terminal/model-visible JSON limit.
+Those two byte budgets have one configuration owner.
 
-Browser Harness is the sole owner of browser connection selection. It loads
-`BU_NAME` and its native connection settings from its normal environment and
-workspace `.env` resolution; the wrapper has no aliases or second browser
-configuration. RLCD-brwsr accepts native local discovery or a loopback HTTP
-`BU_CDP_URL` and rejects resolved cloud/remote selectors. Explicit provisioning
-may start the natively configured daemon. Preflight and tool runs require that
-named daemon to be healthy and already running, and never recover it through
-`ensure_daemon()`.
+Browser Harness remains the only browser-configuration owner. Explicit
+provisioning may start its natively selected daemon. Preflight and tool runs
+require that named daemon to be healthy and already running. Runs reject cloud,
+remote WebSocket, `BU_AUTOSPAWN`, and non-loopback CDP settings; they never
+recover or replace the daemon through upstream `ensure_daemon()`.
 
-The wrapper deliberately does not compare the configured endpoint with target
-sets from an already-running same-named daemon. Browser Harness reads connection
-settings when its daemon starts, so stop/restart the daemon with its current
-native configuration before changing those settings, then explicitly provision
-it again. RLCD-brwsr does not silently reconcile a running daemon after a
-configuration change. Preflight never creates or synchronizes `.venv`. If Chrome
-asks for remote-debugging permission during explicit provisioning, the operator
-must approve it; the script does not automate permission.
+The helper key is checked only when upstream selects `TYPE_TEXT`, so click-only
+tasks work without it. Native missing-key, provider, and value-validation errors
+return sanitized available state and never invent replacement text or switch to
+Pi's active model.
 
-Text entry uses only Pi's native `openai-codex/gpt-5.6-luna` model at high
-reasoning through the extension context's model registry. Pi owns model lookup,
-its existing login, OAuth refresh, and completion. RLCD-brwsr does not read or
-copy Pi credentials, change the session's main model or thinking level, or
-support a separate API-key/helper endpoint. Standalone Python preflight reports
-helper capability as unknown because only a running Pi tool context can assess
-it.
+## Pi tool
 
-A click-only run remains usable when Luna or its Pi login is unavailable. If
-upstream selects `TYPE_TEXT` in that state, the run returns `needs_text` before
-a helper request or field mutation and retains prior evidence. For an available
-helper, the version-pinned bridge intercepts only upstream's helper-shaped
-transport call and relays its unchanged system/user prompt over the existing
-stdin/stdout channel. Pi returns text and available token usage; upstream still
-performs the sole `{text}` JSON-value validation, including the nonempty
-2,000-character limit, before browser input.
-
-Results identify the configured Jev model separately from the fixed Pi helper
-model and report a provider response model only when Pi supplies one. Available
-per-call token usage and latency remain separate. Provider HTTP-attempt, retry,
-subscription-spend, and cost totals remain `unavailable`; the wrapper does not
-invent them. Failures before a fill's helper result remain conservative upstream
-errors because the preceding browser freshness check can fail at the same
-boundary.
-
-## Explicit Pi use
-
-Load and enable the project extension for one fresh Pi session:
+Load the project extension in a fresh Pi session:
 
 ```bash
-pi -e ./config/pi/extensions/rlcd-brwsr.ts \
-  -t rlcd_brwsr_run
+pi -e ./config/pi/extensions/rlcd-brwsr.ts -t rlcd_brwsr_run
 ```
 
-The registered tool accepts an absolute HTTP(S) `url`, a natural-language
-`goal`, optional `maxActions` and `maxSeconds`, and optional `retainTab`.
-Defaults are 6 executed actions and 30 seconds; maxima are 20 actions and 120
-seconds. `retainTab: true` keeps the identified task tab only after a completion
-claim; its bridge still exits, while cancelled, expired, stopped, and failed
-runs attempt cleanup. Pi schedules the tool sequentially, which is not a global
-browser lock.
+The registered interface is:
 
-The recovered parent contains progress retention, cooperative shutdown and
-exact-target fallback-cleanup mechanisms. They were intended to preserve useful
-partial state without touching shared services. They are **not verified
-lifecycle guarantees** at the recovered head: unresolved static findings R23-R26
-question late helper dispatch, stop-reason precedence, terminal/ownership
-agreement and progress-transition interpretation. Do not treat its reported
-partial state or cleanup as proven merely because a record was shape-validated.
-The findings are retained in `artifacts/thin-python-plan/gate-review-log.txt`;
-this planning task did not reproduce or fix them. Process exit is not rollback.
+```ts
+rlcd_brwsr_run({
+  url: string;
+  goal: string;
+  maxSeconds?: number; // default 30, maximum 120
+  retainTab?: boolean;
+});
+```
 
-## Local fixture and checks
+There is no `maxActions`, alias, or replacement per-call step setting. Upstream's
+unchanged limits remain 60 history entries (including waits and scrolls) and 120
+decisions. They are not HTTP-attempt or spend caps.
+
+`maxSeconds` is a coarse parent stop deadline measured from before startup. Pi
+sends `SIGTERM`, allows a fixed 1.5-second cooperative cleanup grace, then sends
+`SIGKILL` only if process exit has not been observed. It does not guarantee that
+an action cannot cross the deadline. The process is reported reaped only after
+its exit is observed. Abrupt termination, construction interruption, or a
+missing terminal result leaves execution and task-tab cleanup unknown; process
+exit is not rollback and the tool does not retry automatically.
+
+`retainTab: true` is honored only after a normal completion claim with the known
+task target. Every other handled outcome makes one direct `Target.closeTarget`
+request. Closure is `closed` only when its response contains `success: true`.
+The shared daemon and unrelated targets are preserved. Scheduling is sequential
+inside Pi, not a global browser lock.
+
+Python projects only bounded current page fields, executed-history summaries,
+configured models, available upstream-recorded usage, known target, cleanup, and
+a sanitized diagnostic. Full snapshots, raw prompts/responses, child stderr, and
+invalid terminal fragments are not returned. Complete native key values are
+redacted before any clipping, including diagnostics and usage dictionary keys;
+invalid Unicode and non-finite numbers are normalized. The result discloses
+field/record omissions.
+
+Available usage records are source-labelled but incomplete: failed calls,
+attempts, retries, and charges can be absent. The tool deliberately returns no
+Pi top-level `usage`, so Pi footer and session totals exclude these native calls.
+
+## Local checks
 
 ```bash
-pnpm fixture # loopback only: http://127.0.0.1:43113
+pnpm fixture # loopback fixture: http://127.0.0.1:43113
 pnpm check
+uv lock --check
+git diff --check
 ```
 
-The loopback fixture serves both the click-only `ORBIT-27` journey and the
-`/text-entry.html` generated-value journey with marker `FIELD-41`. Deterministic
-acceptance responders under the fixture directories replace external Jev
-responses and Pi text completion only; they do not replace the upstream Agent,
-its text-helper field context/value validation, Browser Harness, or Chrome.
+The automated suite crosses the registered Pi tool -> real Python runner -> real
+pinned `Agent.run()`/native helper seam. It substitutes only external Browser
+Harness CDP and provider responses. It does not establish live model quality,
+provider compatibility, public-site reliability, actual billing, or Pi-TUI and
+real-browser acceptance.

@@ -8,5 +8,7 @@ printf '%s\n' \
   'Next: configure BU_NAME and the local connection in Browser Harness native settings.' \
   'The default workspace configuration is ~/.config/browser-harness/agent-workspace/.env.' \
   'Configure TYPESAFE_API_KEY on this host.' \
-  'Text entry uses Pi native openai-codex/gpt-5.6-luna with the existing Pi login.' \
+  'For text entry, configure a host-local OpenRouter key as TEXT_MODEL_API_KEY.' \
+  'The runner pins TEXT_MODEL_BASE_URL=https://openrouter.ai/api/v1,' \
+  'TEXT_MODEL=inclusionai/ling-3.0-flash, and TEXT_MODEL_REASONING=none.' \
   'Then run scripts/provision-browser.sh.'

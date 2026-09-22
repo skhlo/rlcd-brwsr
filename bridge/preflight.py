@@ -8,6 +8,12 @@ import sys
 
 from runtime_support import (
     JEV_MODEL,
+    REQUEST_MAX_UTF8_BYTES,
+    TERMINAL_MAX_UTF8_BYTES,
+    TEXT_MODEL,
+    TEXT_MODEL_BASE_URL,
+    TEXT_MODEL_REASONING,
+    configure_native_models,
     require_existing_local_daemon,
     resolved_local_daemon_name,
 )
@@ -25,14 +31,18 @@ def main() -> int:
         "daemon": None,
         "browserMode": None,
         "typesafeConfigured": False,
-        "textHelperAvailability": "unknown",
-        "textHelperModel": "unknown",
-        "textHelperReason": "Pi owns text-helper model and login checks at tool execution time",
+        "textHelperAvailability": "missing_key",
+        "textHelperBaseUrl": TEXT_MODEL_BASE_URL,
+        "textHelperModel": TEXT_MODEL,
+        "textHelperReasoning": TEXT_MODEL_REASONING,
+        "requestMaxUtf8Bytes": REQUEST_MAX_UTF8_BYTES,
+        "terminalMaxUtf8Bytes": TERMINAL_MAX_UTF8_BYTES,
     }
     try:
         if sys.version_info[:2] != (3, 12):
             raise RuntimeError("the project runtime must use Python 3.12")
 
+        configure_native_models()
         daemon_name = resolved_local_daemon_name()
         checks["daemon"] = daemon_name
         checks["typesafeConfigured"] = bool(
@@ -40,6 +50,8 @@ def main() -> int:
         )
         if not checks["typesafeConfigured"]:
             raise RuntimeError("TYPESAFE_API_KEY is not configured")
+        if os.environ.get("TEXT_MODEL_API_KEY", "").strip():
+            checks["textHelperAvailability"] = "available"
 
         distribution = importlib.metadata.distribution("jev-ultrafast")
         direct_url = json.loads(distribution.read_text("direct_url.json") or "{}")
@@ -55,16 +67,17 @@ def main() -> int:
                 f"expected {BROWSER_HARNESS_VERSION}, got {installed_harness}"
             )
 
-        from jev_ultrafast import Agent, Browser
+        from jev_ultrafast import Agent
+        from jev_ultrafast import browser as upstream_browser
 
         for owner, attribute in (
-            (Agent, "command"),
             (Agent, "run"),
-            (Browser, "close"),
+            (upstream_browser, "cdp"),
         ):
             if not hasattr(owner, attribute):
+                owner_name = getattr(owner, "__name__", type(owner).__name__)
                 raise RuntimeError(
-                    f"pinned upstream compatibility seam is missing {owner.__name__}.{attribute}"
+                    f"pinned upstream compatibility seam is missing {owner_name}.{attribute}"
                 )
         checks["browserMode"] = require_existing_local_daemon(daemon_name)
     except Exception as error:
