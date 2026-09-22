@@ -264,11 +264,15 @@ protocol record and diagnostic stream before emission. The parent separately
 retains its defense for values it knows. Redaction therefore covers retained
 errors, progress, tool content, and details without serializing child-only
 secrets to the parent. Measurements name the configured Jev model and fixed Pi
-helper separately from provider-reported identities. Helper latency and
-available Pi token usage are reported for completed responses; a response model
-is reported only when Pi supplies one. Provider attempt, retry,
-subscription-spend, and cost counts that are not exposed remain `unavailable`,
-not zero. Cleanup elapsed time remains unavailable
+helper separately from provider-reported identities. Helper latency, response
+model, and available Pi token usage are captured for every resolved response,
+including incomplete or late responses observed during shutdown. Combined Pi
+helper usage is also returned as the tool result's top-level nested-call usage;
+Python-echoed usage is not counted again. A thrown completion with no response
+usage does not invent any. Raw Pi SDK error messages, bodies, and stacks never
+enter the bridge or tool result; non-stop responses and thrown failures use
+fixed failure text. Provider attempt, retry, subscription-spend, and cost counts
+that are not exposed remain `unavailable`, not zero. Cleanup elapsed time remains unavailable
 when an abnormal exit prevents measuring the whole interval; total elapsed time
 and any overrun beyond the wall budget remain parent-observed. The Jev model
 identifier has one executable owner in `config/runtime.json`, which the

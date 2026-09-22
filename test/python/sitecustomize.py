@@ -20,6 +20,7 @@ _STATE = {
     "destination": False,
     "clicks": 0,
     "typed_text": "",
+    "typed_values": [],
     "fresh_checks": 0,
     "stale_click_checks": 0,
 }
@@ -138,13 +139,16 @@ admin.daemon_browser_kind = _daemon_browser_kind
 
 def _page():
     if _SCENARIO.startswith("text_"):
-        if _STATE["typed_text"]:
+        typed_values = _STATE["typed_values"]
+        helper_target = 2 if _SCENARIO == "text_two_helpers" else 1
+        if len(typed_values) >= helper_target:
+            accepted = ", then ".join(typed_values)
             return {
                 "url": _STATE["url"],
                 "title": "Generated field fixture complete",
                 "text": (
-                    "Accepted generated destination: "
-                    f"{_STATE['typed_text']}. Marker: FIELD-41"
+                    "Accepted generated destinations: "
+                    f"{accepted}. Marker: FIELD-41"
                 ),
                 "scroll": {"y": 0},
                 "actions": [{"id": "wait", "kind": "wait", "label": "Wait"}],
@@ -152,28 +156,34 @@ def _page():
                 "page_key": "text-complete",
                 "guards": {},
             }
+        second_field = _SCENARIO == "text_two_helpers" and len(typed_values) == 1
+        field_id = "country-code" if second_field else "destination-city"
+        field_label = "Country code" if second_field else "Destination city"
+        field_node = 22 if second_field else 21
+        marker = "text-second" if second_field else "text-start"
         return {
             "url": _STATE["url"],
             "title": "Generated field fixture",
             "text": (
-                "Enter the destination city requested by the goal. "
-                "A valid value reveals marker FIELD-41."
+                "Enter the destination values requested by the goal. "
+                f"Values already accepted: {', '.join(typed_values) or 'none'}. "
+                "Completing the fixture reveals marker FIELD-41."
             ),
             "scroll": {"y": 0},
             "actions": [
                 {
-                    "id": "destination-city",
+                    "id": field_id,
                     "kind": "fill",
-                    "label": "Destination city",
+                    "label": field_label,
                     "role": "textbox",
                     "value": "",
-                    "node": 21,
+                    "node": field_node,
                 },
                 {"id": "wait", "kind": "wait", "label": "Wait"},
             ],
-            "marker": "text-start",
-            "page_key": "text-start",
-            "guards": {"21": "guard-21"},
+            "marker": marker,
+            "page_key": marker,
+            "guards": {str(field_node): f"guard-{field_node}"},
         }
     if _STATE["destination"]:
         suffix = "X" * 20_000 if _SCENARIO == "large_evidence" else ""
@@ -284,6 +294,7 @@ def _cdp(method, session_id=None, **params):
         if _SCENARIO == "text_cached_fill_failure":
             raise RuntimeError("cached fill failed after dispatched browser input")
         _STATE["typed_text"] = params["text"]
+        _STATE["typed_values"].append(params["text"])
         _mark_external_work("RLCD_TEST_FIELD_MUTATION_MARKER")
         return {}
     if method == "Input.dispatchKeyEvent":
@@ -396,6 +407,8 @@ def _post_json(url, key, body):
     operations = questions["operation"]["criteria"]
     if _SCENARIO == "needs_text":
         operation = "TYPE_TEXT"
+    elif _SCENARIO == "text_two_helpers":
+        operation = "DONE" if len(_STATE["typed_values"]) >= 2 else "TYPE_TEXT"
     elif _SCENARIO.startswith("text_"):
         operation = "DONE" if _STATE["typed_text"] else "TYPE_TEXT"
     elif _SCENARIO == "blocked":

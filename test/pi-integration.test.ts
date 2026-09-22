@@ -34,6 +34,7 @@ interface RlcdInput {
 interface ToolResult {
   content: Array<{ type: string; text: string }>;
   details: unknown;
+  usage?: unknown;
 }
 
 interface RegisteredTool {
@@ -60,8 +61,24 @@ interface RegisteredToolOptions {
   helperCalls?: HelperCompletionCall[];
   helperModelAvailable?: boolean;
   helperAuthAvailable?: boolean;
-  syntheticOAuthMaterial?: string;
 }
+
+const syntheticOAuthAccessToken = "synthetic-oauth-access-token-MOON-62";
+const syntheticPiUsage = {
+  input: 19,
+  output: 4,
+  cacheRead: 0,
+  cacheWrite: 0,
+  reasoning: 2,
+  totalTokens: 23,
+  cost: {
+    input: 0.0019,
+    output: 0.0004,
+    cacheRead: 0,
+    cacheWrite: 0,
+    total: 0.0023,
+  },
+};
 
 const execFileAsync = promisify(execFile);
 const repositoryRoot = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -149,7 +166,6 @@ function registeredTool(options: RegisteredToolOptions = {}): RegisteredTool {
   const captured = registered;
   const context = {
     modelRegistry: {
-      syntheticOAuthMaterial: options.syntheticOAuthMaterial,
       find(provider: string, model: string) {
         if (
           options.helperModelAvailable === false ||
@@ -204,15 +220,18 @@ function registeredTool(options: RegisteredToolOptions = {}): RegisteredTool {
           });
         }
         if (scenario === "text_helper_late") {
-          await delay(1_400);
+          await delay(1_100);
         }
         if (scenario === "text_provider_failure") {
-          throw new Error("Model connection failed; no action executed.");
-        }
-        if (scenario === "text_status_failure") {
-          throw new Error(
-            "Model provider returned HTTP 503; no action executed.",
-          );
+          const error = new Error(
+            `OAuth refresh failed with access_token=${syntheticOAuthAccessToken}`,
+          ) as Error & { body: string };
+          error.body = JSON.stringify({
+            error: "invalid_grant",
+            access_token: syntheticOAuthAccessToken,
+          });
+          error.stack = `SyntheticProviderError: access_token=${syntheticOAuthAccessToken}`;
+          throw error;
         }
         const text =
           scenario === "text_malformed"
@@ -225,7 +244,17 @@ function registeredTool(options: RegisteredToolOptions = {}): RegisteredTool {
                   ? JSON.stringify({ text: "x".repeat(2_001) })
                   : scenario === "text_helper_oversized"
                     ? "x".repeat(12_001)
-                    : JSON.stringify({ text: "Busan" });
+                    : scenario === "text_helper_late"
+                      ? JSON.stringify({ text: "Late-Seoul" })
+                      : JSON.stringify({ text: "Busan" });
+        const stopReason =
+          scenario === "text_status_failure"
+            ? "error"
+            : scenario === "text_length_failure"
+              ? "length"
+              : scenario === "text_aborted_failure"
+                ? "aborted"
+                : "stop";
         return {
           role: "assistant",
           content: [{ type: "text", text }],
@@ -233,22 +262,13 @@ function registeredTool(options: RegisteredToolOptions = {}): RegisteredTool {
           provider: model.provider,
           model: model.id,
           responseModel: "gpt-5.6-luna-synthetic-provider",
-          usage: {
-            input: 19,
-            output: 4,
-            cacheRead: 0,
-            cacheWrite: 0,
-            reasoning: 2,
-            totalTokens: 23,
-            cost: {
-              input: 0,
-              output: 0,
-              cacheRead: 0,
-              cacheWrite: 0,
-              total: 0,
-            },
-          },
-          stopReason: "stop",
+          usage: syntheticPiUsage,
+          stopReason,
+          ...(scenario === "text_status_failure"
+            ? {
+                errorMessage: `OAuth response body: {"access_token":"${syntheticOAuthAccessToken}"}`,
+              }
+            : {}),
           timestamp: Date.now(),
         };
       },
@@ -450,123 +470,207 @@ test("registered Pi tool loads native Harness workspace configuration and comple
   });
 });
 
-test("registered Pi tool uses Luna through Pi for a generated field value", async () => {
-  await withFakeExternalInteractions("text_generated", async (harnessHome) => {
-    const helperRequestMarker = join(harnessHome, "helper-requested");
-    const fieldMutationMarker = join(harnessHome, "field-mutated");
-    const stdinArtifact = join(harnessHome, "bridge-stdin.jsonl");
-    const completionCalls: HelperCompletionCall[] = [];
-    const oauthMaterial = "synthetic-oauth-material-MOON-62";
-    process.env.RLCD_TEST_HELPER_REQUEST_MARKER = helperRequestMarker;
-    process.env.RLCD_TEST_FIELD_MUTATION_MARKER = fieldMutationMarker;
-    process.env.RLCD_TEST_STDIN_MARKER = stdinArtifact;
+test("registered Pi tool uses Luna through Pi for generated field values", async () => {
+  await withFakeExternalInteractions(
+    "text_two_helpers",
+    async (harnessHome) => {
+      const helperRequestMarker = join(harnessHome, "helper-requested");
+      const fieldMutationMarker = join(harnessHome, "field-mutated");
+      const completionCalls: HelperCompletionCall[] = [];
+      process.env.RLCD_TEST_HELPER_REQUEST_MARKER = helperRequestMarker;
+      process.env.RLCD_TEST_FIELD_MUTATION_MARKER = fieldMutationMarker;
 
-    const result = await registeredTool({
-      helperCalls: completionCalls,
-      syntheticOAuthMaterial: oauthMaterial,
-    }).execute(
-      "generated-field-value",
-      baseInput({
-        goal: "Fill Destination city with South Korea's second-largest city, then stop when marker FIELD-41 is visible.",
-      }),
-      new AbortController().signal,
-    );
-    const details = detailsOf(result);
-    const observation = nullableRecordField(details, "lastObservation");
-    assert.ok(observation);
-    const usage = recordField(details, "usage");
-    const jevUsage = recordField(usage, "jev");
-    const helperUsage = recordField(usage, "textHelper");
-    const helperCalls = arrayField(helperUsage, "calls");
-    assert.equal(helperCalls.length, 1);
-    const helperCall = recordValue(helperCalls[0], "text helper call");
+      const result = await registeredTool({
+        helperCalls: completionCalls,
+      }).execute(
+        "generated-field-values",
+        baseInput({
+          goal: "Fill both destination fields, then stop when marker FIELD-41 is visible.",
+        }),
+        new AbortController().signal,
+      );
+      const details = detailsOf(result);
+      const observation = nullableRecordField(details, "lastObservation");
+      assert.ok(observation);
+      const usage = recordField(details, "usage");
+      const jevUsage = recordField(usage, "jev");
+      const helperUsage = recordField(usage, "textHelper");
+      const helperCalls = arrayField(helperUsage, "calls").map((call, index) =>
+        recordValue(call, `text helper call ${index}`),
+      );
 
-    assert.equal(stringField(details, "status"), "completion_claim");
-    assert.match(stringField(observation, "evidence"), /Busan.*FIELD-41/);
-    assert.equal(stringField(jevUsage, "configuredModel"), "jev-1.13.0");
-    assert.equal(
-      stringField(
-        recordValue(arrayField(jevUsage, "decisions")[0], "first Jev decision"),
-        "reportedModel",
-      ),
-      "deterministic-jev-external-fake",
-    );
-    assert.equal(
-      stringField(helperUsage, "model"),
-      "openai-codex/gpt-5.6-luna",
-    );
-    assert.equal(
-      stringField(helperCall, "reportedModel"),
-      "gpt-5.6-luna-synthetic-provider",
-    );
-    assert.equal(stringField(helperCall, "field"), "Destination city");
-    assert.deepEqual(helperCall.usage, {
-      input: 19,
-      output: 4,
-      cacheRead: 0,
-      cacheWrite: 0,
-      reasoning: 2,
-      totalTokens: 23,
-    });
-    assert.ok(numberField(helperCall, "latencyMs") >= 0);
-    assert.equal(jevUsage.providerHttpAttempts, "unavailable");
-    assert.equal(jevUsage.providerCost, "unavailable");
-    assert.equal(helperUsage.providerHttpAttempts, "unavailable");
-    assert.equal(helperUsage.providerCost, "unavailable");
-    assert.deepEqual(
-      arrayField(details, "trace").map((entry, index) =>
-        stringField(recordValue(entry, `trace[${index}]`), "operation"),
-      ),
-      ["TYPE_TEXT", "DONE"],
-    );
-    assert.equal(await access(helperRequestMarker), undefined);
-    assert.equal(await access(fieldMutationMarker), undefined);
-    assert.equal(completionCalls.length, 1);
-    assert.deepEqual(
-      {
-        provider: completionCalls[0]?.provider,
-        model: completionCalls[0]?.model,
-        reasoningEffort: completionCalls[0]?.reasoningEffort,
-      },
-      {
-        provider: "openai-codex",
-        model: "gpt-5.6-luna",
-        reasoningEffort: "high",
-      },
-    );
-    assert.match(completionCalls[0]?.systemPrompt ?? "", /JSON object/i);
-    const fieldContext: unknown = JSON.parse(
-      completionCalls[0]?.userPrompt ?? "",
-    );
-    assert.ok(isRecord(fieldContext));
-    assert.equal(recordField(fieldContext, "field").label, "Destination city");
-    assert.match(stringField(fieldContext, "goal"), /second-largest city/);
-    assert.match(
-      stringField(recordField(fieldContext, "page"), "text"),
-      /FIELD-41/,
-    );
-    const bridgeInput = await readFile(stdinArtifact, "utf8");
-    assert.match(bridgeInput, /text_helper_response/);
-    assert.doesNotMatch(bridgeInput, new RegExp(oauthMaterial));
-    assert.doesNotMatch(JSON.stringify(result), new RegExp(oauthMaterial));
-  });
+      assert.equal(stringField(details, "status"), "completion_claim");
+      assert.match(
+        stringField(observation, "evidence"),
+        /Busan.*Busan.*FIELD-41/,
+      );
+      assert.equal(stringField(jevUsage, "configuredModel"), "jev-1.13.0");
+      assert.equal(
+        stringField(
+          recordValue(
+            arrayField(jevUsage, "decisions")[0],
+            "first Jev decision",
+          ),
+          "reportedModel",
+        ),
+        "deterministic-jev-external-fake",
+      );
+      assert.equal(
+        stringField(helperUsage, "model"),
+        "openai-codex/gpt-5.6-luna",
+      );
+      assert.deepEqual(
+        helperCalls.map((call) => stringField(call, "reportedModel")),
+        ["gpt-5.6-luna-synthetic-provider", "gpt-5.6-luna-synthetic-provider"],
+      );
+      assert.deepEqual(
+        helperCalls.map((call) => stringField(call, "field")),
+        ["Destination city", "Country code"],
+      );
+      for (const helperCall of helperCalls) {
+        assert.deepEqual(helperCall.usage, {
+          input: 19,
+          output: 4,
+          cacheRead: 0,
+          cacheWrite: 0,
+          reasoning: 2,
+          totalTokens: 23,
+        });
+        assert.ok(numberField(helperCall, "latencyMs") >= 0);
+      }
+      assert.deepEqual(result.usage, {
+        input: 38,
+        output: 8,
+        cacheRead: 0,
+        cacheWrite: 0,
+        reasoning: 4,
+        totalTokens: 46,
+        cost: {
+          input: 0.0038,
+          output: 0.0008,
+          cacheRead: 0,
+          cacheWrite: 0,
+          total: 0.0046,
+        },
+      });
+      assert.equal(jevUsage.providerHttpAttempts, "unavailable");
+      assert.equal(jevUsage.providerCost, "unavailable");
+      assert.equal(helperUsage.providerHttpAttempts, "unavailable");
+      assert.equal(helperUsage.providerCost, "unavailable");
+      assert.deepEqual(
+        arrayField(details, "trace").map((entry, index) =>
+          stringField(recordValue(entry, `trace[${index}]`), "operation"),
+        ),
+        ["TYPE_TEXT", "TYPE_TEXT", "DONE"],
+      );
+      assert.equal(await access(helperRequestMarker), undefined);
+      assert.equal(await access(fieldMutationMarker), undefined);
+      assert.equal(
+        (await readFile(fieldMutationMarker, "utf8")).trim().split("\n").length,
+        2,
+        "both externally observed fields must be mutated",
+      );
+      assert.deepEqual(
+        {
+          provider: completionCalls[0]?.provider,
+          model: completionCalls[0]?.model,
+          reasoningEffort: completionCalls[0]?.reasoningEffort,
+        },
+        {
+          provider: "openai-codex",
+          model: "gpt-5.6-luna",
+          reasoningEffort: "high",
+        },
+      );
+      assert.match(completionCalls[0]?.systemPrompt ?? "", /JSON object/i);
+      const fieldContext: unknown = JSON.parse(
+        completionCalls[0]?.userPrompt ?? "",
+      );
+      assert.ok(isRecord(fieldContext));
+      assert.equal(
+        recordField(fieldContext, "field").label,
+        "Destination city",
+      );
+      assert.match(
+        stringField(fieldContext, "goal"),
+        /both destination fields/,
+      );
+      assert.match(
+        stringField(recordField(fieldContext, "page"), "text"),
+        /FIELD-41/,
+      );
+    },
+  );
 });
 
 test("unusable helper generations and provider failures stop before field mutation", async () => {
-  for (const [scenario, diagnostic] of [
-    ["text_malformed", /no valid field value/i],
-    ["text_empty", /no valid field value/i],
-    ["text_extra_key", /no valid field value/i],
-    ["text_value_too_long", /no valid field value/i],
-    ["text_provider_failure", /connection failed/i],
-    ["text_status_failure", /HTTP 503/i],
-    ["text_helper_oversized", /exceeded 12000 characters/i],
+  for (const helperCase of [
+    {
+      scenario: "text_provider_failure",
+      diagnostic: /Pi text helper request failed/i,
+      hasSdkUsage: false,
+      containsOAuth: true,
+    },
+    {
+      scenario: "text_status_failure",
+      diagnostic: /Pi text helper completion failed/i,
+      hasSdkUsage: true,
+      containsOAuth: true,
+    },
+    {
+      scenario: "text_length_failure",
+      diagnostic: /Pi text helper output was incomplete/i,
+      hasSdkUsage: true,
+      containsOAuth: false,
+    },
+    {
+      scenario: "text_aborted_failure",
+      diagnostic: /Pi text helper completion was aborted/i,
+      hasSdkUsage: true,
+      containsOAuth: false,
+    },
+    {
+      scenario: "text_malformed",
+      diagnostic: /no valid field value/i,
+      hasSdkUsage: true,
+      containsOAuth: false,
+    },
+    {
+      scenario: "text_empty",
+      diagnostic: /no valid field value/i,
+      hasSdkUsage: true,
+      containsOAuth: false,
+    },
+    {
+      scenario: "text_extra_key",
+      diagnostic: /no valid field value/i,
+      hasSdkUsage: true,
+      containsOAuth: false,
+    },
+    {
+      scenario: "text_value_too_long",
+      diagnostic: /no valid field value/i,
+      hasSdkUsage: true,
+      containsOAuth: false,
+    },
+    {
+      scenario: "text_helper_oversized",
+      diagnostic: /exceeded 12000 characters/i,
+      hasSdkUsage: true,
+      containsOAuth: false,
+    },
   ] as const) {
+    const { scenario, diagnostic, hasSdkUsage, containsOAuth } = helperCase;
     await withFakeExternalInteractions(scenario, async (harnessHome) => {
       const helperRequestMarker = join(harnessHome, "helper-requested");
       const fieldMutationMarker = join(harnessHome, "field-mutated");
+      const rawBridgeInputArtifact = join(harnessHome, "bridge-stdin.jsonl");
+      const updates: ToolResult[] = [];
       process.env.RLCD_TEST_HELPER_REQUEST_MARKER = helperRequestMarker;
       process.env.RLCD_TEST_FIELD_MUTATION_MARKER = fieldMutationMarker;
+      if (containsOAuth) {
+        process.env.RLCD_TEST_STDIN_MARKER = rawBridgeInputArtifact;
+      }
 
       const result = await registeredTool().execute(
         `helper-failure-${scenario}`,
@@ -574,6 +678,7 @@ test("unusable helper generations and provider failures stop before field mutati
           goal: "Fill Destination city with South Korea's second-largest city, then stop when marker FIELD-41 is visible.",
         }),
         new AbortController().signal,
+        (update) => updates.push(update),
       );
       const details = detailsOf(result);
       const usage = recordField(details, "usage");
@@ -596,27 +701,45 @@ test("unusable helper generations and provider failures stop before field mutati
       );
       assert.equal(helperUsage.availability, "available");
       assert.equal(helperUsage.model, "openai-codex/gpt-5.6-luna");
-      const helperCalls = arrayField(helperUsage, "calls");
       assert.equal(
-        helperCalls.length,
-        scenario === "text_malformed" ||
-          scenario === "text_empty" ||
-          scenario === "text_extra_key" ||
-          scenario === "text_value_too_long" ||
-          scenario === "text_helper_oversized"
-          ? 1
-          : 0,
+        arrayField(helperUsage, "calls").length,
+        hasSdkUsage ? 1 : 0,
       );
       assert.equal(helperUsage.providerHttpAttempts, "unavailable");
       assert.equal(helperUsage.providerRetries, "unavailable");
       assert.equal(helperUsage.providerCost, "unavailable");
-      assert.equal(await access(helperRequestMarker), undefined);
-      assert.equal(
-        (await readFile(helperRequestMarker, "utf8")).trim().split("\n").length,
-        1,
-        "helper failures must not be retried",
+      assert.deepEqual(
+        result.usage,
+        hasSdkUsage ? syntheticPiUsage : undefined,
       );
+      assert.equal(await access(helperRequestMarker), undefined);
       await assert.rejects(access(fieldMutationMarker));
+
+      if (containsOAuth) {
+        const rawBridgeInput = await readFile(rawBridgeInputArtifact, "utf8");
+        const retainedArtifact = join(
+          harnessHome,
+          `retained-${scenario}-evidence.json`,
+        );
+        await writeFile(
+          retainedArtifact,
+          JSON.stringify({ result, updates, rawBridgeInput }),
+        );
+        const retainedOutput = await readFile(retainedArtifact, "utf8");
+        for (const [surface, serialized] of [
+          ["tool content", JSON.stringify(result.content)],
+          ["details", JSON.stringify(result.details)],
+          ["progress", JSON.stringify(updates)],
+          ["raw bridge input", rawBridgeInput],
+          ["retained output", retainedOutput],
+        ] as const) {
+          assert.doesNotMatch(
+            serialized,
+            new RegExp(syntheticOAuthAccessToken),
+            `${surface} exposed Pi OAuth material from ${scenario}`,
+          );
+        }
+      }
     });
   }
 });
@@ -645,7 +768,6 @@ test("Pi cancellation aborts a waiting helper and prevents field mutation", asyn
       assert.equal(stringField(details, "status"), "stopped");
       assert.equal(stringField(details, "stopReason"), "cancelled");
       assert.equal(stringField(details, "mutationOutcome"), "not_in_flight");
-      assert.equal(completionCalls.length, 1);
       assert.equal(completionCalls[0]?.signal?.aborted, true);
       assert.deepEqual(
         arrayField(
@@ -654,6 +776,7 @@ test("Pi cancellation aborts a waiting helper and prevents field mutation", asyn
         ),
         [],
       );
+      assert.equal(result.usage, undefined);
       await assert.rejects(access(fieldMutationMarker));
       const bridgePid = numberField(
         recordField(details, "ownership"),
@@ -674,11 +797,9 @@ test("helper deadline ignores a late completion without writing into a later run
     async (harnessHome) => {
       const helperRequestMarker = join(harnessHome, "helper-requested");
       const fieldMutationMarker = join(harnessHome, "field-mutated");
-      const stdinArtifact = join(harnessHome, "bridge-stdin.jsonl");
       const completionCalls: HelperCompletionCall[] = [];
       process.env.RLCD_TEST_HELPER_REQUEST_MARKER = helperRequestMarker;
       process.env.RLCD_TEST_FIELD_MUTATION_MARKER = fieldMutationMarker;
-      process.env.RLCD_TEST_STDIN_MARKER = stdinArtifact;
       const tool = registeredTool({ helperCalls: completionCalls });
 
       const expired = await tool.execute(
@@ -694,6 +815,14 @@ test("helper deadline ignores a late completion without writing into a later run
         "not_in_flight",
       );
       assert.equal(completionCalls[0]?.signal?.aborted, true);
+      assert.equal(
+        arrayField(
+          recordField(recordField(expiredDetails, "usage"), "textHelper"),
+          "calls",
+        ).length,
+        1,
+      );
+      assert.deepEqual(expired.usage, syntheticPiUsage);
       await assert.rejects(access(fieldMutationMarker));
 
       process.env.RLCD_TEST_SCENARIO = "text_generated";
@@ -702,19 +831,22 @@ test("helper deadline ignores a late completion without writing into a later run
         baseInput(),
         new AbortController().signal,
       );
-      assert.equal(
-        stringField(detailsOf(completed), "status"),
-        "completion_claim",
+      const completedDetails = detailsOf(completed);
+      assert.equal(stringField(completedDetails, "status"), "completion_claim");
+      const completedObservation = nullableRecordField(
+        completedDetails,
+        "lastObservation",
       );
-      await delay(500);
-
-      const bridgeInput = await readFile(stdinArtifact, "utf8");
+      assert.ok(completedObservation);
+      assert.match(stringField(completedObservation, "evidence"), /Busan/);
       assert.equal(
-        bridgeInput.match(/text_helper_response/g)?.length,
+        arrayField(
+          recordField(recordField(completedDetails, "usage"), "textHelper"),
+          "calls",
+        ).length,
         1,
-        "only the later run may receive a helper response",
       );
-      assert.equal(completionCalls.length, 2);
+      assert.deepEqual(completed.usage, syntheticPiUsage);
       assert.equal(await access(fieldMutationMarker), undefined);
     },
   );

@@ -5,6 +5,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import type {
+  AgentToolResult,
   ExtensionAPI,
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
@@ -206,9 +207,12 @@ export interface RlcdRunResult {
   };
 }
 
+type PiUsage = NonNullable<AgentToolResult<unknown>["usage"]>;
+
 interface ToolResult {
   content: Array<{ type: "text"; text: string }>;
   details: RlcdRunResult;
+  usage?: PiUsage;
 }
 
 interface BridgeRunInput extends Required<RlcdRunInput> {
@@ -218,9 +222,11 @@ interface BridgeRunInput extends Required<RlcdRunInput> {
 
 interface TextHelperCompletion {
   response: string;
+  failure: string | null;
   reportedModel: string;
   latencyMs: number;
   usage: JsonValue;
+  piUsage: PiUsage;
 }
 
 interface PiTextHelper {
@@ -363,6 +369,82 @@ function knownCredentials(): string[] {
   );
 }
 
+function copyPiUsage(usage: PiUsage): PiUsage {
+  return {
+    input: usage.input,
+    output: usage.output,
+    cacheRead: usage.cacheRead,
+    cacheWrite: usage.cacheWrite,
+    ...(usage.cacheWrite1h === undefined
+      ? {}
+      : { cacheWrite1h: usage.cacheWrite1h }),
+    ...(usage.reasoning === undefined ? {} : { reasoning: usage.reasoning }),
+    totalTokens: usage.totalTokens,
+    cost: {
+      input: usage.cost.input,
+      output: usage.cost.output,
+      cacheRead: usage.cost.cacheRead,
+      cacheWrite: usage.cost.cacheWrite,
+      total: usage.cost.total,
+    },
+  };
+}
+
+function combinePiUsage(current: PiUsage | undefined, next: PiUsage): PiUsage {
+  if (!current) return copyPiUsage(next);
+  return {
+    input: current.input + next.input,
+    output: current.output + next.output,
+    cacheRead: current.cacheRead + next.cacheRead,
+    cacheWrite: current.cacheWrite + next.cacheWrite,
+    ...(current.cacheWrite1h === undefined && next.cacheWrite1h === undefined
+      ? {}
+      : {
+          cacheWrite1h: (current.cacheWrite1h ?? 0) + (next.cacheWrite1h ?? 0),
+        }),
+    ...(current.reasoning === undefined && next.reasoning === undefined
+      ? {}
+      : { reasoning: (current.reasoning ?? 0) + (next.reasoning ?? 0) }),
+    totalTokens: current.totalTokens + next.totalTokens,
+    cost: {
+      input: current.cost.input + next.cost.input,
+      output: current.cost.output + next.cost.output,
+      cacheRead: current.cost.cacheRead + next.cost.cacheRead,
+      cacheWrite: current.cost.cacheWrite + next.cost.cacheWrite,
+      total: current.cost.total + next.cost.total,
+    },
+  };
+}
+
+function helperUsageDetails(usage: PiUsage): JsonValue {
+  return {
+    input: usage.input,
+    output: usage.output,
+    cacheRead: usage.cacheRead,
+    cacheWrite: usage.cacheWrite,
+    ...(usage.cacheWrite1h === undefined
+      ? {}
+      : { cacheWrite1h: usage.cacheWrite1h }),
+    ...(usage.reasoning === undefined ? {} : { reasoning: usage.reasoning }),
+    totalTokens: usage.totalTokens,
+  };
+}
+
+function resolvedCompletionFailure(stopReason: string): string | null {
+  switch (stopReason) {
+    case "stop":
+      return null;
+    case "length":
+      return "Pi text helper output was incomplete";
+    case "aborted":
+      return "Pi text helper completion was aborted";
+    case "error":
+      return "Pi text helper completion failed";
+    default:
+      return "Pi text helper returned an unsupported completion state";
+  }
+}
+
 function createPiTextHelper(ctx: ExtensionContext): PiTextHelper {
   const model = ctx.modelRegistry.find(TEXT_HELPER_PROVIDER, TEXT_HELPER_MODEL);
   const unavailableReason = !model
@@ -377,55 +459,58 @@ function createPiTextHelper(ctx: ExtensionContext): PiTextHelper {
     async complete(prompt, signal) {
       if (!model || unavailableReason) {
         throw new Error(
-          unavailableReason ??
-            `Pi text helper ${TEXT_HELPER_DISPLAY_MODEL} is unavailable`,
+          `Pi text helper ${TEXT_HELPER_DISPLAY_MODEL} is unavailable`,
         );
       }
-      signal.throwIfAborted();
+      if (signal.aborted) {
+        throw new Error("Pi text helper request was aborted");
+      }
       const startedAt = Date.now();
-      const response = await ctx.modelRegistry.complete(
-        model,
-        {
-          systemPrompt: prompt.system,
-          messages: [
+      const response = await (async () => {
+        try {
+          return await ctx.modelRegistry.complete(
+            model,
             {
-              role: "user",
-              content: [{ type: "text", text: prompt.user }],
-              timestamp: Date.now(),
+              systemPrompt: prompt.system,
+              messages: [
+                {
+                  role: "user",
+                  content: [{ type: "text", text: prompt.user }],
+                  timestamp: Date.now(),
+                },
+              ],
             },
-          ],
-        },
-        { reasoningEffort: "high", signal },
-      );
-      signal.throwIfAborted();
-      if (response.stopReason !== "stop") {
-        throw new Error(
-          response.errorMessage ||
-            `Pi text helper stopped with ${response.stopReason}`,
-        );
-      }
-      const text = response.content
-        .filter(
-          (part): part is { type: "text"; text: string } =>
-            part.type === "text",
-        )
-        .map((part) => part.text)
-        .join("\n");
-      const usage = {
-        input: response.usage.input,
-        output: response.usage.output,
-        cacheRead: response.usage.cacheRead,
-        cacheWrite: response.usage.cacheWrite,
-        ...(response.usage.reasoning === undefined
-          ? {}
-          : { reasoning: response.usage.reasoning }),
-        totalTokens: response.usage.totalTokens,
-      };
+            { reasoningEffort: "high", signal },
+          );
+        } catch {
+          throw new Error(
+            signal.aborted
+              ? "Pi text helper request was aborted"
+              : "Pi text helper request failed",
+          );
+        }
+      })();
+      const piUsage = copyPiUsage(response.usage);
+      const usage = helperUsageDetails(piUsage);
+      const reportedModel = response.responseModel ?? "unavailable";
+      const latencyMs = Date.now() - startedAt;
+      const failure = resolvedCompletionFailure(response.stopReason);
+      const text = failure
+        ? ""
+        : response.content
+            .filter(
+              (part): part is { type: "text"; text: string } =>
+                part.type === "text",
+            )
+            .map((part) => part.text)
+            .join("\n");
       return {
         response: text,
-        reportedModel: response.responseModel ?? "unavailable",
-        latencyMs: Date.now() - startedAt,
+        failure,
+        reportedModel,
+        latencyMs,
         usage,
+        piUsage,
       };
     },
   };
@@ -986,10 +1071,11 @@ function toolContent(result: RlcdRunResult): string {
   });
 }
 
-function asToolResult(result: RlcdRunResult): ToolResult {
+function asToolResult(result: RlcdRunResult, usage?: PiUsage): ToolResult {
   return {
     content: [{ type: "text", text: toolContent(result) }],
     details: result,
+    ...(usage ? { usage } : {}),
   };
 }
 
@@ -1006,7 +1092,13 @@ interface PartialBridgeState {
   textHelperAvailability: TextHelperAvailability;
   textHelperModel: string | null | "unknown";
   textHelperCalls: ModelMeasurement[];
+  piUsage: PiUsage | undefined;
   mutationOutcome: "not_in_flight" | "unknown";
+}
+
+interface BridgeRunOutcome {
+  result: RlcdRunResult;
+  usage?: PiUsage;
 }
 
 interface ClosedProcess {
@@ -1260,7 +1352,7 @@ async function waitForBridge(
   signal: AbortSignal | undefined,
   onUpdate: ((result: ToolResult) => void) | undefined,
   startedAt: number,
-): Promise<RlcdRunResult> {
+): Promise<BridgeRunOutcome> {
   const credentials = knownCredentials();
   const state: PartialBridgeState = {
     daemon: null,
@@ -1275,6 +1367,7 @@ async function waitForBridge(
     textHelperAvailability: "unknown",
     textHelperModel: "unknown",
     textHelperCalls: [],
+    piUsage: undefined,
     mutationOutcome: "not_in_flight",
   };
   let stdoutBuffer = "";
@@ -1349,6 +1442,12 @@ async function waitForBridge(
           request.prompt,
           helperAbort.signal,
         );
+        state.textHelperCalls.push({
+          reportedModel: completion.reportedModel,
+          latencyMs: completion.latencyMs,
+          usage: completion.usage,
+        });
+        state.piUsage = combinePiUsage(state.piUsage, completion.piUsage);
         if (
           helperAbort.signal.aborted ||
           requestedStop ||
@@ -1357,12 +1456,13 @@ async function waitForBridge(
         ) {
           return;
         }
-        state.textHelperCalls.push({
-          reportedModel: completion.reportedModel,
-          latencyMs: completion.latencyMs,
-          usage: completion.usage,
-        });
-        if (completion.response.length > MAX_HELPER_RESPONSE_CHARS) {
+        if (completion.failure) {
+          writeToBridge({
+            type: "text_helper_response",
+            requestId: request.requestId,
+            error: completion.failure,
+          });
+        } else if (completion.response.length > MAX_HELPER_RESPONSE_CHARS) {
           writeToBridge({
             type: "text_helper_response",
             requestId: request.requestId,
@@ -1376,7 +1476,7 @@ async function waitForBridge(
             usage: completion.usage,
           });
         }
-      } catch (error) {
+      } catch {
         if (
           helperAbort.signal.aborted ||
           requestedStop ||
@@ -1385,12 +1485,10 @@ async function waitForBridge(
         ) {
           return;
         }
-        const message =
-          error instanceof Error ? error.message : "Pi text helper failed";
         writeToBridge({
           type: "text_helper_response",
           requestId: request.requestId,
-          error: redactText(message, credentials).slice(0, MAX_STDERR_CHARS),
+          error: "Pi text helper request failed",
         });
       } finally {
         if (helperRequestId === request.requestId) {
@@ -1435,18 +1533,6 @@ async function waitForBridge(
         terminal = normalizedBridgeResult(parsed.result, credentials);
         if (!terminal) {
           failProtocol("bridge emitted an invalid terminal result");
-        } else {
-          const bridgeCalls = terminal.usage.textHelper.calls;
-          terminal.usage.textHelper.availability = state.textHelperAvailability;
-          terminal.usage.textHelper.model = state.textHelperModel;
-          terminal.usage.textHelper.calls = state.textHelperCalls.map(
-            (call, index) => ({
-              ...call,
-              ...(bridgeCalls[index]?.field === undefined
-                ? {}
-                : { field: bridgeCalls[index].field }),
-            }),
-          );
         }
       }
       return;
@@ -1582,6 +1668,16 @@ async function waitForBridge(
     result.completionClaim.claimed = false;
   }
 
+  const resultHelperCalls = result.usage.textHelper.calls;
+  result.usage.textHelper.availability = state.textHelperAvailability;
+  result.usage.textHelper.model = state.textHelperModel;
+  result.usage.textHelper.calls = state.textHelperCalls.map((call, index) => ({
+    ...call,
+    ...(resultHelperCalls[index]?.field === undefined
+      ? {}
+      : { field: resultHelperCalls[index].field }),
+  }));
+
   const trustedRetainedTab =
     terminalTrusted &&
     !requestedStop &&
@@ -1638,7 +1734,10 @@ async function waitForBridge(
     helperSettleDiagnostic,
     targeted?.diagnostic,
   ]);
-  return result;
+  return {
+    result,
+    ...(state.piUsage ? { usage: state.piUsage } : {}),
+  };
 }
 
 async function runRegisteredTool(
@@ -1713,17 +1812,16 @@ async function runRegisteredTool(
     shell: false,
     stdio: ["pipe", "pipe", "pipe"],
   });
-  return asToolResult(
-    await waitForBridge(
-      child,
-      childEnvironment,
-      input,
-      textHelper,
-      signal,
-      onUpdate,
-      startedAt,
-    ),
+  const outcome = await waitForBridge(
+    child,
+    childEnvironment,
+    input,
+    textHelper,
+    signal,
+    onUpdate,
+    startedAt,
   );
+  return asToolResult(outcome.result, outcome.usage);
 }
 
 export default function rlcdBrwsrExtension(pi: ExtensionAPI): void {

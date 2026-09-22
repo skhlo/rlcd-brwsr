@@ -157,3 +157,42 @@ all 40 registered-tool/production-load tests, and Python compilation. The
 project also passed shell syntax checks and `git diff --check`. Lockfiles stayed
 stable at `078dfa074e7244bb461ecb0906d0b5570280a917` (`pnpm-lock.yaml`) and
 `07c18ae06e215cf23e6391e52e28a6fb0df29ecf` (`uv.lock`).
+
+## Pi-native review correction
+
+The correction after frozen candidate `08e2d4d` replaces raw Pi SDK error
+forwarding with fixed bounded failure text. Registered-tool regressions put one
+synthetic OAuth access token in an actual resolved SDK `errorMessage` and in a
+thrown SDK error's message, body, and stack. The token is absent from content,
+details, progress, retained output, and captured bridge stdin. That raw wire
+assertion is limited to the intentional contract that OAuth material never
+enters Python; cancellation and execution checks use public results, provider
+signals and usage, and external field/target state instead.
+
+The adapter now captures response model, latency, and exact SDK usage before
+classifying `length`, `error`, or `aborted` responses. Observable late usage is
+retained after expiry, while a thrown failure with no supplied usage remains
+unaccounted rather than fabricated. The tool returns Pi's top-level `Usage`,
+summing multiple helper calls once without adding the copy echoed by Python;
+per-helper details still keep Jev and helper measurements separate and leave
+unexposed provider attempts and costs unavailable.
+
+Fresh Pi TUI acceptance used the real pinned Agent, Browser Harness PID `63344`,
+and approved isolated Chrome PID `63031` at loopback endpoint `63729`. Only
+external Jev and Pi-helper completion were synthetic. The tool returned
+`completion_claim`/`done_claim`, one helper call with 23 input, 4 output, 2
+reasoning, and 27 total tokens, retained target
+`83164DE08CDB0D9EEA65B3175BD27ED9`, and reaped bridge PID `72260`. The persisted
+Pi tool-result entry contains that same top-level usage. A separate direct-CDP
+observer inspected that exact retained target and confirmed `Busan` plus visible
+`FIELD-41`; only that target was then closed, restoring the four-target
+baseline. The fixture, Pi, observer, and their three task-owned Paseo terminals
+were stopped. The approved Chrome, wrapper PID `63029`, Harness, profile, and
+pre-existing Paseo terminals remain. Ignored raw evidence is under
+`artifacts/pi-native-text-helper-correction-tui-20260922T032230Z/`.
+
+The correction kept all 40 tests and passed focused regressions, full tests,
+TypeScript, Python compilation, formatting, and `git diff --check`. Both
+lockfile hashes remained unchanged. No live Luna or Jev call, credential read,
+host configuration change, dependency, daemon replacement, or #13 acceptance
+was performed.
