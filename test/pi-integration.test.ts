@@ -1549,7 +1549,14 @@ test(
     let closed = false;
     const child = spawn(
       join(repositoryRoot, ".venv", "bin", "python"),
-      ["-I", "-B", join(fakePythonPath, "projection_contract.py")],
+      [
+        "-I",
+        "-B",
+        "-c",
+        'import runpy, sys; sys.path.insert(0, sys.argv[1]); runpy.run_path(sys.argv[2], run_name="__main__")',
+        join(repositoryRoot, "bridge"),
+        join(fakePythonPath, "projection_contract.py"),
+      ],
       {
         cwd: repositoryRoot,
         env: {

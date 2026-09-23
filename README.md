@@ -9,7 +9,7 @@ and evidence. See the [archive index](docs/archive.md).
 and four repeated Pi-TUI/real-Chrome checks with synthetic provider replies at
 `b3b42036`. A subsequent live Ling helper probe also passed. Then a normal Pi
 agent turn completed one local fixture using real Jev and Ling. The current
-hardened local candidate has a 37-test deterministic suite but no new live,
+hardened local candidate has a 38-test deterministic suite but no new live,
 real-Chrome, outer-agent-turn or public-site acceptance. See
 [verification and limits](docs/thin-python-evidence.md). Current GitHub issues
 still describe the superseded implementation and are not claimed as satisfied.

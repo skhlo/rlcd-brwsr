@@ -4,7 +4,7 @@ Status: accepted, implemented and locally verified at `b3b42036`. Twenty
 automated tests and four repeated synthetic-provider Pi-TUI/real-Chrome command
 checks passed there. A subsequent bounded live Ling probe and one local fixture
 through Pi's normal outer-model/tool path also passed on that production code.
-The current hardened local candidate has a 37-test deterministic suite but no new
+The current hardened local candidate has a 38-test deterministic suite but no new
 live or actual-surface acceptance. Public-site acceptance remains pending; see the
 [verification record](../thin-python-evidence.md).
 Supersedes ADR-0002's command-level orchestration,

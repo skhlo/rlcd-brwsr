@@ -6,7 +6,7 @@ Pi-TUI/real-Chrome command checks with synthetic provider replies. Those command
 checks invoke the registered tool, not an outer-LLM-issued tool turn. A later
 bounded live helper probe and one local fixture through Pi's normal agent-turn
 path also passed, using real Jev and Ling on that unchanged implementation. The
-current hardened local candidate has a 37-test deterministic suite; it has not
+current hardened local candidate has a 38-test deterministic suite; it has not
 received a new live, real-Chrome, outer-agent-turn or public-site check. See
 the [verification record](thin-python-evidence.md). The user confirmed
 dropping `maxActions`, selected OpenRouter `inclusionai/ling-3.0-flash`, and

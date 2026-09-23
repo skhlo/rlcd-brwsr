@@ -4,13 +4,8 @@
 from __future__ import annotations
 
 import json
-import sys
-from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(PROJECT_ROOT / "bridge"))
-
-import rlcd_brwsr_bridge as bridge  # noqa: E402
+import rlcd_brwsr_bridge as bridge
 
 
 def _text_helper(result: dict[str, object]) -> dict[str, object]:
