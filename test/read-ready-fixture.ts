@@ -53,11 +53,12 @@ interface ObservedChild {
   readonly started: boolean;
   readonly stdout: Buffer[];
   readonly stderr: Buffer[];
-  readonly spawnError: Promise<Error>;
+  readonly childErrorObserved: Promise<void>;
+  readonly childErrors: Error[];
+  readonly finishChildErrorObservation: () => void;
   readonly exit: Promise<ReadReadyProcessObservation>;
   readonly close: Promise<ReadReadyProcessObservation>;
   readonly streamsClosed: Promise<void>;
-  spawnFailure: Error | undefined;
   stdinFailure: Error | undefined;
   exitObservation: ReadReadyProcessObservation | undefined;
   closeObservation: ReadReadyProcessObservation | undefined;
@@ -71,6 +72,24 @@ function operationTimeout(options: ReadReadyFixtureOptions): number {
   return value;
 }
 
+function hasErrorCode(value: unknown, code: string): boolean {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "code" in value &&
+    value.code === code
+  );
+}
+
+function hasErrorName(value: unknown, name: string): boolean {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "name" in value &&
+    value.name === name
+  );
+}
+
 function immutable<T>(value: T): T {
   if (typeof value !== "object" || value === null || Object.isFrozen(value)) {
     return value;
@@ -82,7 +101,8 @@ function immutable<T>(value: T): T {
 function observeChild(child: ChildProcessWithoutNullStreams): ObservedChild {
   const stdout: Buffer[] = [];
   const stderr: Buffer[] = [];
-  let resolveSpawnError: (error: Error) => void = () => {};
+  let resolveChildErrorObserved: () => void = () => {};
+  let childErrorObservationFinished = false;
   let resolveExit: (
     observation: ReadReadyProcessObservation,
   ) => void = () => {};
@@ -92,9 +112,15 @@ function observeChild(child: ChildProcessWithoutNullStreams): ObservedChild {
   let resolveStdoutClose: () => void = () => {};
   let resolveStderrClose: () => void = () => {};
   let resolveStdinClose: () => void = () => {};
-  const spawnError = new Promise<Error>((resolve) => {
-    resolveSpawnError = resolve;
+  const childErrorObserved = new Promise<void>((resolve) => {
+    resolveChildErrorObserved = resolve;
   });
+  const childErrors: Error[] = [];
+  const settleChildErrorObservation = (): void => {
+    if (childErrorObservationFinished) return;
+    childErrorObservationFinished = true;
+    resolveChildErrorObserved();
+  };
   const exit = new Promise<ReadReadyProcessObservation>((resolve) => {
     resolveExit = resolve;
   });
@@ -110,19 +136,28 @@ function observeChild(child: ChildProcessWithoutNullStreams): ObservedChild {
   const stdinClosed = new Promise<void>((resolve) => {
     resolveStdinClose = resolve;
   });
+  const observeChildError = (error: Error): void => {
+    childErrors.push(error);
+    settleChildErrorObservation();
+  };
+  const finishChildErrorObservation = (): void => {
+    child.off("error", observeChildError);
+    settleChildErrorObservation();
+  };
   const observed: ObservedChild = {
     child,
     pid: child.pid,
     started: child.pid !== undefined,
     stdout,
     stderr,
-    spawnError,
+    childErrorObserved,
+    childErrors,
+    finishChildErrorObservation,
     exit,
     close,
     streamsClosed: Promise.all([stdoutClosed, stderrClosed, stdinClosed]).then(
       () => undefined,
     ),
-    spawnFailure: undefined,
     stdinFailure: undefined,
     exitObservation: undefined,
     closeObservation: undefined,
@@ -136,10 +171,7 @@ function observeChild(child: ChildProcessWithoutNullStreams): ObservedChild {
   child.stdin.once("error", (error) => {
     observed.stdinFailure = error;
   });
-  child.once("error", (error) => {
-    observed.spawnFailure = error;
-    resolveSpawnError(error);
-  });
+  child.on("error", observeChildError);
   child.once("exit", (code, signal) => {
     const observation = immutable({ code, signal });
     observed.exitObservation = observation;
@@ -170,12 +202,12 @@ async function waitForReadiness(
         return;
       }
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      if (!hasErrorCode(error, "ENOENT")) throw error;
     }
     try {
       await delay(10, undefined, { signal });
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).name !== "AbortError") throw error;
+      if (!hasErrorName(error, "AbortError")) throw error;
     }
   }
 }
@@ -227,9 +259,8 @@ async function waitForProtectedRead(
   const boundedOutcome = await beforeDeadline(
     Promise.race([
       readinessOutcome,
-      observed.spawnError.then((error) => ({
-        kind: "spawn-error" as const,
-        error,
+      observed.childErrorObserved.then(() => ({
+        kind: "child-error" as const,
       })),
       observed.exit.then((exit) => ({ kind: "early-exit" as const, exit })),
       observed.close.then((close) => ({ kind: "early-close" as const, close })),
@@ -247,9 +278,14 @@ async function waitForProtectedRead(
   }
   const outcome = boundedOutcome.value;
   if (outcome.kind === "ready") return;
-  if (outcome.kind === "spawn-error") throw outcome.error;
+  if (outcome.kind === "child-error") {
+    const childError = observed.childErrors[0];
+    if (childError) throw childError;
+    throw new Error("child error observation settled before readiness");
+  }
   if (outcome.kind === "readiness-error") throw outcome.error;
-  if (observed.spawnFailure) throw observed.spawnFailure;
+  const childError = observed.childErrors[0];
+  if (childError) throw childError;
   const processObservation =
     outcome.kind === "early-exit" ? outcome.exit : outcome.close;
   throw new ReadReadyFixtureError(
@@ -279,19 +315,45 @@ async function settleWithin(
   return (await beforeDeadline(promise, deadlineAt)).kind === "value";
 }
 
+async function removeWorkspaceWithin(
+  directory: string,
+  deadlineAt: number,
+): Promise<Error | undefined> {
+  const removal = rm(directory, { recursive: true }).then(
+    () => ({ kind: "removed" as const }),
+    (failure: unknown) => ({ kind: "failed" as const, failure }),
+  );
+  const outcome = await beforeDeadline(removal, deadlineAt);
+  if (outcome.kind === "timeout") {
+    return new Error(
+      `read-ready cleanup pending or unconfirmed for workspace ${directory}: filesystem removal did not settle within the shutdown allowance`,
+    );
+  }
+  if (outcome.value.kind === "failed") {
+    return new Error(`read-ready cleanup retained workspace ${directory}`, {
+      cause: outcome.value.failure,
+    });
+  }
+  return undefined;
+}
+
+function appendFailure(failures: unknown[], failure: unknown): void {
+  if (!failures.includes(failure)) failures.push(failure);
+}
+
 async function shutdownOwnedChild(
   observed: ObservedChild,
   directory: string,
-): Promise<Error[]> {
-  const failures: Error[] = [];
-  const deadlineAt = Date.now() + shutdownAllowanceMs;
+  deadlineAt: number,
+): Promise<unknown[]> {
+  const failures: unknown[] = [];
   const { child } = observed;
 
   try {
     try {
       if (!child.stdin.destroyed) child.stdin.end();
     } catch (error) {
-      failures.push(error instanceof Error ? error : new Error(String(error)));
+      appendFailure(failures, error);
     }
 
     if (observed.started) {
@@ -305,9 +367,7 @@ async function shutdownOwnedChild(
         try {
           child.kill("SIGTERM");
         } catch (error) {
-          failures.push(
-            error instanceof Error ? error : new Error(String(error)),
-          );
+          appendFailure(failures, error);
         }
       }
       if (
@@ -320,16 +380,15 @@ async function shutdownOwnedChild(
         try {
           child.kill("SIGKILL");
         } catch (error) {
-          failures.push(
-            error instanceof Error ? error : new Error(String(error)),
-          );
+          appendFailure(failures, error);
         }
       }
       if (
         !observed.closeObservation &&
         !(await settleWithin(observed.close, deadlineAt))
       ) {
-        failures.push(
+        appendFailure(
+          failures,
           cleanupFailure(
             `read-ready cleanup retained owned child pid ${String(observed.pid)}`,
             observed,
@@ -341,7 +400,8 @@ async function shutdownOwnedChild(
         !observed.exitObservation &&
         !(await settleWithin(observed.exit, deadlineAt))
       ) {
-        failures.push(
+        appendFailure(
+          failures,
           cleanupFailure(
             `read-ready cleanup did not observe exit for owned child pid ${String(observed.pid)}`,
             observed,
@@ -352,7 +412,8 @@ async function shutdownOwnedChild(
       !observed.closeObservation &&
       !(await settleWithin(observed.close, deadlineAt))
     ) {
-      failures.push(
+      appendFailure(
+        failures,
         cleanupFailure(
           "read-ready no-PID child did not close its stdio",
           observed,
@@ -362,23 +423,28 @@ async function shutdownOwnedChild(
 
     if (!child.stdin.destroyed) child.stdin.destroy();
     if (!(await settleWithin(observed.streamsClosed, deadlineAt))) {
-      failures.push(
+      appendFailure(
+        failures,
         cleanupFailure("read-ready child streams did not close", observed),
       );
     }
-    if (observed.stdinFailure) failures.push(observed.stdinFailure);
+    if (observed.stdinFailure) {
+      appendFailure(failures, observed.stdinFailure);
+    }
   } catch (error) {
-    failures.push(error instanceof Error ? error : new Error(String(error)));
+    appendFailure(failures, error);
   }
 
   try {
-    await rm(directory, { recursive: true });
+    const workspaceFailure = await removeWorkspaceWithin(directory, deadlineAt);
+    if (workspaceFailure) appendFailure(failures, workspaceFailure);
   } catch (error) {
-    failures.push(
-      new Error(`read-ready cleanup retained workspace ${directory}`, {
-        cause: error,
-      }),
-    );
+    appendFailure(failures, error);
+  } finally {
+    observed.finishChildErrorObservation();
+    for (const childError of observed.childErrors) {
+      appendFailure(failures, childError);
+    }
   }
   return failures;
 }
@@ -386,17 +452,21 @@ async function shutdownOwnedChild(
 function throwFailures(
   primaryFailed: boolean,
   primary: unknown,
-  cleanup: Error[],
+  cleanup: unknown[],
 ): never {
-  if (primaryFailed && cleanup.length > 0) {
+  const distinctCleanup = cleanup.filter(
+    (failure, index) =>
+      failure !== primary && cleanup.indexOf(failure) === index,
+  );
+  if (primaryFailed && distinctCleanup.length > 0) {
     throw new AggregateError(
-      [primary, ...cleanup],
+      [primary, ...distinctCleanup],
       "read-ready operation and cleanup both failed",
     );
   }
   if (primaryFailed) throw primary;
-  if (cleanup.length === 1) throw cleanup[0];
-  throw new AggregateError(cleanup, "read-ready cleanup failed");
+  if (distinctCleanup.length === 1) throw distinctCleanup[0];
+  throw new AggregateError(distinctCleanup, "read-ready cleanup failed");
 }
 
 export async function withReadReadyRunner<T>(
@@ -445,7 +515,9 @@ export async function withReadReadyRunner<T>(
     await waitForProtectedRead(observed, marker, deadlineAt, timeoutMs);
     const pid = observed.pid;
     if (pid === undefined) {
-      throw observed.spawnFailure ?? new Error("read-ready bridge has no PID");
+      throw (
+        observed.childErrors[0] ?? new Error("read-ready bridge has no PID")
+      );
     }
 
     let cancellation: Promise<ReadReadyCancellationObservation> | undefined;
@@ -511,22 +583,21 @@ export async function withReadReadyRunner<T>(
     operationsClosed = true;
   }
 
+  const shutdownDeadlineAt = Date.now() + shutdownAllowanceMs;
   const cleanupFailures =
     directory === undefined
       ? []
       : observed
-        ? await shutdownOwnedChild(observed, directory)
+        ? await shutdownOwnedChild(observed, directory, shutdownDeadlineAt)
         : await (async () => {
             try {
-              await rm(directory, { recursive: true });
-              return [];
+              const workspaceFailure = await removeWorkspaceWithin(
+                directory,
+                shutdownDeadlineAt,
+              );
+              return workspaceFailure ? [workspaceFailure] : [];
             } catch (error) {
-              return [
-                new Error(
-                  `read-ready cleanup retained workspace ${directory}`,
-                  { cause: error },
-                ),
-              ];
+              return [error];
             }
           })();
 

@@ -494,7 +494,11 @@ async function readReadyFixtureDirectories(): Promise<string[]> {
 function assertProcessGone(pid: number): void {
   assert.throws(
     () => process.kill(pid, 0),
-    (error: NodeJS.ErrnoException) => error.code === "ESRCH",
+    (error: unknown) =>
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      error.code === "ESRCH",
   );
 }
 
