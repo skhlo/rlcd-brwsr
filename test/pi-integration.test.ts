@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { ChildProcess } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -67,7 +69,17 @@ const deferredFakePythonPath = join(fakePythonPath, "deferred_sitecustomize");
 const syntheticTypesafeKey = "synthetic-typesafe-key-MOON-62";
 const syntheticHelperKey = "synthetic-openrouter-key-STAR-73";
 const syntheticNativeHelperKey = "synthetic-native-env-key-COMET-84";
-const terminalByteLimit = 16 * 1024;
+const testRuntimeConfig: unknown = JSON.parse(
+  readFileSync(join(repositoryRoot, "config", "runtime.json"), "utf8"),
+);
+if (
+  !isRecord(testRuntimeConfig) ||
+  !Number.isInteger(testRuntimeConfig.terminalMaxUtf8Bytes) ||
+  Number(testRuntimeConfig.terminalMaxUtf8Bytes) <= 0
+) {
+  throw new Error("runtime configuration must define terminalMaxUtf8Bytes");
+}
+const terminalByteLimit = Number(testRuntimeConfig.terminalMaxUtf8Bytes);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -665,6 +677,76 @@ test("a pre-spawn deadline remains first when cancellation follows", async () =>
 });
 
 test(
+  "a trusted completion wins a late stop race and preserves retention",
+  { timeout: 4_000 },
+  async () => {
+    type ChildEventListener = (...args: unknown[]) => void;
+    type ChildOn = (
+      this: ChildProcess,
+      event: string,
+      listener: ChildEventListener,
+    ) => ChildProcess;
+    const childPrototype = ChildProcess.prototype as unknown as { on: ChildOn };
+    const originalOn = childPrototype.on;
+    childPrototype.on = function (event, listener) {
+      if (event === "exit" || event === "close") {
+        const delayMs = event === "exit" ? 1_200 : 1_300;
+        return originalOn.call(this, event, (...args) => {
+          setTimeout(() => listener(...args), delayMs);
+        });
+      }
+      return originalOn.call(this, event, listener);
+    };
+
+    try {
+      await withScenario(
+        "done",
+        { params: { maxSeconds: 1, retainTab: true } },
+        ({ result }) => {
+          const details = detailsOf(result);
+          assert.equal(details.status, "completion_claim");
+          assert.equal(details.stopReason, "done");
+          assert.equal(details.execution, "completed");
+          assert.equal(recordField(details, "cleanup").taskTab, "retained");
+        },
+      );
+    } finally {
+      childPrototype.on = originalOn;
+    }
+  },
+);
+
+test("an asynchronous runner launch failure remains not started", async () => {
+  const pythonPath = join(repositoryRoot, ".venv", "bin", "python");
+  const backupPath = `${pythonPath}.rlcd-test-${process.pid}`;
+  await rename(pythonPath, backupPath);
+  try {
+    await writeFile(pythonPath, "#!/missing-rlcd-test-interpreter\n", {
+      encoding: "utf8",
+      mode: 0o755,
+    });
+    const result = await registeredTool().execute(
+      "test-call",
+      {
+        url: "https://example.test/start",
+        goal: "Complete the deterministic fixture",
+      },
+      undefined,
+    );
+    const details = detailsOf(result);
+    assert.equal(details.status, "error");
+    assert.equal(details.stopReason, "setup_error");
+    assert.equal(details.execution, "not_started");
+    const cleanup = recordField(details, "cleanup");
+    assert.equal(cleanup.taskTab, "not_created");
+    assert.equal(cleanup.bridgeProcess, "not_started");
+  } finally {
+    await rm(pythonPath, { force: true });
+    await rename(backupPath, pythonPath);
+  }
+});
+
+test(
   "terminal claims require a clean exit and a valid result envelope",
   { timeout: 8_000 },
   async () => {
@@ -672,6 +754,7 @@ test(
       ["terminal_then_nonzero", 5],
       ["terminal_then_ignore_term", 1],
       ["invalid_terminal_envelope", 5],
+      ["invalid_retained_terminal", 5],
     ] as const) {
       await withScenario(
         scenario,

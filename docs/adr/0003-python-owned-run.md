@@ -14,8 +14,9 @@ Use the pinned `Agent.run()` generator and native API-key text helper behind a
 small Pi process launcher. Python owns the `Agent`, upstream state, result
 projection, known-target retention, and handled-run cleanup. Pi validates the
 public input, sends one JSON request over stdin, bounds both child pipes, owns
-the first stop reason, escalates `SIGTERM` to `SIGKILL` only while exit remains
-unobserved, waits for the child to be reaped, and presents one terminal result.
+the first stop reason for interrupted or untrusted outcomes, escalates `SIGTERM`
+to `SIGKILL` only while exit remains unobserved, waits for the child to be
+reaped, and presents one terminal result.
 
 The public interface is `url`, `goal`, optional `maxSeconds`, and optional
 `retainTab`. `maxActions` is removed without an alias or replacement setting.
@@ -57,15 +58,18 @@ are not projected. Native usage remains source-labelled and incomplete; Pi
 receives no top-level `usage`, so footer/session totals are knowingly incomplete.
 
 Only one structurally valid terminal envelope followed by an observed zero exit
-without a signal can carry child execution and cleanup claims. Construction
-interruption, nonzero or forced exit, or missing/invalid terminal output leaves
-execution and task-tab cleanup unknown. An exception escaping projection after
-request acceptance also falls back to unknown rather than `invalid_input`. A
-fitting fallback preserves a parent's first cancellation/deadline and observed
-process reap if adding that evidence would exceed the terminal cap. There is no startup target interception, parent
+without a signal can carry child execution and cleanup claims. A valid normal
+completion claim may win a late parent stop race when the child did not report a
+stopped run; retention requires that completion claim, which still needs
+independent outer verification. Interrupted or untrusted outcomes preserve the
+parent's first stop. Construction interruption, nonzero or forced exit, or
+missing/invalid terminal output leaves execution and task-tab cleanup unknown.
+An exception escaping projection after request acceptance also falls back to
+unknown rather than `invalid_input`. A fitting fallback preserves a parent's
+first cancellation/deadline and observed process reap if adding that evidence
+would exceed the terminal cap. There is no startup target interception, parent
 fallback cleanup, tab-difference inference, automatic retry, progress journal,
-generic protocol framework, or strict action-at-deadline guarantee. `DONE`
-remains a completion claim requiring independent outer verification.
+generic protocol framework, or strict action-at-deadline guarantee.
 
 Local tests cross the registered tool, real runner, and actual pinned
 Agent/native helper while substituting only external Browser/CDP and provider

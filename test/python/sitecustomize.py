@@ -18,7 +18,14 @@ import time
 from pathlib import Path
 
 _SCENARIO = os.environ.get("RLCD_TEST_SCENARIO", "click")
-_TERMINAL_LIMIT = 16 * 1024
+_RUNTIME_CONFIG = json.loads(
+    (Path(__file__).resolve().parents[2] / "config" / "runtime.json").read_text(
+        encoding="utf-8"
+    )
+)
+_TERMINAL_LIMIT = _RUNTIME_CONFIG.get("terminalMaxUtf8Bytes")
+if type(_TERMINAL_LIMIT) is not int or _TERMINAL_LIMIT <= 0:
+    raise RuntimeError("runtime configuration must define terminalMaxUtf8Bytes")
 
 
 def _terminal_envelope(text: str) -> dict[str, object]:
@@ -64,6 +71,17 @@ def _terminal_envelope(text: str) -> dict[str, object]:
 
 if _SCENARIO == "invalid_terminal_envelope":
     sys.stdout.write("{}")
+    sys.stdout.flush()
+    os._exit(0)
+
+if _SCENARIO == "invalid_retained_terminal":
+    result = _terminal_envelope("")
+    result["targetId"] = "rlcd-owned-target"
+    cleanup = result["cleanup"]
+    if not isinstance(cleanup, dict):
+        raise AssertionError("terminal fixture cleanup must be an object")
+    cleanup["taskTab"] = "retained"
+    sys.stdout.write(json.dumps(result, separators=(",", ":")))
     sys.stdout.flush()
     os._exit(0)
 

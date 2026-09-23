@@ -99,6 +99,7 @@ interface ChildOutcome {
   exitObserved: boolean;
   exitCode: number | null;
   exitSignal: NodeJS.Signals | null;
+  processStarted: boolean;
   spawnError: boolean;
 }
 
@@ -145,6 +146,10 @@ function isTerminalEnvelope(value: unknown): value is Record<string, unknown> {
   const claim = value.completionClaim;
   const cleanup = value.cleanup;
   const output = value.output;
+  const normalCompletion =
+    value.status === "completion_claim" &&
+    value.stopReason === "done" &&
+    value.execution === "completed";
   return (
     hasExactKeys(value, [
       "status",
@@ -186,6 +191,11 @@ function isTerminalEnvelope(value: unknown): value is Record<string, unknown> {
       cleanup.taskTab,
     ) &&
     cleanup.sharedDaemon === "retained" &&
+    (value.status !== "completion_claim" || normalCompletion) &&
+    (cleanup.taskTab !== "retained" ||
+      (normalCompletion &&
+        typeof value.targetId === "string" &&
+        value.targetId.length > 0)) &&
     isRecord(output) &&
     hasExactKeys(output, ["byteLimit", "clipped", "omissions"]) &&
     output.byteLimit === runtimeConfig.terminalMaxUtf8Bytes &&
@@ -478,6 +488,7 @@ function waitForChild(
         exitObserved,
         exitCode,
         exitSignal,
+        processStarted: child.pid !== undefined,
         spawnError,
       });
     });
@@ -554,6 +565,20 @@ function conservativeOutcome(
 }
 
 function resultFromOutcome(outcome: ChildOutcome): ToolResult {
+  const stop = requestedStop(outcome);
+  if (outcome.spawnError && !outcome.processStarted) {
+    if (stop) return requestStopResult(stop);
+    return asToolResult(
+      baseResult(
+        "error",
+        "setup_error",
+        "not_started",
+        "not_created",
+        "Runner process could not be started",
+      ),
+    );
+  }
+
   const details = parseTerminal(outcome);
   if (!details) {
     const noncleanExit = outcome.exitObserved && !hasCleanExit(outcome);
@@ -574,8 +599,8 @@ function resultFromOutcome(outcome: ChildOutcome): ToolResult {
 
   const cleanup = details.cleanup;
   if (isRecord(cleanup)) cleanup.bridgeProcess = "reaped";
-  const stop = requestedStop(outcome);
-  if (stop) {
+  const trustedCompletion = details.status === "completion_claim";
+  if (stop && !trustedCompletion) {
     details.status = "stopped";
     details.stopReason = stop;
     const claim = details.completionClaim;

@@ -207,10 +207,14 @@ numbers and complete-key redaction before clipping.
   or closed tabs. A task tab can remain for operator inspection. Do not
   automatically retry uncertain input.
 - Keep the parent's first stop reason when requested shutdown yields no trusted
-  terminal result. Confirm child exit before reporting it reaped; a sent signal
-  is not an exit observation. If supervised process evidence would push a child
-  projection over the terminal cap, omit that projection conservatively while
-  retaining the parent's stop and the observed reap.
+  terminal result. A structurally valid normal completion claim followed by an
+  observed clean zero exit may win a late parent stop race when the child did
+  not report a stopped run; it remains a claim requiring independent
+  verification. Retention is valid only with that completion claim. Confirm
+  child exit before reporting it reaped; a sent signal is not an exit
+  observation. If supervised process evidence would push a child projection
+  over the terminal cap, omit that projection conservatively while retaining
+  the parent's stop and the observed reap.
 - No live phase-by-phase progress, hard-kill evidence recovery or universal
   no-dispatch-after-deadline guarantee is promised.
 

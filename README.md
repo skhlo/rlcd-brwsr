@@ -111,10 +111,14 @@ sends `SIGTERM`, allows a fixed 1.5-second cooperative cleanup grace, then sends
 an action cannot cross the deadline. The process is reported reaped only after
 its exit is observed. Pi trusts child execution and cleanup claims only from one
 structurally valid terminal envelope followed by an observed zero exit without a
-signal. Nonzero, signalled, abrupt, incomplete, or invalid-terminal exits leave
-execution and task-tab cleanup unknown. An exception escaping final projection
-after request acceptance also falls back to unknown rather than `invalid_input`.
-Process exit is not rollback and the tool does not retry automatically.
+signal. A structurally valid normal completion claim followed by a clean zero
+exit wins a late parent stop race when the child did not report a stopped run;
+completion still requires independent verification. Interrupted or untrusted
+outcomes preserve the parent's first stop. Nonzero, signalled, abrupt,
+incomplete, or invalid-terminal exits leave execution and task-tab cleanup
+unknown. An exception escaping final projection after request acceptance also
+falls back to unknown rather than `invalid_input`. Process exit is not rollback
+and the tool does not retry automatically.
 
 `retainTab: true` is honored only after a normal completion claim with the known
 task target. Every other handled outcome makes one direct `Target.closeTarget`
