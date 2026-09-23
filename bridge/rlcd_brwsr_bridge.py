@@ -269,11 +269,6 @@ def _raw_projection(
                 "configuredModel": TEXT_MODEL,
                 "baseUrl": TEXT_MODEL_BASE_URL,
                 "reasoning": TEXT_MODEL_REASONING,
-                "availability": (
-                    "available"
-                    if os.environ.get("TEXT_MODEL_API_KEY")
-                    else "missing_key"
-                ),
             },
         },
         "usage": {
@@ -396,8 +391,12 @@ def _bound_projection(result: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
-def _finalize(raw_result: dict[str, Any]) -> bytes:
-    safe = _sanitize(raw_result, _credential_values())
+def _finalize(
+    raw_result: dict[str, Any], *, credentials: tuple[str, ...] | None = None
+) -> bytes:
+    safe = _sanitize(
+        raw_result, _credential_values() if credentials is None else credentials
+    )
     bounded = _bound_projection(safe)
     return _json_bytes(bounded) + b"\n"
 

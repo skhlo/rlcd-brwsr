@@ -2,9 +2,10 @@
 
 Status: accepted, implemented and locally verified at `b3b42036`. Twenty
 automated tests and four repeated synthetic-provider Pi-TUI/real-Chrome command
-checks pass. A subsequent bounded live Ling probe and one local fixture through
-Pi's normal outer-model/tool path also passed on the same production code.
-Public-site acceptance remains pending; see the
+checks passed there. A subsequent bounded live Ling probe and one local fixture
+through Pi's normal outer-model/tool path also passed on that production code.
+The current hardened local candidate has a 37-test deterministic suite but no new
+live or actual-surface acceptance. Public-site acceptance remains pending; see the
 [verification record](../thin-python-evidence.md).
 Supersedes ADR-0002's command-level orchestration,
 Pi-native helper relay and parent shadow-state design, not its dependency pins or
@@ -13,10 +14,11 @@ native Browser Harness ownership.
 Use the pinned `Agent.run()` generator and native API-key text helper behind a
 small Pi process launcher. Python owns the `Agent`, upstream state, result
 projection, known-target retention, and handled-run cleanup. Pi validates the
-public input, sends one JSON request over stdin, bounds both child pipes, owns
-the first stop reason for interrupted or untrusted outcomes, escalates `SIGTERM`
-to `SIGKILL` only while exit remains unobserved, waits for the child to be
-reaped, and presents one terminal result.
+public input, then one spawn-first supervisor sends one JSON request over stdin,
+bounds both child pipes, owns the first stop reason and original absolute
+deadline, escalates `SIGTERM` to `SIGKILL` only while exit remains unobserved,
+waits for the child to be reaped, and presents one terminal result. There is no
+asynchronous file-access precheck or separate pre-spawn stop owner.
 
 The public interface is `url`, `goal`, optional `maxSeconds`, and optional
 `retainTab`. `maxActions` is removed without an alias or replacement setting.
@@ -30,8 +32,10 @@ runtime owner first loads Browser Harness's native workspace environment, then
 supplies the selected `TEXT_MODEL_BASE_URL`, `TEXT_MODEL`, and
 `TEXT_MODEL_REASONING` values in its process when absent and rejects conflicts
 before daemon checks or browser startup. `TEXT_MODEL_API_KEY` remains optional
-until upstream selects a fill. There is no
-Pi OAuth/Luna completion, backend selector, or replacement helper orchestration.
+until upstream selects a fill. Run results retain the selected helper tuple but
+omit guessed helper availability; preflight separately reports nonblank resolved
+key presence without claiming provider or credential validity. There is no Pi
+OAuth/Luna completion, backend selector, or replacement helper orchestration.
 
 The implementation retains two revision-pinned integrations:
 
@@ -64,20 +68,27 @@ stopped run; retention requires that completion claim, which still needs
 independent outer verification. Interrupted or untrusted outcomes preserve the
 parent's first stop. Agent-construction interruption, nonzero or forced exit,
 or missing/invalid terminal output from a started child leaves execution and
-task-tab cleanup unknown. Setup and spawn failures before a child starts remain
-`not_started`/`not_created`. An exception escaping projection after request
-acceptance also falls back to unknown rather than `invalid_input`. A fitting
+task-tab cleanup unknown. Synchronous or asynchronous no-PID launch failures
+remain `not_started`/`not_created`. If Python starts but its script is absent,
+the observed non-clean exit instead leaves execution and task-tab cleanup
+unknown. An exception escaping projection after request acceptance also falls
+back to unknown rather than `invalid_input`. A fitting
 fallback preserves a parent's first cancellation/deadline and observed process
 reap if adding that evidence
 would exceed the terminal cap. There is no startup target interception, parent
 fallback cleanup, tab-difference inference, automatic retry, progress journal,
 generic protocol framework, or strict action-at-deadline guarantee.
 
-Local tests cross the registered tool, real runner, and actual pinned
-Agent/native helper while substituting only external Browser/CDP and provider
-interactions. Separate TUI command checks exercise real Chrome with synthetic
-provider replies. The later live follow-up covers one helper payload and a local
-fixture through Pi's normal agent turn. These checks do not establish general
-model quality, complete billing, public-site reliability or delivery. The
+Ordinary registered-tool tests cross the real runner and actual pinned
+Agent/native helper while substituting external Browser/CDP and provider
+interactions. One labelled lifecycle case wraps the real Agent for known-target
+recovery. Internal process/outcome tests and a direct Python projection contract
+cover supervision and synthetic oversized state without global event/timer
+patches, whole-extension copies or Agent-history mutation. Historical TUI command
+checks exercise real Chrome with synthetic provider replies at their recorded
+head. The later live follow-up covers one helper payload and a local fixture
+through Pi's normal agent turn on that historical production code; this candidate
+received no new actual-surface check. These checks do not establish general model
+quality, complete billing, public-site reliability or delivery. The
 [owning plan](../RLCD-BRWSR.md) records remaining acceptance steps; the
 [feasibility record](../thin-python-feasibility.md) remains historical evidence.

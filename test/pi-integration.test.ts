@@ -1,20 +1,11 @@
 import assert from "node:assert/strict";
-import { ChildProcess, spawn } from "node:child_process";
-import { once } from "node:events";
+import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { readFileSync } from "node:fs";
-import {
-  copyFile,
-  mkdir,
-  mkdtemp,
-  readFile,
-  rm,
-  symlink,
-  writeFile,
-} from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 
 import type {
@@ -22,7 +13,12 @@ import type {
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 
-import rlcdBrwsrExtension from "../config/pi/extensions/rlcd-brwsr.ts";
+import rlcdBrwsrExtension, {
+  createRlcdBrwsrExtension,
+  interpretRlcdChildOutcome,
+  superviseRlcdProcess,
+  type RlcdChildOutcome,
+} from "../config/pi/extensions/rlcd-brwsr.ts";
 
 interface RlcdInput {
   url: string;
@@ -58,6 +54,7 @@ interface ScenarioOptions {
   textModel?: string;
   signal?: AbortSignal;
   abortWhenModelStarts?: AbortController;
+  abortAfterOutputMarker?: AbortController;
   params?: Partial<RlcdInput>;
   nativeEnvironment?: string;
   deferExternalFakesUntilNativeEnvironment?: boolean;
@@ -120,6 +117,107 @@ function arrayField(owner: Record<string, unknown>, key: string): unknown[] {
   const value = owner[key];
   assert.ok(Array.isArray(value), `${key} must be an array`);
   return value;
+}
+
+function assertTextHelperAvailabilityAbsent(
+  details: Record<string, unknown>,
+): void {
+  const models = recordField(details, "models");
+  const textHelper = recordField(models, "textHelper");
+  assert.equal(
+    Object.hasOwn(textHelper, "availability"),
+    false,
+    "run results must not claim text-helper availability",
+  );
+}
+
+function terminalDetails(
+  options: {
+    status?: "completion_claim" | "blocked" | "stopped" | "error";
+    stopReason?: string;
+    execution?: "not_started" | "unknown" | "completed";
+    targetId?: string | null;
+    taskTab?: "not_created" | "unknown" | "retained" | "closed" | "unconfirmed";
+    observationText?: string;
+  } = {},
+): Record<string, unknown> {
+  const status = options.status ?? "stopped";
+  return {
+    status,
+    stopReason: options.stopReason ?? "cancelled",
+    completionClaim: {
+      claimed: status === "completion_claim",
+      requiresIndependentVerification: true,
+    },
+    execution: options.execution ?? "unknown",
+    lastObservation: {
+      url: "https://example.test/result",
+      title: "Fixture result",
+      text: options.observationText ?? "",
+    },
+    history: [],
+    models: {
+      jev: { configuredModel: "jev-1.13.0" },
+      textHelper: {
+        configuredModel: "inclusionai/ling-3.0-flash",
+        baseUrl: "https://openrouter.ai/api/v1",
+        reasoning: "none",
+      },
+    },
+    usage: {
+      records: [],
+      limitations: {
+        source: "upstream_recorded_only",
+        providerAttempts: "unknown",
+        providerRetries: "unknown",
+        failedCallUsage: "unknown",
+        piTopLevelUsage: "omitted",
+      },
+    },
+    targetId: options.targetId ?? null,
+    cleanup: {
+      taskTab: options.taskTab ?? "unknown",
+      sharedDaemon: "retained",
+    },
+    diagnostic: null,
+    output: {
+      byteLimit: terminalByteLimit,
+      clipped: false,
+      omissions: [],
+    },
+  };
+}
+
+function childOutcome(
+  details: Record<string, unknown> | null,
+  overrides: Partial<RlcdChildOutcome> = {},
+): RlcdChildOutcome {
+  return {
+    terminal: details
+      ? Buffer.from(JSON.stringify(details), "utf8")
+      : Buffer.alloc(0),
+    stdoutOverflow: false,
+    stderrBytes: 0,
+    firstStop: null,
+    exitObserved: true,
+    exitCode: 0,
+    exitSignal: null,
+    processStarted: true,
+    spawnError: false,
+    ...overrides,
+  };
+}
+
+function nearLimitTerminal(): Record<string, unknown> {
+  const details = terminalDetails();
+  const observation = recordField(details, "lastObservation");
+  const emptySize = Buffer.byteLength(JSON.stringify(details), "utf8");
+  observation.text = "P".repeat(terminalByteLimit - emptySize);
+  assert.equal(
+    Buffer.byteLength(JSON.stringify(details), "utf8"),
+    terminalByteLimit,
+  );
+  return details;
 }
 
 function registeredTool(
@@ -226,19 +324,22 @@ async function runScenario(
   }
 
   try {
-    const abortWatcher = options.abortWhenModelStarts
+    const abortController =
+      options.abortWhenModelStarts ?? options.abortAfterOutputMarker;
+    const abortMarker = options.abortWhenModelStarts
+      ? markers.model
+      : markers.pid;
+    const abortWatcher = abortController
       ? (async () => {
           const deadline = Date.now() + 2_000;
           while (Date.now() < deadline) {
-            if (await readIfPresent(markers.model)) {
-              options.abortWhenModelStarts?.abort();
+            if (await readIfPresent(abortMarker)) {
+              abortController.abort();
               return;
             }
             await delay(10);
           }
-          throw new Error(
-            "external model substitute was not reached before abort",
-          );
+          throw new Error("expected child marker was not reached before abort");
         })()
       : undefined;
     const result = await registeredTool().execute(
@@ -285,6 +386,246 @@ async function withScenario(
   }
 }
 
+interface ReadCancellationFixture {
+  child: ChildProcessWithoutNullStreams;
+  marker: string;
+  stdout: Buffer[];
+  stderr: Buffer[];
+  error: Promise<Error>;
+  exit: Promise<{ code: number | null; signal: NodeJS.Signals | null }>;
+  close: Promise<{ code: number | null; signal: NodeJS.Signals | null }>;
+  isExited(): boolean;
+  isClosed(): boolean;
+  cleanup(): Promise<void>;
+}
+
+async function within<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  label: string,
+): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`${label} exceeded ${timeoutMs} ms`)),
+          timeoutMs,
+        );
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+async function waitForNonemptyFile(
+  path: string,
+  timeoutMs: number,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if ((await readIfPresent(path)).trim()) return;
+    await delay(10);
+  }
+  throw new Error(`read readiness exceeded ${timeoutMs} ms`);
+}
+
+async function runPreflightCase(options: {
+  processHelperKey?: string;
+  workspaceHelperKey?: string;
+}): Promise<Record<string, unknown>> {
+  const directory = await mkdtemp(join(tmpdir(), "rlcd-preflight-test-"));
+  await writeFile(
+    join(directory, ".env"),
+    options.workspaceHelperKey === undefined
+      ? ""
+      : `TEXT_MODEL_API_KEY=${options.workspaceHelperKey}\n`,
+    "utf8",
+  );
+  const environment: NodeJS.ProcessEnv = {
+    HOME: directory,
+    TMPDIR: directory,
+    PATH: process.env.PATH,
+    PYTHONNOUSERSITE: "1",
+    PYTHONDONTWRITEBYTECODE: "1",
+    PYTHONPATH: deferredFakePythonPath,
+    RLCD_BASE_FAKE: join(fakePythonPath, "sitecustomize.py"),
+    RLCD_TEST_SCENARIO: "done",
+    BH_AGENT_WORKSPACE: directory,
+    BU_NAME: "rlcd-brwsr-test",
+    BU_CDP_URL: "http://127.0.0.1:43114",
+    TYPESAFE_API_KEY: syntheticTypesafeKey,
+  };
+  if (options.processHelperKey !== undefined) {
+    environment.TEXT_MODEL_API_KEY = options.processHelperKey;
+  }
+
+  const stdout: Buffer[] = [];
+  const stderr: Buffer[] = [];
+  let closed = false;
+  const child = spawn(
+    join(repositoryRoot, ".venv", "bin", "python"),
+    [join(repositoryRoot, "bridge", "preflight.py")],
+    {
+      cwd: repositoryRoot,
+      env: environment,
+      shell: false,
+      stdio: ["ignore", "pipe", "pipe"],
+    },
+  );
+  child.stdout.on("data", (chunk: Buffer) => stdout.push(chunk));
+  child.stderr.on("data", (chunk: Buffer) => stderr.push(chunk));
+  child.on("error", () => {
+    // The close result and captured stderr own the fixture outcome.
+  });
+  const close = new Promise<{
+    code: number | null;
+    signal: NodeJS.Signals | null;
+  }>((resolveClose) => {
+    child.once("close", (code, signal) => {
+      closed = true;
+      resolveClose({ code, signal });
+    });
+  });
+
+  try {
+    const result = await within(close, 3_000, "preflight fixture");
+    assert.equal(
+      result.code,
+      0,
+      `${Buffer.concat(stdout).toString("utf8")}\n${Buffer.concat(stderr).toString("utf8")}`,
+    );
+    assert.equal(result.signal, null);
+    const output = JSON.parse(Buffer.concat(stdout).toString("utf8")) as Record<
+      string,
+      unknown
+    >;
+    assert.equal(output.ok, true);
+    return recordField(output, "checks");
+  } finally {
+    if (!closed) child.kill("SIGTERM");
+    if (!closed) {
+      try {
+        await within(close, 500, "preflight TERM shutdown");
+      } catch {
+        if (!closed) child.kill("SIGKILL");
+      }
+    }
+    if (!closed) await within(close, 1_000, "preflight KILL shutdown");
+    await rm(directory, { recursive: true });
+  }
+}
+
+async function startReadCancellationFixture(options: {
+  startupDelayMs?: number;
+  suppressReadiness?: boolean;
+}): Promise<ReadCancellationFixture> {
+  const directory = await mkdtemp(join(tmpdir(), "rlcd-read-ready-test-"));
+  const marker = join(directory, "read-ready");
+  let child: ChildProcessWithoutNullStreams;
+  try {
+    child = spawn(
+      join(repositoryRoot, ".venv", "bin", "python"),
+      [join(repositoryRoot, "bridge", "rlcd_brwsr_bridge.py")],
+      {
+        cwd: repositoryRoot,
+        env: {
+          HOME: directory,
+          TMPDIR: directory,
+          PATH: process.env.PATH,
+          PYTHONNOUSERSITE: "1",
+          PYTHONDONTWRITEBYTECODE: "1",
+          PYTHONPATH: join(fakePythonPath, "read_ready"),
+          RLCD_TEST_READ_READY_MARKER: marker,
+          RLCD_TEST_STARTUP_DELAY_MS: String(options.startupDelayMs ?? 0),
+          RLCD_TEST_SUPPRESS_READ_READY: options.suppressReadiness ? "1" : "0",
+          BH_AGENT_WORKSPACE: directory,
+          BU_NAME: "rlcd-brwsr-read-ready-test",
+          BU_CDP_URL: "http://127.0.0.1:43114",
+          TYPESAFE_API_KEY: syntheticTypesafeKey,
+          TEXT_MODEL_API_KEY: syntheticHelperKey,
+        },
+        shell: false,
+        stdio: ["pipe", "pipe", "pipe"],
+      },
+    );
+  } catch (error) {
+    await rm(directory, { recursive: true });
+    throw error;
+  }
+
+  const stdout: Buffer[] = [];
+  const stderr: Buffer[] = [];
+  let exited = false;
+  let closed = false;
+  let spawnError: Error | undefined;
+  child.stdout.on("data", (chunk: Buffer) => stdout.push(chunk));
+  child.stderr.on("data", (chunk: Buffer) => stderr.push(chunk));
+  const error = new Promise<Error>((resolveError) => {
+    child.once("error", (childError) => {
+      spawnError = childError;
+      resolveError(childError);
+    });
+  });
+  const exit = new Promise<{
+    code: number | null;
+    signal: NodeJS.Signals | null;
+  }>((resolveExit) => {
+    child.once("exit", (code, signal) => {
+      exited = true;
+      resolveExit({ code, signal });
+    });
+  });
+  const close = new Promise<{
+    code: number | null;
+    signal: NodeJS.Signals | null;
+  }>((resolveClose) => {
+    child.once("close", (code, signal) => {
+      closed = true;
+      resolveClose({ code, signal });
+    });
+  });
+
+  return {
+    child,
+    marker,
+    stdout,
+    stderr,
+    error,
+    exit,
+    close,
+    isExited: () => exited,
+    isClosed: () => closed,
+    async cleanup() {
+      child.stdin.end();
+      if (!closed) {
+        try {
+          await within(close, 250, "owned bridge input close");
+        } catch {
+          if (!closed) child.kill("SIGTERM");
+        }
+      }
+      if (!closed) {
+        try {
+          await within(close, 1_000, "owned bridge TERM shutdown");
+        } catch {
+          if (!closed) child.kill("SIGKILL");
+        }
+      }
+      if (!closed) {
+        await within(close, 1_000, "owned bridge KILL shutdown");
+      }
+      if (!exited) {
+        await within(exit, 1_000, "owned bridge exit observation");
+      }
+      await rm(directory, { recursive: true });
+      if (spawnError) throw spawnError;
+    },
+  };
+}
+
 test("the extension loads inertly and registers only the reduced sequential tool", () => {
   const tool = registeredTool();
   assert.equal(tool.name, "rlcd_brwsr_run");
@@ -316,10 +657,24 @@ test("invalid input and request overflow stop before Python or external work", a
       const details = detailsOf(result);
       assert.equal(details.status, "error");
       assert.equal(details.stopReason, "invalid_input");
+      assertTextHelperAvailabilityAbsent(details);
       assert.equal(await readIfPresent(markers.model), "");
       assert.equal(await readIfPresent(markers.browser), "");
     });
   }
+
+  const cancellation = new AbortController();
+  cancellation.abort();
+  await withScenario(
+    "click",
+    { signal: cancellation.signal, params: { url: "file:///tmp/nope" } },
+    async ({ result, markers }) => {
+      const details = detailsOf(result);
+      assert.equal(details.status, "error");
+      assert.equal(details.stopReason, "invalid_input");
+      assert.equal(await readIfPresent(markers.model), "");
+    },
+  );
 });
 
 test("URL validation counts code points and passes one canonical URL to Python", async () => {
@@ -376,6 +731,19 @@ test("native preflight requires the selected helper configuration and existing l
       assert.equal(await readIfPresent(markers.model), "");
     });
   }
+});
+
+test("preflight reports resolved helper-key configuration without claiming validity", async () => {
+  const absent = await runPreflightCase({});
+  assert.equal(absent.textHelperAvailability, "missing_key");
+
+  const whitespace = await runPreflightCase({ processHelperKey: "   " });
+  assert.equal(whitespace.textHelperAvailability, "missing_key");
+
+  const workspace = await runPreflightCase({
+    workspaceHelperKey: syntheticNativeHelperKey,
+  });
+  assert.equal(workspace.textHelperAvailability, "available");
 });
 
 test("native workspace helper conflicts are rejected before browser startup", async () => {
@@ -466,6 +834,16 @@ test("native field helper fills through the selected OpenRouter defaults", async
       recordField(models, "textHelper").configuredModel,
       "inclusionai/ling-3.0-flash",
     );
+    assertTextHelperAvailabilityAbsent(details);
+  });
+});
+
+test("active synthetic terminals omit helper availability", async () => {
+  await withScenario("synthetic_terminal", {}, ({ result }) => {
+    const details = detailsOf(result);
+    assert.equal(details.status, "stopped");
+    assert.equal(details.stopReason, "cancelled");
+    assertTextHelperAvailabilityAbsent(details);
   });
 });
 
@@ -626,177 +1004,293 @@ test(
     await withScenario(
       "exit_before_stdio_close",
       { params: { maxSeconds: 1, retainTab: true } },
-      ({ result }) => {
+      async ({ result, markers }) => {
         const details = detailsOf(result);
         assert.equal(details.status, "completion_claim");
         assert.equal(details.stopReason, "done");
         const cleanup = recordField(details, "cleanup");
         assert.equal(cleanup.taskTab, "retained");
         assert.equal(cleanup.bridgeProcess, "reaped");
+        const descendantPid = Number(
+          (await readFile(markers.pid, "utf8")).trim(),
+        );
+        assert.throws(
+          () => process.kill(descendantPid, 0),
+          (error: NodeJS.ErrnoException) => error.code === "ESRCH",
+        );
       },
     );
   },
 );
 
-test("a pre-spawn deadline remains first when cancellation follows", async () => {
-  let abortedReads = 0;
-  let abortListener: (() => void) | undefined;
-  const signal = {
-    get aborted() {
-      abortedReads += 1;
-      return abortedReads > 1;
-    },
-    addEventListener(_type: string, listener: () => void) {
-      abortListener = listener;
-    },
-    removeEventListener() {},
-  } as unknown as AbortSignal;
-  const originalSetTimeout = globalThis.setTimeout;
-  globalThis.setTimeout = ((
-    callback: (...args: unknown[]) => void,
-    delayMs?: number,
-    ...args: unknown[]
-  ) => {
-    if ((delayMs ?? 0) > 0) {
-      const timer = originalSetTimeout(() => {}, 60_000);
-      queueMicrotask(() => {
-        callback(...args);
-        abortListener?.();
-      });
-      return timer;
-    }
-    return originalSetTimeout(callback, delayMs, ...args);
-  }) as typeof setTimeout;
-
-  try {
-    const result = await registeredTool().execute(
-      "test-call",
-      {
-        url: "https://example.test/start",
-        goal: "Complete the deterministic fixture",
-        maxSeconds: 1,
+test(
+  "output bounds remain active while stdio drains after observed exit",
+  { timeout: 4_000 },
+  async () => {
+    await withScenario(
+      "exit_before_stdio_overflow",
+      { params: { maxSeconds: 3 } },
+      async ({ result, markers }) => {
+        const details = detailsOf(result);
+        assert.equal(details.status, "error");
+        assert.equal(details.stopReason, "output_limit");
+        assert.equal(details.execution, "unknown");
+        assert.equal(recordField(details, "cleanup").bridgeProcess, "reaped");
+        const descendantPid = Number(
+          (await readFile(markers.pid, "utf8")).trim(),
+        );
+        assert.throws(
+          () => process.kill(descendantPid, 0),
+          (error: NodeJS.ErrnoException) => error.code === "ESRCH",
+        );
       },
-      signal,
     );
-    const details = detailsOf(result);
-    assert.equal(details.status, "stopped");
-    assert.equal(details.stopReason, "time_budget");
-    assert.equal(details.execution, "not_started");
+  },
+);
+
+test(
+  "stdout EOF while Python lives waits for a real parent stop",
+  { timeout: 5_000 },
+  async () => {
+    await withScenario(
+      "stdout_eof_while_alive",
+      { params: { maxSeconds: 1 } },
+      async ({ result, markers }) => {
+        const details = detailsOf(result);
+        assert.equal(details.status, "stopped");
+        assert.equal(details.stopReason, "time_budget");
+        assert.equal(details.execution, "unknown");
+        assert.equal(recordField(details, "cleanup").bridgeProcess, "reaped");
+        assert.match(await readIfPresent(markers.browser), /stdout:eof/);
+      },
+    );
+  },
+);
+
+test("the supervisor prevents spawn for pre-abort and an expired absolute deadline", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "rlcd-no-spawn-test-"));
+  const marker = join(directory, "started");
+  const script = join(directory, "mark.py");
+  await writeFile(
+    script,
+    `from pathlib import Path\nPath(${JSON.stringify(marker)}).write_text("started")\n`,
+    "utf8",
+  );
+  const paths = {
+    pythonExecutable: join(repositoryRoot, ".venv", "bin", "python"),
+    runnerExecutable: script,
+  };
+  try {
+    const cancellation = new AbortController();
+    cancellation.abort();
+    const cancelled = await superviseRlcdProcess({
+      paths,
+      serializedRequest: "{}\n",
+      deadlineAt: Date.now() - 1,
+      signal: cancellation.signal,
+    });
+    assert.equal(cancelled.firstStop, "cancelled");
+    assert.equal(cancelled.processStarted, false);
+
+    const expired = await superviseRlcdProcess({
+      paths,
+      serializedRequest: "{}\n",
+      deadlineAt: Date.now() - 1,
+      signal: undefined,
+    });
+    assert.equal(expired.firstStop, "time_budget");
+    assert.equal(expired.processStarted, false);
+    assert.equal(await readIfPresent(marker), "");
   } finally {
-    globalThis.setTimeout = originalSetTimeout;
+    await rm(directory, { recursive: true });
   }
 });
 
 test(
-  "a trusted completion wins a late stop race and preserves retention",
+  "the supervisor rechecks cancellation after child listeners are attached",
   { timeout: 4_000 },
   async () => {
-    type ChildEventListener = (...args: unknown[]) => void;
-    type ChildOn = (
-      this: ChildProcess,
-      event: string,
-      listener: ChildEventListener,
-    ) => ChildProcess;
-    const childPrototype = ChildProcess.prototype as unknown as { on: ChildOn };
-    const originalOn = childPrototype.on;
-    childPrototype.on = function (event, listener) {
-      if (event === "exit" || event === "close") {
-        const delayMs = event === "exit" ? 1_200 : 1_300;
-        return originalOn.call(this, event, (...args) => {
-          setTimeout(() => listener(...args), delayMs);
-        });
-      }
-      return originalOn.call(this, event, listener);
-    };
-
+    const directory = await mkdtemp(join(tmpdir(), "rlcd-attached-stop-test-"));
+    const script = join(directory, "wait.py");
+    await writeFile(script, "import time\ntime.sleep(30)\n", "utf8");
+    let abortChecks = 0;
+    let listenerAttached = false;
+    const signal = {
+      get aborted() {
+        abortChecks += 1;
+        return abortChecks > 1;
+      },
+      addEventListener() {
+        listenerAttached = true;
+      },
+      removeEventListener() {},
+    } as unknown as AbortSignal;
     try {
-      await withScenario(
-        "done",
-        { params: { maxSeconds: 1, retainTab: true } },
-        ({ result }) => {
-          const details = detailsOf(result);
-          assert.equal(details.status, "completion_claim");
-          assert.equal(details.stopReason, "done");
-          assert.equal(details.execution, "completed");
-          assert.equal(recordField(details, "cleanup").taskTab, "retained");
+      const outcome = await superviseRlcdProcess({
+        paths: {
+          pythonExecutable: join(repositoryRoot, ".venv", "bin", "python"),
+          runnerExecutable: script,
         },
-      );
+        serializedRequest: "{}\n",
+        deadlineAt: Date.now() + 3_000,
+        signal,
+      });
+      assert.equal(listenerAttached, true);
+      assert.equal(outcome.firstStop, "cancelled");
+      assert.equal(outcome.processStarted, true);
+      assert.equal(outcome.exitObserved, true);
     } finally {
-      childPrototype.on = originalOn;
+      await rm(directory, { recursive: true });
     }
   },
 );
 
-test("runner cancellation while waiting for input reports the stop diagnostic", async () => {
-  const child = spawn(
-    join(repositoryRoot, ".venv", "bin", "python"),
-    [join(repositoryRoot, "bridge", "rlcd_brwsr_bridge.py")],
-    {
-      cwd: repositoryRoot,
-      env: { ...process.env },
-      shell: false,
-      stdio: ["pipe", "pipe", "pipe"],
-    },
+test("outcome interpretation preserves trusted evidence and late-stop precedence", () => {
+  const completed = detailsOf(
+    interpretRlcdChildOutcome(
+      childOutcome(
+        terminalDetails({
+          status: "completion_claim",
+          stopReason: "done",
+          execution: "completed",
+          targetId: "rlcd-owned-target",
+          taskTab: "retained",
+        }),
+        { firstStop: "time_budget" },
+      ),
+    ),
   );
-  const stdout: Buffer[] = [];
-  child.stdout.on("data", (chunk: Buffer) => stdout.push(chunk));
-  await delay(200);
-  assert.equal(child.kill("SIGTERM"), true);
-  const [exitCode, exitSignal] = (await once(child, "close")) as [
-    number | null,
-    NodeJS.Signals | null,
-  ];
-  assert.equal(exitCode, 0);
-  assert.equal(exitSignal, null);
-  const details = JSON.parse(Buffer.concat(stdout).toString("utf8")) as Record<
-    string,
-    unknown
-  >;
-  assert.equal(details.status, "stopped");
-  assert.equal(details.stopReason, "cancelled");
-  assert.equal(details.execution, "not_started");
-  assert.equal(recordField(details, "cleanup").taskTab, "not_created");
-  assert.equal(recordField(details, "diagnostic").type, "StopRequested");
+  assert.equal(completed.status, "completion_claim");
+  assert.equal(completed.stopReason, "done");
+  assert.equal(recordField(completed, "cleanup").taskTab, "retained");
+
+  for (const childStatus of ["blocked", "error", "stopped"] as const) {
+    const cooperativelyClosed = detailsOf(
+      interpretRlcdChildOutcome(
+        childOutcome(
+          terminalDetails({
+            status: childStatus,
+            stopReason: childStatus,
+            execution: "completed",
+            targetId: "rlcd-owned-target",
+            taskTab: "closed",
+          }),
+          { firstStop: "cancelled" },
+        ),
+      ),
+    );
+    assert.equal(cooperativelyClosed.status, "stopped");
+    assert.equal(cooperativelyClosed.stopReason, "cancelled");
+    assert.equal(cooperativelyClosed.execution, "completed");
+    assert.equal(recordField(cooperativelyClosed, "cleanup").taskTab, "closed");
+  }
+
+  const untrusted = detailsOf(
+    interpretRlcdChildOutcome(
+      childOutcome(terminalDetails(), {
+        firstStop: "cancelled",
+        exitCode: 31,
+      }),
+    ),
+  );
+  assert.equal(untrusted.status, "stopped");
+  assert.equal(untrusted.execution, "unknown");
+  assert.equal(recordField(untrusted, "cleanup").taskTab, "unknown");
+  assert.equal(recordField(untrusted, "cleanup").bridgeProcess, "reaped");
+
+  const exitUnobserved = detailsOf(
+    interpretRlcdChildOutcome(
+      childOutcome(null, {
+        firstStop: "cancelled",
+        exitObserved: false,
+        exitCode: null,
+      }),
+    ),
+  );
+  assert.equal(recordField(exitUnobserved, "cleanup").bridgeProcess, "unknown");
 });
 
-test("an asynchronous runner launch failure remains not started", async () => {
-  const isolatedRoot = await mkdtemp(join(tmpdir(), "rlcd-runtime-test-"));
-  const extensionPath = join(
-    isolatedRoot,
-    "config",
-    "pi",
-    "extensions",
-    "rlcd-brwsr.ts",
+test("final fitting preserves parent stop and reap or reports output limit", () => {
+  const parentStopped = detailsOf(
+    interpretRlcdChildOutcome(
+      childOutcome(nearLimitTerminal(), { firstStop: "time_budget" }),
+    ),
   );
-  const runtimeConfigPath = join(isolatedRoot, "config", "runtime.json");
-  const pythonPath = join(isolatedRoot, ".venv", "bin", "python");
-  const runnerPath = join(isolatedRoot, "bridge", "rlcd_brwsr_bridge.py");
+  assert.equal(parentStopped.status, "stopped");
+  assert.equal(parentStopped.stopReason, "time_budget");
+  assert.equal(recordField(parentStopped, "cleanup").bridgeProcess, "reaped");
+  assertTextHelperAvailabilityAbsent(parentStopped);
+
+  const noParentStop = detailsOf(
+    interpretRlcdChildOutcome(childOutcome(nearLimitTerminal())),
+  );
+  assert.equal(noParentStop.status, "error");
+  assert.equal(noParentStop.stopReason, "output_limit");
+  assert.equal(recordField(noParentStop, "cleanup").bridgeProcess, "reaped");
+  assertTextHelperAvailabilityAbsent(noParentStop);
+});
+
+test(
+  "runner cancellation waits for protected stdin-read readiness",
+  { timeout: 6_000 },
+  async () => {
+    const fixture = await startReadCancellationFixture({ startupDelayMs: 800 });
+    try {
+      await waitForNonemptyFile(fixture.marker, 3_000);
+      assert.equal(fixture.child.kill("SIGTERM"), true);
+      const closed = await within(fixture.close, 2_000, "bridge cancellation");
+      const exited = await within(fixture.exit, 100, "bridge exit observation");
+      assert.deepEqual(exited, closed);
+      assert.equal(closed.code, 0);
+      assert.equal(closed.signal, null);
+      const details = JSON.parse(
+        Buffer.concat(fixture.stdout).toString("utf8"),
+      ) as Record<string, unknown>;
+      assert.equal(details.status, "stopped");
+      assert.equal(details.stopReason, "cancelled");
+      assert.equal(details.execution, "not_started");
+      assert.equal(recordField(details, "cleanup").taskTab, "not_created");
+      assert.equal(recordField(details, "diagnostic").type, "StopRequested");
+      assertTextHelperAvailabilityAbsent(details);
+    } finally {
+      await fixture.cleanup();
+    }
+  },
+);
+
+test("readiness failure still closes input and reaps the owned bridge", async () => {
+  const fixture = await startReadCancellationFixture({
+    suppressReadiness: true,
+  });
+  const pid = fixture.child.pid;
+  assert.ok(pid !== undefined);
   try {
-    await mkdir(dirname(extensionPath), { recursive: true });
-    await mkdir(dirname(pythonPath), { recursive: true });
-    await mkdir(dirname(runnerPath), { recursive: true });
-    await copyFile(
-      join(repositoryRoot, "config", "pi", "extensions", "rlcd-brwsr.ts"),
-      extensionPath,
+    await assert.rejects(
+      waitForNonemptyFile(fixture.marker, 100),
+      /read readiness exceeded/,
     );
-    await copyFile(
-      join(repositoryRoot, "config", "runtime.json"),
-      runtimeConfigPath,
-    );
-    await symlink(
-      join(repositoryRoot, "node_modules"),
-      join(isolatedRoot, "node_modules"),
-      "dir",
-    );
-    await writeFile(pythonPath, "#!/missing-rlcd-test-interpreter\n", {
-      encoding: "utf8",
-      mode: 0o755,
-    });
-    await writeFile(runnerPath, "", "utf8");
-    const isolatedModule = await import(pathToFileURL(extensionPath).href);
-    const isolatedExtension =
-      isolatedModule.default as typeof rlcdBrwsrExtension;
-    const result = await registeredTool(isolatedExtension).execute(
+  } finally {
+    await fixture.cleanup();
+  }
+  assert.equal(fixture.isExited(), true);
+  assert.equal(fixture.isClosed(), true);
+  assert.throws(
+    () => process.kill(pid, 0),
+    (error: NodeJS.ErrnoException) => error.code === "ESRCH",
+  );
+});
+
+test("launch outcomes distinguish no PID from a Python-started missing script", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "rlcd-launch-test-"));
+  const existingScript = join(directory, "runner.py");
+  await writeFile(existingScript, "", "utf8");
+  try {
+    const noPidResult = await registeredTool(
+      createRlcdBrwsrExtension({
+        pythonExecutable: join(directory, "missing-python"),
+        runnerExecutable: existingScript,
+      }),
+    ).execute(
       "test-call",
       {
         url: "https://example.test/start",
@@ -804,15 +1298,114 @@ test("an asynchronous runner launch failure remains not started", async () => {
       },
       undefined,
     );
-    const details = detailsOf(result);
-    assert.equal(details.status, "error");
-    assert.equal(details.stopReason, "setup_error");
-    assert.equal(details.execution, "not_started");
-    const cleanup = recordField(details, "cleanup");
-    assert.equal(cleanup.taskTab, "not_created");
-    assert.equal(cleanup.bridgeProcess, "not_started");
+    const noPid = detailsOf(noPidResult);
+    assert.equal(noPid.status, "error");
+    assert.equal(noPid.stopReason, "setup_error");
+    assert.equal(noPid.execution, "not_started");
+    assert.equal(recordField(noPid, "cleanup").taskTab, "not_created");
+    assert.equal(recordField(noPid, "cleanup").bridgeProcess, "not_started");
+
+    const synchronousThrow = detailsOf(
+      await registeredTool(
+        createRlcdBrwsrExtension({
+          pythonExecutable: "invalid\0python",
+          runnerExecutable: existingScript,
+        }),
+      ).execute(
+        "test-call",
+        {
+          url: "https://example.test/start",
+          goal: "Complete the deterministic fixture",
+        },
+        undefined,
+      ),
+    );
+    assert.equal(synchronousThrow.status, "error");
+    assert.equal(synchronousThrow.stopReason, "setup_error");
+    assert.equal(synchronousThrow.execution, "not_started");
+
+    let abortChecks = 0;
+    const stopDuringLaunch = {
+      get aborted() {
+        abortChecks += 1;
+        return abortChecks > 1;
+      },
+      addEventListener() {},
+      removeEventListener() {},
+    } as unknown as AbortSignal;
+    const stoppedNoPid = detailsOf(
+      await registeredTool(
+        createRlcdBrwsrExtension({
+          pythonExecutable: join(directory, "missing-python-after-stop"),
+          runnerExecutable: existingScript,
+        }),
+      ).execute(
+        "test-call",
+        {
+          url: "https://example.test/start",
+          goal: "Complete the deterministic fixture",
+        },
+        stopDuringLaunch,
+      ),
+    );
+    assert.equal(stoppedNoPid.status, "stopped");
+    assert.equal(stoppedNoPid.stopReason, "cancelled");
+    assert.equal(stoppedNoPid.execution, "not_started");
+
+    const missingScriptResult = await registeredTool(
+      createRlcdBrwsrExtension({
+        pythonExecutable: join(repositoryRoot, ".venv", "bin", "python"),
+        runnerExecutable: join(directory, "missing-runner.py"),
+      }),
+    ).execute(
+      "test-call",
+      {
+        url: "https://example.test/start",
+        goal: "Complete the deterministic fixture",
+      },
+      undefined,
+    );
+    const missingScript = detailsOf(missingScriptResult);
+    assert.equal(missingScript.status, "error");
+    assert.equal(missingScript.stopReason, "nonclean_exit");
+    assert.equal(missingScript.execution, "unknown");
+    assert.equal(recordField(missingScript, "cleanup").taskTab, "unknown");
+    assert.equal(recordField(missingScript, "cleanup").bridgeProcess, "reaped");
+    assertTextHelperAvailabilityAbsent(missingScript);
+
+    let missingScriptAbortChecks = 0;
+    const stopAfterMissingScriptSpawn = {
+      get aborted() {
+        missingScriptAbortChecks += 1;
+        return missingScriptAbortChecks > 1;
+      },
+      addEventListener() {},
+      removeEventListener() {},
+    } as unknown as AbortSignal;
+    const stoppedMissingScript = detailsOf(
+      await registeredTool(
+        createRlcdBrwsrExtension({
+          pythonExecutable: join(repositoryRoot, ".venv", "bin", "python"),
+          runnerExecutable: join(directory, "missing-after-stop.py"),
+        }),
+      ).execute(
+        "test-call",
+        {
+          url: "https://example.test/start",
+          goal: "Complete the deterministic fixture",
+        },
+        stopAfterMissingScriptSpawn,
+      ),
+    );
+    assert.equal(stoppedMissingScript.status, "stopped");
+    assert.equal(stoppedMissingScript.stopReason, "cancelled");
+    assert.equal(stoppedMissingScript.execution, "unknown");
+    assert.equal(
+      recordField(stoppedMissingScript, "cleanup").bridgeProcess,
+      "reaped",
+    );
   } finally {
-    await rm(isolatedRoot, { recursive: true });
+    await rm(directory, { recursive: true });
   }
 });
 
@@ -950,18 +1543,69 @@ test("unsafe numbers in a child terminal envelope are rejected", async () => {
   });
 });
 
-test("terminal fitting discloses history records removed after field clipping", async () => {
-  await withScenario("omission_overflow", {}, ({ result }) => {
-    const details = detailsOf(result);
-    const output = recordField(details, "output");
-    assert.equal(output.clipped, true);
-    assert.ok(arrayField(details, "history").length < 16);
-    const omissions = arrayField(output, "omissions");
-    assert.ok(omissions.includes("history action fields"));
-    assert.ok(omissions.includes("history URL fields"));
-    assert.ok(omissions.includes("history records"));
-  });
-});
+test(
+  "projection bounds oversized explicit state without mutating an Agent",
+  { timeout: 5_000 },
+  async () => {
+    const directory = await mkdtemp(join(tmpdir(), "rlcd-projection-test-"));
+    const stdout: Buffer[] = [];
+    const stderr: Buffer[] = [];
+    let closed = false;
+    const child = spawn(
+      join(repositoryRoot, ".venv", "bin", "python"),
+      ["-I", "-B", join(fakePythonPath, "projection_contract.py")],
+      {
+        cwd: repositoryRoot,
+        env: {
+          HOME: directory,
+          TMPDIR: directory,
+          PATH: process.env.PATH,
+          PYTHONNOUSERSITE: "1",
+          PYTHONDONTWRITEBYTECODE: "1",
+        },
+        shell: false,
+        stdio: ["ignore", "pipe", "pipe"],
+      },
+    );
+    child.stdout.on("data", (chunk: Buffer) => stdout.push(chunk));
+    child.stderr.on("data", (chunk: Buffer) => stderr.push(chunk));
+    const close = new Promise<{
+      code: number | null;
+      signal: NodeJS.Signals | null;
+    }>((resolveClose) => {
+      child.once("close", (code, signal) => {
+        closed = true;
+        resolveClose({ code, signal });
+      });
+    });
+    child.on("error", () => {
+      // The close result and captured stderr own the fixture outcome.
+    });
+
+    try {
+      const result = await within(close, 3_000, "projection contract");
+      assert.equal(result.code, 0, Buffer.concat(stderr).toString("utf8"));
+      assert.equal(result.signal, null);
+      assert.match(
+        Buffer.concat(stdout).toString("utf8"),
+        /projection contract: 2 checks passed/,
+      );
+    } finally {
+      if (!closed) child.kill("SIGTERM");
+      if (!closed) {
+        try {
+          await within(close, 500, "projection contract TERM shutdown");
+        } catch {
+          if (!closed) child.kill("SIGKILL");
+        }
+      }
+      if (!closed) {
+        await within(close, 1_000, "projection contract KILL shutdown");
+      }
+      await rm(directory, { recursive: true });
+    }
+  },
+);
 
 test("both native keys are redacted before clipping and never enter argv or stdin", async () => {
   await withScenario("secret_error", {}, async ({ result, markers }) => {
@@ -993,18 +1637,38 @@ test("missing, oversized, and raw diagnostic child output are not echoed", async
     assert.doesNotMatch(browser, /close:/);
   });
 
-  for (const scenario of ["raw_stdout_overflow", "raw_stderr_exit"]) {
-    await withScenario(scenario, {}, ({ result }) => {
+  const laterCancellation = new AbortController();
+  await withScenario(
+    "raw_stdout_overflow",
+    {
+      signal: laterCancellation.signal,
+      abortAfterOutputMarker: laterCancellation,
+    },
+    ({ result }) => {
       const details = detailsOf(result);
       const text = result.content[0]?.text ?? "";
       assert.equal(details.status, "error");
+      assert.equal(details.stopReason, "output_limit");
       assert.equal(details.execution, "unknown");
       assert.equal(recordField(details, "cleanup").taskTab, "unknown");
       assert.doesNotMatch(text, /raw-child-secret|synthetic-typesafe-key/);
       assert.match(
         String(recordField(details, "diagnostic").message),
-        /terminal result|byte limit/i,
+        /byte limit/i,
       );
-    });
-  }
+    },
+  );
+
+  await withScenario("raw_stderr_exit", {}, ({ result }) => {
+    const details = detailsOf(result);
+    const text = result.content[0]?.text ?? "";
+    assert.equal(details.status, "error");
+    assert.equal(details.execution, "unknown");
+    assert.equal(recordField(details, "cleanup").taskTab, "unknown");
+    assert.doesNotMatch(text, /raw-child-secret|synthetic-typesafe-key/);
+    assert.match(
+      String(recordField(details, "diagnostic").message),
+      /terminal result/i,
+    );
+  });
 });

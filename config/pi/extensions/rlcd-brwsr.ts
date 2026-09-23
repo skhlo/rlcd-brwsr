@@ -1,6 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { access, constants } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -16,9 +15,17 @@ const projectRoot = resolve(
   dirname(fileURLToPath(import.meta.url)),
   "../../..",
 );
-const pythonExecutable = resolve(projectRoot, ".venv", "bin", "python");
-const runnerExecutable = resolve(projectRoot, "bridge", "rlcd_brwsr_bridge.py");
 const runtimeConfig = loadRuntimeConfig();
+
+export interface RlcdProcessPaths {
+  pythonExecutable: string;
+  runnerExecutable: string;
+}
+
+const productionProcessPaths: RlcdProcessPaths = {
+  pythonExecutable: resolve(projectRoot, ".venv", "bin", "python"),
+  runnerExecutable: resolve(projectRoot, "bridge", "rlcd_brwsr_bridge.py"),
+};
 
 interface RuntimeConfig {
   jevModel: string;
@@ -91,7 +98,7 @@ export type RlcdRunInput = Static<typeof rlcdBrwsrParameters>;
 type ParentStopReason = "cancelled" | "time_budget";
 type StopReason = ParentStopReason | "output_limit";
 
-interface ChildOutcome {
+export interface RlcdChildOutcome {
   terminal: Buffer;
   stdoutOverflow: boolean;
   stderrBytes: number;
@@ -106,12 +113,6 @@ interface ChildOutcome {
 interface ToolResult {
   content: Array<{ type: "text"; text: string }>;
   details: Record<string, unknown>;
-}
-
-interface StopArbiter {
-  current(): ParentStopReason | null;
-  attach(handler: (reason: ParentStopReason) => void): () => void;
-  dispose(): void;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -298,7 +299,6 @@ function baseResult(
         configuredModel: runtimeConfig.textModel,
         baseUrl: runtimeConfig.textModelBaseUrl,
         reasoning: runtimeConfig.textModelReasoning,
-        availability: "unknown",
       },
     },
     usage: {
@@ -365,58 +365,52 @@ function requestStopResult(reason: ParentStopReason): ToolResult {
   );
 }
 
-function createStopArbiter(
-  deadlineAt: number,
-  signal: AbortSignal | undefined,
-): StopArbiter {
-  let firstStop: ParentStopReason | null = null;
-  let deadlineTimer: NodeJS.Timeout | undefined;
-  let disposed = false;
-  const listeners = new Set<(reason: ParentStopReason) => void>();
-  const onAbort = () => requestStop("cancelled");
-  const requestStop = (reason: ParentStopReason) => {
-    if (disposed || firstStop !== null) return;
-    firstStop = reason;
-    if (deadlineTimer) clearTimeout(deadlineTimer);
-    signal?.removeEventListener("abort", onAbort);
-    for (const listener of listeners) listener(reason);
-    listeners.clear();
-  };
-
-  if (signal?.aborted) {
-    requestStop("cancelled");
-  } else {
-    signal?.addEventListener("abort", onAbort, { once: true });
-    const remaining = Math.max(0, deadlineAt - Date.now());
-    if (remaining === 0) requestStop("time_budget");
-    else
-      deadlineTimer = setTimeout(() => requestStop("time_budget"), remaining);
-  }
-
+function unstartedOutcome(
+  firstStop: ParentStopReason | null,
+  spawnError: boolean,
+): RlcdChildOutcome {
   return {
-    current: () => firstStop,
-    attach(handler) {
-      if (firstStop !== null) handler(firstStop);
-      else if (!disposed) listeners.add(handler);
-      return () => listeners.delete(handler);
-    },
-    dispose() {
-      if (disposed) return;
-      disposed = true;
-      if (deadlineTimer) clearTimeout(deadlineTimer);
-      signal?.removeEventListener("abort", onAbort);
-      listeners.clear();
-    },
+    terminal: Buffer.alloc(0),
+    stdoutOverflow: false,
+    stderrBytes: 0,
+    firstStop,
+    exitObserved: false,
+    exitCode: null,
+    exitSignal: null,
+    processStarted: false,
+    spawnError,
   };
 }
 
-function waitForChild(
-  child: ChildProcessWithoutNullStreams,
-  serializedRequest: string,
-  stopArbiter: StopArbiter,
-): Promise<ChildOutcome> {
+export function superviseRlcdProcess(options: {
+  paths: RlcdProcessPaths;
+  serializedRequest: string;
+  deadlineAt: number;
+  signal: AbortSignal | undefined;
+}): Promise<RlcdChildOutcome> {
+  const { paths, serializedRequest, deadlineAt, signal } = options;
+  if (signal?.aborted) {
+    return Promise.resolve(unstartedOutcome("cancelled", false));
+  }
+  if (Date.now() >= deadlineAt) {
+    return Promise.resolve(unstartedOutcome("time_budget", false));
+  }
+
+  let child: ChildProcessWithoutNullStreams;
+  try {
+    child = spawn(paths.pythonExecutable, [paths.runnerExecutable], {
+      cwd: projectRoot,
+      env: { ...process.env },
+      shell: false,
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+  } catch {
+    return Promise.resolve(unstartedOutcome(null, true));
+  }
+
   return new Promise((resolvePromise) => {
     const chunks: Buffer[] = [];
+    const processStarted = child.pid !== undefined;
     let retainedStdoutBytes = 0;
     let stdoutBytes = 0;
     let stderrBytes = 0;
@@ -425,11 +419,20 @@ function waitForChild(
     let exitCode: number | null = null;
     let exitSignal: NodeJS.Signals | null = null;
     let spawnError = false;
+    let settled = false;
+    let deadlineTimer: NodeJS.Timeout | undefined;
     let hardStopTimer: NodeJS.Timeout | undefined;
 
+    const onAbort = () => requestStop("cancelled");
+    const clearStopSources = () => {
+      if (deadlineTimer) clearTimeout(deadlineTimer);
+      deadlineTimer = undefined;
+      signal?.removeEventListener("abort", onAbort);
+    };
     const requestStop = (reason: StopReason) => {
       if (firstStop !== null || exitObserved) return;
       firstStop = reason;
+      clearStopSources();
       if (child.pid === undefined) return;
       try {
         child.kill("SIGTERM");
@@ -445,9 +448,25 @@ function waitForChild(
         }
       }, STOP_GRACE_MS);
     };
+    const settle = () => {
+      if (settled) return;
+      settled = true;
+      clearStopSources();
+      if (hardStopTimer) clearTimeout(hardStopTimer);
+      resolvePromise({
+        terminal: Buffer.concat(chunks),
+        stdoutOverflow: stdoutBytes > runtimeConfig.terminalMaxUtf8Bytes,
+        stderrBytes,
+        firstStop,
+        exitObserved,
+        exitCode,
+        exitSignal,
+        processStarted,
+        spawnError,
+      });
+    };
 
-    const detachStop = stopArbiter.attach(requestStop);
-
+    // Install every child observer before attaching stop sources or writing input.
     child.stdout.on("data", (chunk: Buffer) => {
       stdoutBytes += chunk.length;
       const remaining =
@@ -471,37 +490,33 @@ function waitForChild(
       exitObserved = true;
       exitCode = code;
       exitSignal = childSignal;
-      detachStop();
-      stopArbiter.dispose();
+      clearStopSources();
       if (hardStopTimer) clearTimeout(hardStopTimer);
     });
     child.on("close", () => {
-      if (child.pid !== undefined && !exitObserved) return;
-      detachStop();
-      stopArbiter.dispose();
-      if (hardStopTimer) clearTimeout(hardStopTimer);
-      resolvePromise({
-        terminal: Buffer.concat(chunks),
-        stdoutOverflow: stdoutBytes > runtimeConfig.terminalMaxUtf8Bytes,
-        stderrBytes,
-        firstStop,
-        exitObserved,
-        exitCode,
-        exitSignal,
-        processStarted: child.pid !== undefined,
-        spawnError,
-      });
+      if (processStarted && !exitObserved) return;
+      settle();
     });
-
     child.stdin.on("error", () => {
       // EPIPE is represented by the missing/invalid terminal result after exit.
     });
+
+    signal?.addEventListener("abort", onAbort, { once: true });
+    if (signal?.aborted) {
+      requestStop("cancelled");
+    }
+    if (firstStop === null) {
+      const remaining = Math.max(0, deadlineAt - Date.now());
+      if (remaining === 0) requestStop("time_budget");
+      else
+        deadlineTimer = setTimeout(() => requestStop("time_budget"), remaining);
+    }
     child.stdin.end(serializedRequest, "utf8");
   });
 }
 
 function requestedStop(
-  outcome: ChildOutcome,
+  outcome: RlcdChildOutcome,
 ): "cancelled" | "time_budget" | null {
   return outcome.firstStop === "cancelled" ||
     outcome.firstStop === "time_budget"
@@ -509,7 +524,7 @@ function requestedStop(
     : null;
 }
 
-function hasCleanExit(outcome: ChildOutcome): boolean {
+function hasCleanExit(outcome: RlcdChildOutcome): boolean {
   return (
     outcome.exitObserved &&
     outcome.exitCode === 0 &&
@@ -518,7 +533,9 @@ function hasCleanExit(outcome: ChildOutcome): boolean {
   );
 }
 
-function parseTerminal(outcome: ChildOutcome): Record<string, unknown> | null {
+function parseTerminal(
+  outcome: RlcdChildOutcome,
+): Record<string, unknown> | null {
   if (
     outcome.stdoutOverflow ||
     !hasCleanExit(outcome) ||
@@ -535,7 +552,7 @@ function parseTerminal(outcome: ChildOutcome): Record<string, unknown> | null {
 }
 
 function conservativeOutcome(
-  outcome: ChildOutcome,
+  outcome: RlcdChildOutcome,
   fallbackReason: string,
   message: string,
 ): Record<string, unknown> {
@@ -549,7 +566,11 @@ function conservativeOutcome(
   );
   const cleanup = details.cleanup;
   if (isRecord(cleanup)) {
-    cleanup.bridgeProcess = outcome.exitObserved ? "reaped" : "not_started";
+    cleanup.bridgeProcess = outcome.exitObserved
+      ? "reaped"
+      : outcome.processStarted
+        ? "unknown"
+        : "not_started";
   }
   const omissions: string[] = [];
   if (outcome.terminal.length > 0) omissions.push("child terminal result");
@@ -564,9 +585,11 @@ function conservativeOutcome(
   return details;
 }
 
-function resultFromOutcome(outcome: ChildOutcome): ToolResult {
+export function interpretRlcdChildOutcome(
+  outcome: RlcdChildOutcome,
+): ToolResult {
   const stop = requestedStop(outcome);
-  if (outcome.spawnError && !outcome.processStarted) {
+  if (!outcome.processStarted) {
     if (stop) return requestStopResult(stop);
     return asToolResult(
       baseResult(
@@ -619,6 +642,7 @@ function resultFromOutcome(outcome: ChildOutcome): ToolResult {
 async function runRegisteredTool(
   params: RlcdRunInput,
   signal: AbortSignal | undefined,
+  paths: RlcdProcessPaths,
 ): Promise<ToolResult> {
   const startedAt = Date.now();
   const maxSeconds = params.maxSeconds ?? DEFAULT_MAX_SECONDS;
@@ -659,72 +683,37 @@ async function runRegisteredTool(
     );
   }
 
-  const stopArbiter = createStopArbiter(deadlineAt, signal);
-  try {
-    const initialStop = stopArbiter.current();
-    if (initialStop) return requestStopResult(initialStop);
+  const outcome = await superviseRlcdProcess({
+    paths,
+    serializedRequest,
+    deadlineAt,
+    signal,
+  });
+  return interpretRlcdChildOutcome(outcome);
+}
 
-    try {
-      await access(pythonExecutable, constants.X_OK);
-      await access(runnerExecutable, constants.R_OK);
-    } catch {
-      const stop = stopArbiter.current();
-      if (stop) return requestStopResult(stop);
-      return asToolResult(
-        baseResult(
-          "error",
-          "setup_error",
-          "not_started",
-          "not_created",
-          "Project runtime is missing; run scripts/setup-runtime.sh",
-        ),
-      );
-    }
-
-    const preSpawnStop = stopArbiter.current();
-    if (preSpawnStop) return requestStopResult(preSpawnStop);
-
-    let child: ChildProcessWithoutNullStreams;
-    try {
-      child = spawn(pythonExecutable, [runnerExecutable], {
-        cwd: projectRoot,
-        env: { ...process.env },
-        shell: false,
-        stdio: ["pipe", "pipe", "pipe"],
-      });
-    } catch {
-      return asToolResult(
-        baseResult(
-          "error",
-          "setup_error",
-          "not_started",
-          "not_created",
-          "Runner process could not be started",
-        ),
-      );
-    }
-
-    const outcome = await waitForChild(child, serializedRequest, stopArbiter);
-    return resultFromOutcome(outcome);
-  } finally {
-    stopArbiter.dispose();
-  }
+export function createRlcdBrwsrExtension(
+  paths: RlcdProcessPaths = productionProcessPaths,
+): (pi: ExtensionAPI) => void {
+  return (pi: ExtensionAPI): void => {
+    pi.registerTool({
+      name: "rlcd_brwsr_run",
+      label: "RLCD Browser",
+      description: `Run one bounded Jev Ultrafast browser task for the initial benign, unauthenticated, non-booking scope. The parent requests stop after maxSeconds (default ${DEFAULT_MAX_SECONDS}, maximum ${MAX_SECONDS}) but cannot guarantee no action crosses that deadline. retainTab applies only to a normal completion claim. Browser Harness must already have the named daemon running; after browser-setting changes, stop and reprovision it because current checks do not attest an existing daemon's endpoint or profile. Completion claims require independent verification. Terminal JSON, including escaping, is capped at ${runtimeConfig.terminalMaxUtf8Bytes} UTF-8 bytes; omissions are disclosed. Native usage records are incomplete and are omitted from Pi totals.`,
+      promptSnippet:
+        "Delegate one already-authorized benign, unauthenticated, non-booking browser task to the bounded fast loop",
+      promptGuidelines: [
+        "Use rlcd_brwsr_run only for an already-authorized benign, unauthenticated, non-booking browser task, and independently verify every completion claim.",
+      ],
+      parameters: rlcdBrwsrParameters,
+      executionMode: "sequential",
+      async execute(_toolCallId, input, signal) {
+        return runRegisteredTool(input, signal, paths);
+      },
+    });
+  };
 }
 
 export default function rlcdBrwsrExtension(pi: ExtensionAPI): void {
-  pi.registerTool({
-    name: "rlcd_brwsr_run",
-    label: "RLCD Browser",
-    description: `Run one bounded Jev Ultrafast browser task for the initial benign, unauthenticated, non-booking scope. The parent requests stop after maxSeconds (default ${DEFAULT_MAX_SECONDS}, maximum ${MAX_SECONDS}) but cannot guarantee no action crosses that deadline. retainTab applies only to a normal completion claim. Browser Harness must already have the named daemon running; after browser-setting changes, stop and reprovision it because current checks do not attest an existing daemon's endpoint or profile. Completion claims require independent verification. Terminal JSON, including escaping, is capped at ${runtimeConfig.terminalMaxUtf8Bytes} UTF-8 bytes; omissions are disclosed. Native usage records are incomplete and are omitted from Pi totals.`,
-    promptSnippet:
-      "Delegate one already-authorized benign, unauthenticated, non-booking browser task to the bounded fast loop",
-    promptGuidelines: [
-      "Use rlcd_brwsr_run only for an already-authorized benign, unauthenticated, non-booking browser task, and independently verify every completion claim.",
-    ],
-    parameters: rlcdBrwsrParameters,
-    executionMode: "sequential",
-    async execute(_toolCallId, input, signal) {
-      return runRegisteredTool(input, signal);
-    },
-  });
+  createRlcdBrwsrExtension()(pi);
 }

@@ -1,7 +1,8 @@
-"""External Browser/model/provider substitutes for registered-tool tests.
+"""Registered-tool fixture for external boundaries and one Agent lifecycle seam.
 
-The production runner and pinned Agent stay real. This module replaces only the
-Browser Harness transport and the two external provider responses.
+Ordinary scenarios use the production runner and pinned Agent while replacing
+Browser Harness transport and provider responses. The post-construction interrupt
+scenario wraps that real Agent to signal while its known target is recovered.
 """
 
 from __future__ import annotations
@@ -45,7 +46,6 @@ def _terminal_envelope(text: str) -> dict[str, object]:
                 "configuredModel": "inclusionai/ling-3.0-flash",
                 "baseUrl": "https://openrouter.ai/api/v1",
                 "reasoning": "none",
-                "availability": "unknown",
             },
         },
         "usage": {
@@ -68,6 +68,11 @@ def _terminal_envelope(text: str) -> dict[str, object]:
         },
     }
 
+
+if _SCENARIO == "synthetic_terminal":
+    sys.stdout.write(json.dumps(_terminal_envelope(""), separators=(",", ":")))
+    sys.stdout.flush()
+    os._exit(0)
 
 if _SCENARIO == "invalid_terminal_envelope":
     sys.stdout.write("{}")
@@ -185,17 +190,28 @@ if _SCENARIO == "raw_stderr_exit":
     os._exit(31)
 
 if _SCENARIO == "raw_stdout_overflow":
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
     secret = os.environ.get("TYPESAFE_API_KEY", "")
     sys.stdout.write(f"raw-child-secret {secret} " + "X" * 100_000)
     sys.stdout.flush()
+    time.sleep(0.5)
+    marker = os.environ.get("RLCD_TEST_PID_MARKER")
+    if marker:
+        Path(marker).write_text("overflow-observed", encoding="utf-8")
     time.sleep(30)
 
-if _SCENARIO == "exit_before_stdio_close":
-    subprocess.Popen(
-        [sys.executable, "-S", "-c", "import time; time.sleep(1.4)"],
+if _SCENARIO in {"exit_before_stdio_close", "exit_before_stdio_overflow"}:
+    descendant_program = "import time; time.sleep(1.4)"
+    if _SCENARIO == "exit_before_stdio_overflow":
+        descendant_program += "; import os; os.write(1, b'X' * 20000)"
+    descendant = subprocess.Popen(
+        [sys.executable, "-S", "-c", descendant_program],
         stdin=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
+    marker = os.environ.get("RLCD_TEST_PID_MARKER")
+    if marker:
+        Path(marker).write_text(str(descendant.pid), encoding="utf-8")
 
 if _SCENARIO == "terminal_then_nonzero":
 
@@ -438,6 +454,10 @@ def _post_json(url, key, body):
         raise RuntimeError("provider failed before a decision")
     if _SCENARIO in {"slow_model", "slow_close_false"}:
         time.sleep(30)
+    if _SCENARIO == "stdout_eof_while_alive":
+        _append("RLCD_TEST_BROWSER_MARKER", "stdout:eof")
+        os.close(sys.stdout.fileno())
+        time.sleep(30)
     if _SCENARIO == "ignore_term":
         Path(os.environ["RLCD_TEST_PID_MARKER"]).write_text(
             str(os.getpid()), encoding="utf-8"
@@ -493,17 +513,17 @@ def _post_json(url, key, body):
 model.post_json = _post_json
 
 
-if _SCENARIO in {"post_constructor_interrupt", "omission_overflow"}:
+if _SCENARIO == "post_constructor_interrupt":
     _OriginalAgent = jev_ultrafast.Agent
 
-    class _ScenarioAgent:
+    class _PostConstructionInterruptAgent:
         def __init__(self, *args, **kwargs):
             self._agent = _OriginalAgent(*args, **kwargs)
             self._interrupted = False
 
         @property
         def browser(self):
-            if _SCENARIO == "post_constructor_interrupt" and not self._interrupted:
+            if not self._interrupted:
                 self._interrupted = True
                 os.kill(os.getpid(), signal.SIGTERM)
             return self._agent.browser
@@ -514,18 +534,5 @@ if _SCENARIO in {"post_constructor_interrupt", "omission_overflow"}:
 
         def run(self):
             yield from self._agent.run()
-            if _SCENARIO == "omission_overflow":
-                self._agent.state["history"] = [
-                    {
-                        "step": index,
-                        "kind": "click",
-                        "action": "A" * 600,
-                        "operation": "CLICK",
-                        "page_changed": False,
-                        "url": "https://example.test/" + "U" * 1_100,
-                        "elapsed_ms": index,
-                    }
-                    for index in range(16)
-                ]
 
-    jev_ultrafast.Agent = _ScenarioAgent
+    jev_ultrafast.Agent = _PostConstructionInterruptAgent

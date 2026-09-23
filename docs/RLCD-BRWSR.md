@@ -1,11 +1,13 @@
 # RLCD-brwsr plan
 
 Status: the thin Python-owned rewrite is **implemented and locally verified**.
-Corrected implementation `b3b42036` passes 20 automated tests and four repeated
+Corrected implementation `b3b42036` passed 20 automated tests and four repeated
 Pi-TUI/real-Chrome command checks with synthetic provider replies. Those command
 checks invoke the registered tool, not an outer-LLM-issued tool turn. A later
 bounded live helper probe and one local fixture through Pi's normal agent-turn
-path also passed, using real Jev and Ling on the unchanged implementation. See
+path also passed, using real Jev and Ling on that unchanged implementation. The
+current hardened local candidate has a 37-test deterministic suite; it has not
+received a new live, real-Chrome, outer-agent-turn or public-site check. See
 the [verification record](thin-python-evidence.md). The user confirmed
 dropping `maxActions`, selected OpenRouter `inclusionai/ling-3.0-flash`, and
 accepted available native usage with explicitly incomplete Pi totals. The build
@@ -104,8 +106,13 @@ its stop reason, stop/reap handling and presentation. It does not reconstruct
 browser phases or merge helper replies with Python history. Installed Pi 0.85.1
 `pi.exec` lacks the stdin and output-bound controls this interface needs; use a
 small Node built-in `spawn` helper rather than another process package/framework.
-The supervisor's escalation and observed-exit reaping path is exercised locally
-with a child that ignores `SIGTERM`.
+For each valid request, one spawn-first supervisor owns the child, first observed
+stop, original absolute deadline, pipe bounds, escalation and observed reap.
+There is no asynchronous file-access precheck or separate pre-spawn stop owner.
+A no-PID launch error remains a definite pre-start setup result; Python starting
+with an absent script becomes a reaped non-clean result with unknown execution
+and task-tab cleanup. The escalation path is exercised locally with a child that
+ignores `SIGTERM`.
 
 Python owns the Agent reference, current upstream state, known task target,
 provider configuration, result projection, redaction and normal cleanup. Iterate
@@ -174,7 +181,11 @@ routing selector is added.
 
 The helper remains optional for click-only tasks. Native missing-key or invalid
 value errors return sanitized errors and available state, without inventing a
-field value or switching to the outer Pi model.
+field value or switching to the outer Pi model. Run results retain the configured
+helper model, base URL and reasoning setting but omit the former guessed
+`models.textHelper.availability`. Preflight's separate
+`textHelperAvailability` reports only whether the resolved key is nonblank; it
+does not prove provider availability or credential validity.
 
 Initial tasks remain benign, unauthenticated and non-booking. The outer agent
 owns permissions and verification. Neither the wrapper nor upstream guarantees
@@ -250,14 +261,19 @@ evidence and the earlier custom-loop work remain retained.
 
 ## Implementation and verification sequence
 
-Steps 1-3 are complete locally. The registered Pi tool tests cross the real new
-runner and actual pinned Agent/native helper while replacing only external
-Browser/CDP and provider interactions. They cover click/fill/DONE/BLOCKED/error,
-missing and malformed helper values, preflight/input failure, byte bounds,
-Unicode/non-finite normalization, native `.env` ordering and key privacy,
-first-stop precedence, post-dispatch projection interruption, conservative
-output fitting, cooperative cleanup, non-clean terminal rejection and a reaped
-TERM-ignoring child. No live credentials or model calls were used.
+The deterministic suite separates its evidence interfaces. Ordinary registered
+Pi-tool cases cross the real runner and pinned Agent/native helper while replacing
+external Browser/CDP and provider interactions. One labelled lifecycle case wraps
+the real Agent to interrupt known-target recovery. Internal process/outcome tests
+exercise spawn, stop precedence, fitting, EOF, hard-stop and observed reap without
+global event/timer patches or whole-extension copies. A direct Python projection
+contract supplies explicit synthetic state rather than mutating Agent history.
+Together they cover click/fill/DONE/BLOCKED/error, missing and malformed helper
+values, preflight/input failure, byte bounds, Unicode/non-finite normalization,
+native `.env` ordering and key privacy, first-stop precedence, post-dispatch
+projection interruption, conservative output fitting, cooperative cleanup,
+non-clean terminal rejection and a reaped TERM-ignoring child. No live credentials
+or model calls were used for this candidate.
 
 The click/default-close, text/retention, time-budget and TUI-cancellation cases
 were repeated successfully at corrected implementation `b3b42036`, using real

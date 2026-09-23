@@ -5,11 +5,13 @@ Old experiments are archived in Git and a verified backup, not mixed into the
 current working tree. The sibling checkout is retained only for test resources
 and evidence. See the [archive index](docs/archive.md).
 
-**Implementation status:** the thin Python-owned rewrite passes 20 local tests
+**Implementation status:** the thin Python-owned rewrite passed 20 local tests
 and four repeated Pi-TUI/real-Chrome checks with synthetic provider replies at
 `b3b42036`. A subsequent live Ling helper probe also passed. Then a normal Pi
-agent turn completed one local fixture using real Jev and Ling. Public-site acceptance remains
-pending; see [verification and limits](docs/thin-python-evidence.md). Current GitHub issues
+agent turn completed one local fixture using real Jev and Ling. The current
+hardened local candidate has a 37-test deterministic suite but no new live,
+real-Chrome, outer-agent-turn or public-site acceptance. See
+[verification and limits](docs/thin-python-evidence.md). Current GitHub issues
 still describe the superseded implementation and are not claimed as satisfied.
 See the
 [owning plan](docs/RLCD-BRWSR.md),
@@ -80,7 +82,9 @@ otherwise wrong browser.
 The helper key is checked only when upstream selects `TYPE_TEXT`, so click-only
 tasks work without it. Native missing-key, provider, and value-validation errors
 return sanitized available state and never invent replacement text or switch to
-Pi's active model.
+Pi's active model. Run results include the configured helper tuple but no guessed
+helper-availability field. Preflight separately reports whether the resolved key
+is nonblank; that is configuration feedback, not provider or credential validity.
 
 ## Pi tool
 
@@ -105,11 +109,16 @@ There is no `maxActions`, alias, or replacement per-call step setting. Upstream'
 unchanged limits remain 60 history entries (including waits and scrolls) and 120
 decisions. They are not HTTP-attempt or spend caps.
 
-`maxSeconds` is a coarse parent stop deadline measured from before startup. Pi
-sends `SIGTERM`, allows a fixed 1.5-second cooperative cleanup grace, then sends
-`SIGKILL` only if process exit has not been observed. It does not guarantee that
-an action cannot cross the deadline. The process is reported reaped only after
-its exit is observed. Pi trusts child execution and cleanup claims only from one
+`maxSeconds` is a coarse parent stop deadline measured from before startup. For
+a valid request, one spawn-first supervisor owns the child, original absolute
+deadline, first observed stop, bounded pipes, escalation and reap; there is no
+separate asynchronous file-access stage. Pi sends `SIGTERM`, allows a fixed
+1.5-second cooperative cleanup grace, then sends `SIGKILL` only if process exit
+has not been observed. It does not guarantee that an action cannot cross the
+deadline. A no-PID launch failure stays a pre-start setup error. If Python starts
+but its script is absent, the result is instead a reaped non-clean exit with
+unknown execution and task-tab cleanup. The process is reported reaped only
+after its exit is observed. Pi trusts child execution and cleanup claims only from one
 structurally valid terminal envelope followed by an observed zero exit without a
 signal. A structurally valid normal completion claim followed by a clean zero
 exit wins a late parent stop race when the child did not report a stopped run;
@@ -150,10 +159,14 @@ uv lock --check
 git diff --check
 ```
 
-The automated suite crosses the registered Pi tool -> real Python runner -> real
-pinned `Agent.run()`/native helper seam. It substitutes only external Browser
-Harness CDP and provider responses. Separate real-Chrome/TUI command checks cover
-click, text retention, timeout and cancellation. The later bounded live check
-covers one helper payload and one local fixture through Pi's normal agent turn.
-These checks do not establish general model quality, public-site reliability or
-complete billing.
+The deterministic suite includes registered-tool cases that cross the real
+Python runner and pinned `Agent.run()`/native helper while substituting external
+Browser Harness CDP and provider responses. One labelled lifecycle scenario
+wraps the real Agent to interrupt known-target recovery. Separate internal
+process/outcome tests and a direct Python projection contract cover supervision,
+precedence and oversized synthetic state without global event/timer patches or
+Agent-history mutation. Historical real-Chrome/TUI checks cover click, text
+retention, timeout and cancellation at their recorded heads; the later bounded
+live check covers one helper payload and one local fixture through Pi's normal
+agent turn. This candidate received no new actual-surface check. These checks do
+not establish general model quality, public-site reliability or complete billing.
