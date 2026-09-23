@@ -12,5 +12,5 @@ printf '%s\n' \
   'Configure TYPESAFE_API_KEY on this host.' \
   'For text entry, configure a host-local OpenRouter key as TEXT_MODEL_API_KEY.' \
   'The runner pins TEXT_MODEL_BASE_URL=https://openrouter.ai/api/v1,' \
-  'TEXT_MODEL=inclusionai/ling-3.0-flash, and TEXT_MODEL_REASONING=none.' \
+  'TEXT_MODEL=deepseek/deepseek-v4.1-flash:nitro, and TEXT_MODEL_REASONING=none.' \
   'Then run scripts/provision-browser.sh.'

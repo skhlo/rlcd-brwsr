@@ -43,7 +43,7 @@ def _terminal_envelope(text: str) -> dict[str, object]:
         "models": {
             "jev": {"configuredModel": "jev-1.13.0"},
             "textHelper": {
-                "configuredModel": "inclusionai/ling-3.0-flash",
+                "configuredModel": "deepseek/deepseek-v4.1-flash:nitro",
                 "baseUrl": "https://openrouter.ai/api/v1",
                 "reasoning": "none",
             },
@@ -419,16 +419,24 @@ def _choice(criteria, selected):
 
 
 def _helper_response(key, body):
+    if body.get("model") != "deepseek/deepseek-v4.1-flash:nitro":
+        raise RuntimeError(
+            "native helper request did not forward the DeepSeek Nitro model"
+        )
+    if body.get("reasoning") != {"enabled": False}:
+        raise RuntimeError("native helper request did not disable reasoning")
+    if body.get("response_format") != {"type": "json_object"}:
+        raise RuntimeError("native helper request did not retain JSON-object output")
+    if body.get("max_tokens") != 1024:
+        raise RuntimeError("native helper request did not retain the output token cap")
     if os.environ.get("TEXT_MODEL_BASE_URL") != "https://openrouter.ai/api/v1":
         raise RuntimeError("runner did not select the OpenRouter helper base URL")
-    if os.environ.get("TEXT_MODEL") != "inclusionai/ling-3.0-flash":
-        raise RuntimeError("runner did not select Ling 3.0 Flash")
+    if os.environ.get("TEXT_MODEL") != "deepseek/deepseek-v4.1-flash:nitro":
+        raise RuntimeError("runner did not select DeepSeek V4.1 Flash Nitro")
     if os.environ.get("TEXT_MODEL_REASONING") != "none":
         raise RuntimeError("runner did not disable helper reasoning")
     if key != os.environ.get("TEXT_MODEL_API_KEY"):
         raise RuntimeError("native helper did not receive its child environment key")
-    if body.get("reasoning") != {"enabled": False}:
-        raise RuntimeError("native helper request did not disable reasoning")
 
     if _SCENARIO == "helper_invalid_empty":
         content = json.dumps({"text": " "})
@@ -451,6 +459,10 @@ def _helper_response(key, body):
 def _post_json(url, key, body):
     _append("RLCD_TEST_MODEL_MARKER", f"request:{url}")
     if "questions" not in body:
+        if url != "https://openrouter.ai/api/v1/chat/completions":
+            raise RuntimeError(
+                "native helper request did not retain the OpenRouter URL"
+            )
         return _helper_response(key, body)
 
     if os.environ.get("TYPESAFE_MODEL") != "jev-1.13.0":

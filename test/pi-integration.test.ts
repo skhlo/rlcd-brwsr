@@ -172,7 +172,7 @@ function terminalDetails(
     models: {
       jev: { configuredModel: "jev-1.13.0" },
       textHelper: {
-        configuredModel: "inclusionai/ling-3.0-flash",
+        configuredModel: "deepseek/deepseek-v4.1-flash:nitro",
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: "none",
       },
@@ -794,7 +794,7 @@ test("native field helper fills through the selected OpenRouter defaults", async
     const models = recordField(details, "models");
     assert.equal(
       recordField(models, "textHelper").configuredModel,
-      "inclusionai/ling-3.0-flash",
+      "deepseek/deepseek-v4.1-flash:nitro",
     );
     assertTextHelperAvailabilityAbsent(details);
   });

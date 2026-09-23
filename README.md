@@ -1,16 +1,17 @@
 # RLCD-brwsr
 
-**Active checkout:** `~/Repositories/rlcd-brwsr/`, branch `feat/jev-ultrafast-pi`.
 Old experiments are archived in Git and a verified backup, not mixed into the
 current working tree. The sibling checkout is retained only for test resources
 and evidence. See the [archive index](docs/archive.md).
 
 **Implementation status:** the thin Python-owned rewrite passed 20 local tests
 and four repeated Pi-TUI/real-Chrome checks with synthetic provider replies at
-`b3b42036`. A subsequent live Ling helper probe also passed. Then a normal Pi
-agent turn completed one local fixture using real Jev and Ling. The current
-hardened local candidate has a 38-test deterministic suite but no new live,
-real-Chrome, outer-agent-turn or public-site acceptance. See
+`b3b42036`. A subsequent live helper probe and normal Pi agent-turn fixture used
+Ling at their recorded historical heads. The current helper selection is
+OpenRouter `deepseek/deepseek-v4.1-flash:nitro` with reasoning disabled in the
+request. This configuration-only switch has a 38-test deterministic suite but no
+live inference, real-Chrome, outer-agent-turn or public-site acceptance. Jev and
+Pi's outer model remain unchanged. See
 [verification and limits](docs/thin-python-evidence.md). Current GitHub issues
 still describe the superseded implementation and are not claimed as satisfied.
 See the
@@ -45,7 +46,7 @@ export TEXT_MODEL_API_KEY=...      # OpenRouter; optional for click-only tasks
 # loads its native workspace environment, the child supplies absent values
 # process-locally and rejects conflicts:
 export TEXT_MODEL_BASE_URL=https://openrouter.ai/api/v1
-export TEXT_MODEL=inclusionai/ling-3.0-flash
+export TEXT_MODEL=deepseek/deepseek-v4.1-flash:nitro
 export TEXT_MODEL_REASONING=none
 
 scripts/provision-browser.sh
@@ -61,7 +62,10 @@ use.
 `1231850a0bf1a0c0341fe408ef1668dbbfdfac46`, and Browser Harness 0.1.13.
 `config/runtime.json` fixes Jev to `jev-1.13.0`, the helper tuple above, a
 32 KiB serialized-request limit, and a 16 KiB terminal/model-visible JSON limit.
-Those two byte budgets have one configuration owner.
+Those two byte budgets have one configuration owner. The Nitro suffix asks
+OpenRouter to prioritize eligible routes by generation throughput; it does not
+guarantee lowest time to first token or whole-request latency and may select
+higher-priced priority endpoints.
 
 Browser Harness remains the only browser-configuration owner. The runner and
 preflight first load its native workspace `.env`, then one shared runtime owner
@@ -167,6 +171,7 @@ process/outcome tests and a direct Python projection contract cover supervision,
 precedence and oversized synthetic state without global event/timer patches or
 Agent-history mutation. Historical real-Chrome/TUI checks cover click, text
 retention, timeout and cancellation at their recorded heads; the later bounded
-live check covers one helper payload and one local fixture through Pi's normal
-agent turn. This candidate received no new actual-surface check. These checks do
-not establish general model quality, public-site reliability or complete billing.
+live Ling check covers one helper payload and one local fixture through Pi's
+normal agent turn. The current DeepSeek selection received no live or
+actual-surface check. These checks do not establish general model quality,
+public-site reliability or complete billing.

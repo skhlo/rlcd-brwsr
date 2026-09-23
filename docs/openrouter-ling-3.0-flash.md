@@ -1,13 +1,14 @@
-# OpenRouter Ling 3.0 Flash provider scout
+# Historical OpenRouter Ling 3.0 Flash provider scout
 
 Retrieved **2026-09-22 UTC**. This is historical public-source and offline
 payload evidence: no authenticated request or inference was made during that
-scout. The later thin rewrite pins this model and has now passed a bounded live
-helper probe and a local browser fixture. The
+scout. The thin rewrite formerly pinned this model and later passed a bounded
+live helper probe and a local browser fixture at their recorded heads. The
 [live follow-up](thin-python-evidence.md#bounded-live-follow-up) owns those
-observations; the pre-live assessment below remains historical.
+observations; the pre-live assessment and formerly selected configuration below
+remain historical.
 
-## Selected native configuration
+## Historical selected native configuration
 
 ```text
 TEXT_MODEL_BASE_URL=https://openrouter.ai/api/v1
@@ -16,7 +17,7 @@ TEXT_MODEL_REASONING=none
 TEXT_MODEL_API_KEY=<host-local OpenRouter key; placeholder, not a real value>
 ```
 
-This is the configuration pinned by the thin runner. Its source-level compatibility evidence below is separate from the subsequently recorded bounded live tests. The exact model ID and base URL are advertised by OpenRouter's [model-specific guide](https://openrouter.ai/inclusionai/ling-3.0-flash/llms.txt) and [quickstart](https://openrouter.ai/docs/quickstart.md). The pinned [`field_text()`](https://github.com/browser-use/jev-ultrafast/blob/1231850a0bf1a0c0341fe408ef1668dbbfdfac46/jev_ultrafast/model.py#L151-L198), inspected at `.venv/lib/python3.12/site-packages/jev_ultrafast/model.py`, appends `/chat/completions` and sends Bearer auth, `max_tokens: 1024`, `response_format: {"type":"json_object"}`, system and user messages, and either `reasoning.effort: low` or, for `TEXT_MODEL_REASONING=none`, `reasoning.enabled: false`. This selection requires no new adapter, server, or provider selector and does not change Jev.
+This was the configuration pinned by the thin runner. Its source-level compatibility evidence below is separate from the subsequently recorded bounded live tests. The exact model ID and base URL are advertised by OpenRouter's [model-specific guide](https://openrouter.ai/inclusionai/ling-3.0-flash/llms.txt) and [quickstart](https://openrouter.ai/docs/quickstart.md). The pinned [`field_text()`](https://github.com/browser-use/jev-ultrafast/blob/1231850a0bf1a0c0341fe408ef1668dbbfdfac46/jev_ultrafast/model.py#L151-L198), inspected at `.venv/lib/python3.12/site-packages/jev_ultrafast/model.py`, appends `/chat/completions` and sends Bearer auth, `max_tokens: 1024`, `response_format: {"type":"json_object"}`, system and user messages, and either `reasoning.effort: low` or, for `TEXT_MODEL_REASONING=none`, `reasoning.enabled: false`. This selection requires no new adapter, server, or provider selector and does not change Jev.
 
 `Authorization: Bearer …` is required. `HTTP-Referer` and `X-OpenRouter-Title` are optional for API use; the referer is required only to create app attribution/rankings ([authentication](https://openrouter.ai/docs/api_reference/authentication.md), [quickstart](https://openrouter.ai/docs/quickstart.md), [attribution](https://openrouter.ai/docs/app-attribution.md)).
 
