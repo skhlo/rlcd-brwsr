@@ -121,8 +121,9 @@ falls back to unknown rather than `invalid_input`. Process exit is not rollback
 and the tool does not retry automatically.
 
 `retainTab: true` is honored only after a normal completion claim with the known
-task target. Every other handled outcome makes one direct `Target.closeTarget`
-request. Closure is `closed` only when its response contains `success: true`.
+task target. Every other handled outcome with a usable known target attempts one
+direct `Target.closeTarget` request. Closure is `closed` only when its response
+contains `success: true`.
 The shared daemon and unrelated targets are preserved. Scheduling is sequential
 inside Pi, not a global browser lock.
 

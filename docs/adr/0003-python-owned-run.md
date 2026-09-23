@@ -62,11 +62,13 @@ without a signal can carry child execution and cleanup claims. A valid normal
 completion claim may win a late parent stop race when the child did not report a
 stopped run; retention requires that completion claim, which still needs
 independent outer verification. Interrupted or untrusted outcomes preserve the
-parent's first stop. Construction interruption, nonzero or forced exit, or
-missing/invalid terminal output leaves execution and task-tab cleanup unknown.
-An exception escaping projection after request acceptance also falls back to
-unknown rather than `invalid_input`. A fitting fallback preserves a parent's
-first cancellation/deadline and observed process reap if adding that evidence
+parent's first stop. Agent-construction interruption, nonzero or forced exit,
+or missing/invalid terminal output from a started child leaves execution and
+task-tab cleanup unknown. Setup and spawn failures before a child starts remain
+`not_started`/`not_created`. An exception escaping projection after request
+acceptance also falls back to unknown rather than `invalid_input`. A fitting
+fallback preserves a parent's first cancellation/deadline and observed process
+reap if adding that evidence
 would exceed the terminal cap. There is no startup target interception, parent
 fallback cleanup, tab-difference inference, automatic retry, progress journal,
 generic protocol framework, or strict action-at-deadline guarantee.
