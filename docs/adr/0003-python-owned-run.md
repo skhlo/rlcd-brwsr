@@ -4,8 +4,8 @@ Status: accepted, implemented and locally verified at `b3b42036`. Twenty
 automated tests and four repeated synthetic-provider Pi-TUI/real-Chrome command
 checks passed there. A subsequent bounded live Ling probe and one local fixture
 through Pi's normal outer-model/tool path also passed on that historical
-production code. The current native helper selects OpenRouter
-`deepseek/deepseek-v4.1-flash:nitro` with reasoning disabled in the request. Its
+production code. The current native helper selects direct DeepSeek
+`deepseek-flash` with native thinking disabled in the request. Its
 configuration-only switch has a 38-test deterministic suite but no live or
 actual-surface acceptance; Jev and Pi's outer model are unchanged. Public-site
 acceptance remains pending; see the
@@ -30,18 +30,22 @@ deadline is coarse and is not a no-dispatch guarantee.
 
 `config/runtime.json` is the single owner for the 32 KiB serialized-request cap,
 16 KiB terminal/model-visible JSON cap, Jev model, and selected native helper:
-OpenRouter `deepseek/deepseek-v4.1-flash:nitro` with reasoning disabled in the
-request. One shared runtime owner first loads Browser Harness's native workspace
+direct DeepSeek `deepseek-flash` at `https://api.deepseek.com/v1`, with
+`TEXT_MODEL_REASONING=disabled`. The `/v1` path preserves the pinned helper's
+slash-sensitive direct-DeepSeek branch, and the non-`none` reasoning value keeps
+its native `thinking: {"type":"disabled"}` request instead of the OpenRouter
+`reasoning` shape. The model name is DeepSeek's current V4.1 Flash alias, not an
+immutable version pin.
+
+One shared runtime owner first loads Browser Harness's native workspace
 environment, then supplies the selected `TEXT_MODEL_BASE_URL`, `TEXT_MODEL`, and
 `TEXT_MODEL_REASONING` values in its process when absent and rejects conflicts
-before daemon checks or browser startup. `TEXT_MODEL_API_KEY` remains optional
-until upstream selects a fill. Run results retain the selected helper tuple but
-omit guessed helper availability; preflight separately reports nonblank resolved
-key presence without claiming provider or credential validity. Nitro expresses
-an OpenRouter generation-throughput routing preference, not guaranteed lowest
-TTFT or whole-request latency, and can select higher-priced priority endpoints.
-There is no Pi OAuth/Luna completion, backend selector, or replacement helper
-orchestration.
+before daemon checks or browser startup. `TEXT_MODEL_API_KEY` is a DeepSeek-issued
+key and remains optional until upstream selects a fill. Run results retain the
+selected helper tuple but omit guessed helper availability; preflight separately
+reports nonblank resolved key presence without claiming provider or credential
+validity. There is no Pi OAuth/Luna completion, backend selector, or replacement
+helper orchestration.
 
 The implementation retains two revision-pinned integrations:
 
@@ -94,8 +98,8 @@ patches, whole-extension copies or Agent-history mutation. Historical TUI comman
 checks exercise real Chrome with synthetic provider replies at their recorded
 head. The later live Ling follow-up covers one helper payload and a local fixture
 through Pi's normal agent turn on that historical production code; it is not
-provider evidence for the current DeepSeek selection. This candidate received no
-live or actual-surface check. These checks do not establish general model quality,
-complete billing, public-site reliability or delivery. The
+provider evidence for the current direct DeepSeek selection. This candidate
+received no live or actual-surface check. These checks do not establish general
+model quality, complete billing, public-site reliability or delivery. The
 [owning plan](../RLCD-BRWSR.md) records remaining acceptance steps; the
 [feasibility record](../thin-python-feasibility.md) remains historical evidence.

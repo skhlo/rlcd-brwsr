@@ -1,8 +1,8 @@
 {
   "jevModel": "jev-1.13.0",
-  "textModelBaseUrl": "https://openrouter.ai/api/v1",
-  "textModel": "deepseek/deepseek-v4.1-flash:nitro",
-  "textModelReasoning": "none",
+  "textModelBaseUrl": "https://api.deepseek.com/v1",
+  "textModel": "deepseek-flash",
+  "textModelReasoning": "disabled",
   "requestMaxUtf8Bytes": 32768,
   "terminalMaxUtf8Bytes": 16384
 }

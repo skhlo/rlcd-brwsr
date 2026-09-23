@@ -86,7 +86,7 @@ const repositoryRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const fakePythonPath = join(repositoryRoot, "test", "python");
 const deferredFakePythonPath = join(fakePythonPath, "deferred_sitecustomize");
 const syntheticTypesafeKey = "synthetic-typesafe-key-MOON-62";
-const syntheticHelperKey = "synthetic-openrouter-key-STAR-73";
+const syntheticHelperKey = "synthetic-deepseek-key-STAR-73";
 const syntheticNativeHelperKey = "synthetic-native-env-key-COMET-84";
 const testRuntimeConfig: unknown = JSON.parse(
   readFileSync(join(repositoryRoot, "config", "runtime.json"), "utf8"),
@@ -172,9 +172,9 @@ function terminalDetails(
     models: {
       jev: { configuredModel: "jev-1.13.0" },
       textHelper: {
-        configuredModel: "deepseek/deepseek-v4.1-flash:nitro",
-        baseUrl: "https://openrouter.ai/api/v1",
-        reasoning: "none",
+        configuredModel: "deepseek-flash",
+        baseUrl: "https://api.deepseek.com/v1",
+        reasoning: "disabled",
       },
     },
     usage: {
@@ -708,15 +708,16 @@ test("preflight reports resolved helper-key configuration without claiming valid
   assert.equal(workspace.textHelperAvailability, "available");
 });
 
-test("native workspace helper conflicts are rejected before browser startup", async () => {
+test("native workspace conflicts stop a DeepSeek key before a wrong-provider request", async () => {
+  const wrongProviderKey = "synthetic-wrong-provider-key";
   await withScenario(
     "click",
     {
       helperKey: null,
       nativeEnvironment: [
-        "TEXT_MODEL_API_KEY=synthetic-native-conflict-key",
-        "TEXT_MODEL_BASE_URL=https://api.deepseek.com/v1",
-        "TEXT_MODEL=deepseek-chat",
+        `TEXT_MODEL_API_KEY=${wrongProviderKey}`,
+        "TEXT_MODEL_BASE_URL=https://openrouter.ai/api/v1",
+        "TEXT_MODEL=deepseek/deepseek-v4.1-flash:nitro",
         "TEXT_MODEL_REASONING=none",
         "",
       ].join("\n"),
@@ -730,6 +731,10 @@ test("native workspace helper conflicts are rejected before browser startup", as
       assert.match(
         String(recordField(details, "diagnostic").message),
         /TEXT_MODEL_BASE_URL/,
+      );
+      assert.doesNotMatch(
+        result.content[0]?.text ?? "",
+        new RegExp(wrongProviderKey),
       );
       assert.equal(await readIfPresent(markers.browser), "");
       assert.equal(await readIfPresent(markers.model), "");
@@ -777,13 +782,17 @@ test("the registered tool consumes native Agent.run for click and completion", a
   });
 });
 
-test("native field helper fills through the selected OpenRouter defaults", async () => {
+test("native field helper fills through the selected direct DeepSeek defaults", async () => {
   await withScenario("click", { helperKey: null }, ({ result }) => {
     assert.equal(detailsOf(result).status, "completion_claim");
   });
   await withScenario("fill", {}, async ({ result, markers }) => {
     const details = detailsOf(result);
-    assert.equal(details.status, "completion_claim");
+    assert.equal(
+      details.status,
+      "completion_claim",
+      JSON.stringify(details.diagnostic),
+    );
     assert.match(await readIfPresent(markers.field), /Busan/);
     const usage = recordField(details, "usage");
     const sources = arrayField(usage, "records").map(
@@ -794,7 +803,7 @@ test("native field helper fills through the selected OpenRouter defaults", async
     const models = recordField(details, "models");
     assert.equal(
       recordField(models, "textHelper").configuredModel,
-      "deepseek/deepseek-v4.1-flash:nitro",
+      "deepseek-flash",
     );
     assertTextHelperAvailabilityAbsent(details);
   });

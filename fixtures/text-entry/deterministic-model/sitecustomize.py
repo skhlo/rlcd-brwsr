@@ -21,14 +21,16 @@ def _choice(criteria, selected):
 
 def _deterministic_post_json(url, _key, body):
     if "questions" not in body:
-        if url != "https://openrouter.ai/api/v1/chat/completions":
-            raise RuntimeError("production runner did not retain the OpenRouter URL")
-        if body.get("model") != "deepseek/deepseek-v4.1-flash:nitro":
+        if url != "https://api.deepseek.com/v1/chat/completions":
+            raise RuntimeError("production runner did not use the direct DeepSeek URL")
+        if body.get("model") != "deepseek-flash":
+            raise RuntimeError("production runner did not forward deepseek-flash")
+        if body.get("thinking") != {"type": "disabled"}:
+            raise RuntimeError("production runner did not disable thinking natively")
+        if "reasoning" in body:
             raise RuntimeError(
-                "production runner did not forward the DeepSeek Nitro model"
+                "production runner retained the OpenRouter reasoning field"
             )
-        if body.get("reasoning") != {"enabled": False}:
-            raise RuntimeError("production runner did not disable helper reasoning")
         if body.get("response_format") != {"type": "json_object"}:
             raise RuntimeError("production runner did not retain JSON-object output")
         if body.get("max_tokens") != 1024:

@@ -1,11 +1,16 @@
 # OpenRouter DeepSeek V4.1 Flash provider evidence
 
-Retrieved **2026-09-23 UTC**. This note records the selected implementation,
-unauthenticated public-source research, and deterministic offline verification.
-No authenticated request, model inference, billing test, live browser task, or
-measured-speed test was made.
+Status: **superseded local research**. The direct DeepSeek selection replaced
+this tuple before publication because the user's key is DeepSeek-issued, not an
+OpenRouter key. The findings below remain the actual evidence for the earlier
+local checkpoint; they are not evidence for the current direct route.
 
-## Selected implemented native configuration
+Retrieved **2026-09-23 UTC**. This note records the then-selected local
+implementation, unauthenticated public-source research, and deterministic
+offline verification. No authenticated request, model inference, billing test,
+live browser task, or measured-speed test was made.
+
+## Superseded local native configuration
 
 ```text
 TEXT_MODEL_BASE_URL=https://openrouter.ai/api/v1
@@ -13,7 +18,7 @@ TEXT_MODEL=deepseek/deepseek-v4.1-flash:nitro
 TEXT_MODEL_REASONING=none
 ```
 
-The exact speed-oriented, configuration-only model string is **`deepseek/deepseek-v4.1-flash:nitro`**. OpenRouter documents `:nitro` as a routing suffix that can be appended to any model ID; it is not a separate catalogue model, so its capabilities are those of the base `deepseek/deepseek-v4.1-flash` entry ([Nitro variant](https://openrouter.ai/docs/guides/routing/model-variants/nitro.md), [provider selection](https://openrouter.ai/docs/guides/routing/provider-selection.md#nitro-shortcut), [model-specific guide](https://openrouter.ai/deepseek/deepseek-v4.1-flash/llms.txt)). The base URL, existing OpenRouter credential, JSON-object response format, and 1,024-token output cap can remain unchanged. Jev and Pi's outer model are outside this tuple and are not changed by it.
+At that checkpoint the exact speed-oriented, configuration-only model string was **`deepseek/deepseek-v4.1-flash:nitro`**. OpenRouter documents `:nitro` as a routing suffix that can be appended to any model ID; it is not a separate catalogue model, so its capabilities are those of the base `deepseek/deepseek-v4.1-flash` entry ([Nitro variant](https://openrouter.ai/docs/guides/routing/model-variants/nitro.md), [provider selection](https://openrouter.ai/docs/guides/routing/provider-selection.md#nitro-shortcut), [model-specific guide](https://openrouter.ai/deepseek/deepseek-v4.1-flash/llms.txt)). The research assumed an OpenRouter credential and found that the base URL, JSON-object response format, and 1,024-token output cap could remain unchanged. Jev and Pi's outer model were outside this tuple and were not changed by it.
 
 In the installed native helper, `TEXT_MODEL_REASONING=none` produces:
 
@@ -36,7 +41,7 @@ The complete public endpoint response contained 26 routes. Every route advertise
 
 OpenRouter defines `response_format: {"type":"json_object"}` as JSON mode and instructs callers to request JSON in the prompt ([parameter reference](https://openrouter.ai/docs/api_reference/parameters.md#response-format)). DeepSeek documents the same request shape, while warning that JSON mode can occasionally return empty content ([DeepSeek JSON Output](https://api-docs.deepseek.com/guides/json_mode/)). The helper's system prompt requests one JSON object and its existing parser still owns exact `{"text": ...}` validation; advertised JSON mode does not itself prove that exact application shape.
 
-## Implemented offline verification
+## Historical implemented offline verification
 
 The registered-tool test crosses the production TypeScript launcher, Python
 runtime, pinned `Agent.run()` and native field-text helper while replacing only
@@ -88,5 +93,6 @@ Every `latency_last_30m` and `throughput_last_30m` value in the unauthenticated 
 
 These captures remain local, ignored evidence under `artifacts/`; they do not ship
 in the candidate. The historical Ling provider note preserves its findings and
-recorded live evidence. The DeepSeek switch is implemented and offline-verified,
-but has no live helper or provider-acceptance evidence.
+recorded live evidence. This OpenRouter DeepSeek switch was implemented and
+offline-verified locally, then superseded before publication. It has no live
+helper or provider-acceptance evidence.

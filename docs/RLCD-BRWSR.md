@@ -6,11 +6,11 @@ Pi-TUI/real-Chrome command checks with synthetic provider replies. Those command
 checks invoke the registered tool, not an outer-LLM-issued tool turn. A later
 bounded live helper probe and one local fixture through Pi's normal agent-turn
 path also passed, using real Jev and Ling on that unchanged historical
-implementation. The current helper selection is OpenRouter
-`deepseek/deepseek-v4.1-flash:nitro`, with reasoning disabled in the request; Jev
-and Pi's outer model remain unchanged. This configuration-only switch has a
-38-test deterministic suite but no live inference, real-Chrome, outer-agent-turn
-or public-site check. See the [verification record](thin-python-evidence.md).
+implementation. The current helper selection is direct DeepSeek
+`deepseek-flash`, with native thinking disabled in the request; Jev and Pi's
+outer model remain unchanged. This configuration-only switch has a 38-test
+deterministic suite but no live inference, real-Chrome, outer-agent-turn or
+public-site check. See the [verification record](thin-python-evidence.md).
 The user confirmed dropping `maxActions` and accepted available native usage
 with explicitly incomplete Pi totals. This model change excluded live calls.
 Historical live checks used Ling and covered bounded helper/local-fixture cases,
@@ -156,31 +156,41 @@ reach a remote or otherwise wrong browser.
 
 Use native `TYPESAFE_API_KEY` and `TEXT_MODEL_*` settings through the authorized
 host-local environment/configuration. Do not introduce a secret store, copy
-existing credentials or read Pi's OAuth credentials. The selected text helper
-is OpenRouter `deepseek/deepseek-v4.1-flash:nitro`; Jev remains the decision
-model. After Browser Harness loads its native workspace environment, one shared
-runtime owner supplies these selected settings process-locally when absent and
-rejects conflicting values before daemon checks or browser startup:
+existing credentials or read Pi's OAuth credentials. `TYPESAFE_API_KEY`
+authenticates Jev decisions. `TEXT_MODEL_API_KEY` must be a DeepSeek-issued key
+for the optional field-text helper. Jev remains the decision model.
+
+After Browser Harness loads its native workspace environment, one shared runtime
+owner supplies these selected settings process-locally when absent and rejects
+conflicting values before daemon checks or browser startup:
 
 ```text
-TEXT_MODEL_BASE_URL=https://openrouter.ai/api/v1
-TEXT_MODEL=deepseek/deepseek-v4.1-flash:nitro
-TEXT_MODEL_REASONING=none
+TEXT_MODEL_BASE_URL=https://api.deepseek.com/v1
+TEXT_MODEL=deepseek-flash
+TEXT_MODEL_REASONING=disabled
 ```
 
-`TEXT_MODEL_API_KEY` must come from a host-local OpenRouter key; this build did
-not read or configure one. The reasoning setting makes the unchanged upstream
-helper request `reasoning.enabled: false`; public metadata supports requesting
-the disable, but no live DeepSeek call proves per-route enforcement. Nitro asks
-OpenRouter to prioritize eligible endpoints by generation throughput. It does
-not guarantee lowest time to first token or whole-request latency and may select
-higher-priced priority endpoints. The native fake-provider seam verified the
-exact model suffix, OpenRouter URL, reasoning field, JSON-object format and
-1,024-token cap offline. See the [current provider evidence](openrouter-deepseek-v4.1-flash.md).
-The earlier authorized Ling tests reused preserved host-local keys without
-copying them; their live evidence remains historical at its recorded heads in
-the [Ling provider evidence](openrouter-ling-3.0-flash.md). No provider adapter
-or routing selector is added.
+The `/v1` path is required by the pinned helper's slash-sensitive native
+DeepSeek branch. `deepseek-flash` is the currently documented DeepSeek-V4.1-Flash
+alias, not immutable version identity. `disabled` is a readable non-`none` value
+that preserves the unchanged helper's native
+`thinking: {"type":"disabled"}` payload; it is not an upstream enum. The exact
+fake-provider seam verifies that payload, the absence of the OpenRouter
+`reasoning` field, the direct URL, model, JSON-object format and 1,024-token cap.
+See the [current direct-provider evidence](deepseek-direct-flash.md).
+
+The parent-owned, human-run four-stage wizard will supply the named values in
+Browser Harness's native workspace `.env`; this task does not author or run it
+and did not read or write a host `.env`. Do not use the retained old `pi-rlcd`
+launcher for direct DeepSeek: it injects an OpenRouter key into
+`TEXT_MODEL_API_KEY`. The parent task will make that launcher fail closed without
+deleting it; this repository change does not edit the launcher.
+
+The earlier DeepSeek-through-OpenRouter selection is preserved as
+[superseded local research](openrouter-deepseek-v4.1-flash.md), and the authorized
+Ling tests remain historical at their recorded heads in the
+[Ling provider evidence](openrouter-ling-3.0-flash.md). No provider adapter or
+routing selector is added.
 
 The helper remains optional for click-only tasks. Native missing-key or invalid
 value errors return sanitized errors and available state, without inventing a
@@ -245,8 +255,8 @@ request count or missing usage with zero. **Confirmed initial accounting policy:
 show bounded source-labelled records and unavailable values in tool details;
 omit Pi top-level `usage`. This leaves Pi footer/session totals incomplete and
 must be disclosed. Rate-based estimated totals are outside this initial build.
-Selecting OpenRouter and obtaining advertised rates does not recover missing fields or failed-call
-usage, and is not a reason to build a billing adapter now.
+Published provider rates do not recover missing fields or failed-call usage and
+are not a reason to build a billing adapter now.
 
 ## Reuse and leave behind
 
@@ -297,7 +307,7 @@ returned a valid field value, and Pi's normal outer-model/tool path completed
 one local text-entry fixture using real Jev and Ling. Independent post-exit
 inspection verified the retained target, then exact cleanup restored the
 baseline. No manual retry or extra browser-tool invocation occurred. It is not
-live evidence for the current DeepSeek selection.
+live evidence for the current direct DeepSeek selection.
 
 A benign public-site acceptance task remains pending and needs its own applicable
 allowance. Preserve earlier ledgers; native step limits do not constitute a
@@ -317,7 +327,8 @@ raw artifact paths below resolve under that retained checkout.
 
 - [Thin rewrite verification and limits](thin-python-evidence.md).
 - [Feasibility source/probe record](thin-python-feasibility.md).
-- [Selected OpenRouter helper evidence](openrouter-deepseek-v4.1-flash.md).
+- [Selected direct DeepSeek helper evidence](deepseek-direct-flash.md).
+- [Superseded local OpenRouter DeepSeek research](openrouter-deepseek-v4.1-flash.md).
 - [Historical Ling helper evidence](openrouter-ling-3.0-flash.md).
 - [Next architecture decision](adr/0003-python-owned-run.md).
 - [Recovered architecture and amendments](adr/0002-wrap-pinned-jev-ultrafast-agent.md).

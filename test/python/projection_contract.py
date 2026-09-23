@@ -38,9 +38,9 @@ def assert_owned_producers_omit_availability() -> None:
         helper = _text_helper(result)
         assert "availability" not in helper
         assert helper == {
-            "configuredModel": "deepseek/deepseek-v4.1-flash:nitro",
-            "baseUrl": "https://openrouter.ai/api/v1",
-            "reasoning": "none",
+            "configuredModel": "deepseek-flash",
+            "baseUrl": "https://api.deepseek.com/v1",
+            "reasoning": "disabled",
         }
 
 

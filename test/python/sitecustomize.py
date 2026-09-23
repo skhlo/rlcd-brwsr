@@ -43,9 +43,9 @@ def _terminal_envelope(text: str) -> dict[str, object]:
         "models": {
             "jev": {"configuredModel": "jev-1.13.0"},
             "textHelper": {
-                "configuredModel": "deepseek/deepseek-v4.1-flash:nitro",
-                "baseUrl": "https://openrouter.ai/api/v1",
-                "reasoning": "none",
+                "configuredModel": "deepseek-flash",
+                "baseUrl": "https://api.deepseek.com/v1",
+                "reasoning": "disabled",
             },
         },
         "usage": {
@@ -419,22 +419,24 @@ def _choice(criteria, selected):
 
 
 def _helper_response(key, body):
-    if body.get("model") != "deepseek/deepseek-v4.1-flash:nitro":
+    if body.get("model") != "deepseek-flash":
+        raise RuntimeError("native helper request did not forward deepseek-flash")
+    if body.get("thinking") != {"type": "disabled"}:
+        raise RuntimeError("native helper request did not disable thinking natively")
+    if "reasoning" in body:
         raise RuntimeError(
-            "native helper request did not forward the DeepSeek Nitro model"
+            "native helper request retained the OpenRouter reasoning field"
         )
-    if body.get("reasoning") != {"enabled": False}:
-        raise RuntimeError("native helper request did not disable reasoning")
     if body.get("response_format") != {"type": "json_object"}:
         raise RuntimeError("native helper request did not retain JSON-object output")
     if body.get("max_tokens") != 1024:
         raise RuntimeError("native helper request did not retain the output token cap")
-    if os.environ.get("TEXT_MODEL_BASE_URL") != "https://openrouter.ai/api/v1":
-        raise RuntimeError("runner did not select the OpenRouter helper base URL")
-    if os.environ.get("TEXT_MODEL") != "deepseek/deepseek-v4.1-flash:nitro":
-        raise RuntimeError("runner did not select DeepSeek V4.1 Flash Nitro")
-    if os.environ.get("TEXT_MODEL_REASONING") != "none":
-        raise RuntimeError("runner did not disable helper reasoning")
+    if os.environ.get("TEXT_MODEL_BASE_URL") != "https://api.deepseek.com/v1":
+        raise RuntimeError("runner did not select the direct DeepSeek helper base URL")
+    if os.environ.get("TEXT_MODEL") != "deepseek-flash":
+        raise RuntimeError("runner did not select deepseek-flash")
+    if os.environ.get("TEXT_MODEL_REASONING") != "disabled":
+        raise RuntimeError("runner did not preserve native thinking disablement")
     if key != os.environ.get("TEXT_MODEL_API_KEY"):
         raise RuntimeError("native helper did not receive its child environment key")
 
@@ -459,9 +461,9 @@ def _helper_response(key, body):
 def _post_json(url, key, body):
     _append("RLCD_TEST_MODEL_MARKER", f"request:{url}")
     if "questions" not in body:
-        if url != "https://openrouter.ai/api/v1/chat/completions":
+        if url != "https://api.deepseek.com/v1/chat/completions":
             raise RuntimeError(
-                "native helper request did not retain the OpenRouter URL"
+                "native helper request did not use the direct DeepSeek URL"
             )
         return _helper_response(key, body)
 
