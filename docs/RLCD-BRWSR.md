@@ -215,6 +215,10 @@ numbers and complete-key redaction before clipping.
   observation. If supervised process evidence would push a child projection
   over the terminal cap, omit that projection conservatively while retaining
   the parent's stop and the observed reap.
+- An unexpected EOF on the child's stdout while Python remains alive is not a
+  stop trigger and proves neither completion, process exit, provider
+  cancellation nor cleanup. Browser work can continue until Pi cancellation,
+  the wall deadline or process exit.
 - No live phase-by-phase progress, hard-kill evidence recovery or universal
   no-dispatch-after-deadline guarantee is promised.
 
