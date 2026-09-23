@@ -190,14 +190,21 @@ if _SCENARIO == "raw_stderr_exit":
     os._exit(31)
 
 if _SCENARIO == "raw_stdout_overflow":
-    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    acknowledgement_marker = os.environ.get("RLCD_TEST_TERM_ACK_MARKER")
+
+    def _acknowledge_term(_signum: int, _frame: object) -> None:
+        if acknowledgement_marker:
+            Path(acknowledgement_marker).write_text(
+                f"term-acknowledged:{os.getpid()}", encoding="utf-8"
+            )
+
+    signal.signal(signal.SIGTERM, _acknowledge_term)
+    marker = os.environ.get("RLCD_TEST_PID_MARKER")
+    if marker:
+        Path(marker).write_text(str(os.getpid()), encoding="utf-8")
     secret = os.environ.get("TYPESAFE_API_KEY", "")
     sys.stdout.write(f"raw-child-secret {secret} " + "X" * 100_000)
     sys.stdout.flush()
-    time.sleep(0.5)
-    marker = os.environ.get("RLCD_TEST_PID_MARKER")
-    if marker:
-        Path(marker).write_text("overflow-observed", encoding="utf-8")
     time.sleep(30)
 
 if _SCENARIO in {"exit_before_stdio_close", "exit_before_stdio_overflow"}:

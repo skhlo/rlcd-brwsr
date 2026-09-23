@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -19,6 +19,11 @@ import rlcdBrwsrExtension, {
   superviseRlcdProcess,
   type RlcdChildOutcome,
 } from "../config/pi/extensions/rlcd-brwsr.ts";
+import {
+  ReadReadyFixtureError,
+  type ReadReadyRunner,
+  withReadReadyRunner,
+} from "./read-ready-fixture.ts";
 
 interface RlcdInput {
   url: string;
@@ -54,7 +59,7 @@ interface ScenarioOptions {
   textModel?: string;
   signal?: AbortSignal;
   abortWhenModelStarts?: AbortController;
-  abortAfterOutputMarker?: AbortController;
+  abortAfterTermAcknowledgement?: AbortController;
   params?: Partial<RlcdInput>;
   nativeEnvironment?: string;
   deferExternalFakesUntilNativeEnvironment?: boolean;
@@ -67,6 +72,14 @@ interface ScenarioMarkers {
   field: string;
   model: string;
   pid: string;
+  termAcknowledgement: string;
+}
+
+interface ScenarioAbortObservation {
+  readonly acknowledgement: string;
+  readonly requested: boolean;
+  readonly signalAborted: boolean;
+  readonly toolPendingAtRequest: boolean;
 }
 
 const repositoryRoot = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -266,6 +279,21 @@ async function readIfPresent(path: string): Promise<string> {
   }
 }
 
+async function waitForScenarioMarker(
+  path: string,
+  timeoutMs: number,
+): Promise<string> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const value = (await readIfPresent(path)).trim();
+    if (value) return value;
+    await delay(10);
+  }
+  throw new Error(
+    `expected child marker was not reached within ${timeoutMs} ms`,
+  );
+}
+
 async function runScenario(
   scenario: string,
   options: ScenarioOptions = {},
@@ -273,6 +301,7 @@ async function runScenario(
   result: ToolResult;
   directory: string;
   markers: ScenarioMarkers;
+  abortObservation: ScenarioAbortObservation | undefined;
   cleanup(): Promise<void>;
 }> {
   const directory = await mkdtemp(join(tmpdir(), "rlcd-thin-test-"));
@@ -283,6 +312,7 @@ async function runScenario(
     field: join(directory, "field.log"),
     model: join(directory, "model.log"),
     pid: join(directory, "pid.txt"),
+    termAcknowledgement: join(directory, "term-acknowledged.txt"),
   };
   if (options.nativeEnvironment !== undefined) {
     await writeFile(join(directory, ".env"), options.nativeEnvironment, "utf8");
@@ -295,6 +325,7 @@ async function runScenario(
     RLCD_TEST_FIELD_MARKER: markers.field,
     RLCD_TEST_MODEL_MARKER: markers.model,
     RLCD_TEST_PID_MARKER: markers.pid,
+    RLCD_TEST_TERM_ACK_MARKER: markers.termAcknowledgement,
     BH_AGENT_WORKSPACE: directory,
     BU_NAME: "rlcd-brwsr-test",
     BU_CDP_URL: "http://127.0.0.1:43114",
@@ -325,37 +356,80 @@ async function runScenario(
 
   try {
     const abortController =
-      options.abortWhenModelStarts ?? options.abortAfterOutputMarker;
+      options.abortWhenModelStarts ?? options.abortAfterTermAcknowledgement;
     const abortMarker = options.abortWhenModelStarts
       ? markers.model
-      : markers.pid;
-    const abortWatcher = abortController
+      : markers.termAcknowledgement;
+    let toolSettled = false;
+    const toolWork = registeredTool()
+      .execute(
+        "test-call",
+        {
+          url: "https://example.test/start",
+          goal: "Complete the deterministic fixture",
+          ...options.params,
+        },
+        options.signal,
+      )
+      .then(
+        (result) => {
+          toolSettled = true;
+          return { kind: "result" as const, result };
+        },
+        (error: unknown) => {
+          toolSettled = true;
+          return { kind: "error" as const, error };
+        },
+      );
+    const watcherWork = abortController
       ? (async () => {
-          const deadline = Date.now() + 2_000;
-          while (Date.now() < deadline) {
-            if (await readIfPresent(abortMarker)) {
-              abortController.abort();
-              return;
-            }
-            await delay(10);
+          const acknowledgement = await waitForScenarioMarker(
+            abortMarker,
+            2_000,
+          );
+          if (toolSettled) {
+            throw new Error(
+              "expected child marker arrived after the tool operation settled",
+            );
           }
-          throw new Error("expected child marker was not reached before abort");
-        })()
-      : undefined;
-    const result = await registeredTool().execute(
-      "test-call",
-      {
-        url: "https://example.test/start",
-        goal: "Complete the deterministic fixture",
-        ...options.params,
-      },
-      options.signal,
-    );
-    await abortWatcher;
+          abortController.abort();
+          return Object.freeze({
+            acknowledgement,
+            requested: true,
+            signalAborted: abortController.signal.aborted,
+            toolPendingAtRequest: true,
+          });
+        })().then(
+          (observation) => ({ kind: "observation" as const, observation }),
+          (error: unknown) => {
+            abortController.abort();
+            return { kind: "error" as const, error };
+          },
+        )
+      : Promise.resolve({ kind: "none" as const });
+    const [toolOutcome, watcherOutcome] = await Promise.all([
+      toolWork,
+      watcherWork,
+    ]);
+    const failures: unknown[] = [];
+    if (watcherOutcome.kind === "error") failures.push(watcherOutcome.error);
+    if (toolOutcome.kind === "error") failures.push(toolOutcome.error);
+    if (failures.length === 1) throw failures[0];
+    if (failures.length > 1) {
+      throw new AggregateError(
+        failures,
+        "scenario work and watcher both failed",
+      );
+    }
+    assert.equal(toolOutcome.kind, "result");
     return {
-      result,
+      result: toolOutcome.result,
       directory,
       markers,
+      abortObservation:
+        watcherOutcome.kind === "observation"
+          ? watcherOutcome.observation
+          : undefined,
       async cleanup() {
         await rm(directory, { recursive: true });
       },
@@ -386,19 +460,6 @@ async function withScenario(
   }
 }
 
-interface ReadCancellationFixture {
-  child: ChildProcessWithoutNullStreams;
-  marker: string;
-  stdout: Buffer[];
-  stderr: Buffer[];
-  error: Promise<Error>;
-  exit: Promise<{ code: number | null; signal: NodeJS.Signals | null }>;
-  close: Promise<{ code: number | null; signal: NodeJS.Signals | null }>;
-  isExited(): boolean;
-  isClosed(): boolean;
-  cleanup(): Promise<void>;
-}
-
 async function within<T>(
   promise: Promise<T>,
   timeoutMs: number,
@@ -420,16 +481,21 @@ async function within<T>(
   }
 }
 
-async function waitForNonemptyFile(
-  path: string,
-  timeoutMs: number,
-): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if ((await readIfPresent(path)).trim()) return;
-    await delay(10);
-  }
-  throw new Error(`read readiness exceeded ${timeoutMs} ms`);
+async function readReadyFixtureDirectories(): Promise<string[]> {
+  return (await readdir(tmpdir(), { withFileTypes: true }))
+    .filter(
+      (entry) =>
+        entry.isDirectory() && entry.name.startsWith("rlcd-read-ready-test-"),
+    )
+    .map((entry) => entry.name)
+    .sort();
+}
+
+function assertProcessGone(pid: number): void {
+  assert.throws(
+    () => process.kill(pid, 0),
+    (error: NodeJS.ErrnoException) => error.code === "ESRCH",
+  );
 }
 
 async function runPreflightCase(options: {
@@ -516,114 +582,6 @@ async function runPreflightCase(options: {
     if (!closed) await within(close, 1_000, "preflight KILL shutdown");
     await rm(directory, { recursive: true });
   }
-}
-
-async function startReadCancellationFixture(options: {
-  startupDelayMs?: number;
-  suppressReadiness?: boolean;
-}): Promise<ReadCancellationFixture> {
-  const directory = await mkdtemp(join(tmpdir(), "rlcd-read-ready-test-"));
-  const marker = join(directory, "read-ready");
-  let child: ChildProcessWithoutNullStreams;
-  try {
-    child = spawn(
-      join(repositoryRoot, ".venv", "bin", "python"),
-      [join(repositoryRoot, "bridge", "rlcd_brwsr_bridge.py")],
-      {
-        cwd: repositoryRoot,
-        env: {
-          HOME: directory,
-          TMPDIR: directory,
-          PATH: process.env.PATH,
-          PYTHONNOUSERSITE: "1",
-          PYTHONDONTWRITEBYTECODE: "1",
-          PYTHONPATH: join(fakePythonPath, "read_ready"),
-          RLCD_TEST_READ_READY_MARKER: marker,
-          RLCD_TEST_STARTUP_DELAY_MS: String(options.startupDelayMs ?? 0),
-          RLCD_TEST_SUPPRESS_READ_READY: options.suppressReadiness ? "1" : "0",
-          BH_AGENT_WORKSPACE: directory,
-          BU_NAME: "rlcd-brwsr-read-ready-test",
-          BU_CDP_URL: "http://127.0.0.1:43114",
-          TYPESAFE_API_KEY: syntheticTypesafeKey,
-          TEXT_MODEL_API_KEY: syntheticHelperKey,
-        },
-        shell: false,
-        stdio: ["pipe", "pipe", "pipe"],
-      },
-    );
-  } catch (error) {
-    await rm(directory, { recursive: true });
-    throw error;
-  }
-
-  const stdout: Buffer[] = [];
-  const stderr: Buffer[] = [];
-  let exited = false;
-  let closed = false;
-  let spawnError: Error | undefined;
-  child.stdout.on("data", (chunk: Buffer) => stdout.push(chunk));
-  child.stderr.on("data", (chunk: Buffer) => stderr.push(chunk));
-  const error = new Promise<Error>((resolveError) => {
-    child.once("error", (childError) => {
-      spawnError = childError;
-      resolveError(childError);
-    });
-  });
-  const exit = new Promise<{
-    code: number | null;
-    signal: NodeJS.Signals | null;
-  }>((resolveExit) => {
-    child.once("exit", (code, signal) => {
-      exited = true;
-      resolveExit({ code, signal });
-    });
-  });
-  const close = new Promise<{
-    code: number | null;
-    signal: NodeJS.Signals | null;
-  }>((resolveClose) => {
-    child.once("close", (code, signal) => {
-      closed = true;
-      resolveClose({ code, signal });
-    });
-  });
-
-  return {
-    child,
-    marker,
-    stdout,
-    stderr,
-    error,
-    exit,
-    close,
-    isExited: () => exited,
-    isClosed: () => closed,
-    async cleanup() {
-      child.stdin.end();
-      if (!closed) {
-        try {
-          await within(close, 250, "owned bridge input close");
-        } catch {
-          if (!closed) child.kill("SIGTERM");
-        }
-      }
-      if (!closed) {
-        try {
-          await within(close, 1_000, "owned bridge TERM shutdown");
-        } catch {
-          if (!closed) child.kill("SIGKILL");
-        }
-      }
-      if (!closed) {
-        await within(close, 1_000, "owned bridge KILL shutdown");
-      }
-      if (!exited) {
-        await within(exit, 1_000, "owned bridge exit observation");
-      }
-      await rm(directory, { recursive: true });
-      if (spawnError) throw spawnError;
-    },
-  };
 }
 
 test("the extension loads inertly and registers only the reduced sequential tool", () => {
@@ -1234,51 +1192,89 @@ test(
   "runner cancellation waits for protected stdin-read readiness",
   { timeout: 6_000 },
   async () => {
-    const fixture = await startReadCancellationFixture({ startupDelayMs: 800 });
-    try {
-      await waitForNonemptyFile(fixture.marker, 3_000);
-      assert.equal(fixture.child.kill("SIGTERM"), true);
-      const closed = await within(fixture.close, 2_000, "bridge cancellation");
-      const exited = await within(fixture.exit, 100, "bridge exit observation");
-      assert.deepEqual(exited, closed);
-      assert.equal(closed.code, 0);
-      assert.equal(closed.signal, null);
-      const details = JSON.parse(
-        Buffer.concat(fixture.stdout).toString("utf8"),
-      ) as Record<string, unknown>;
+    let pid: number | undefined;
+    await withReadReadyRunner({ startupDelayMs: 800 }, async (runner) => {
+      pid = runner.pid;
+      const cancellation = runner.cancel();
+      assert.strictEqual(runner.cancel(), cancellation);
+      const observed = await cancellation;
+      assert.equal(observed.cancellation.requested, true);
+      assert.equal(observed.cancellation.signal, "SIGTERM");
+      assert.equal(observed.cancellation.sent, true);
+      assert.deepEqual(observed.exit, observed.close);
+      assert.equal(observed.close.code, 0);
+      assert.equal(observed.close.signal, null);
+      assert.equal(Object.isFrozen(observed), true);
+      assert.equal(Object.isFrozen(observed.terminal), true);
+      const details = observed.terminal as Record<string, unknown>;
       assert.equal(details.status, "stopped");
       assert.equal(details.stopReason, "cancelled");
       assert.equal(details.execution, "not_started");
       assert.equal(recordField(details, "cleanup").taskTab, "not_created");
       assert.equal(recordField(details, "diagnostic").type, "StopRequested");
       assertTextHelperAvailabilityAbsent(details);
-    } finally {
-      await fixture.cleanup();
-    }
+    });
+    assert.ok(pid !== undefined);
+    assertProcessGone(pid);
   },
 );
 
 test("readiness failure still closes input and reaps the owned bridge", async () => {
-  const fixture = await startReadCancellationFixture({
-    suppressReadiness: true,
-  });
-  const pid = fixture.child.pid;
-  assert.ok(pid !== undefined);
-  try {
-    await assert.rejects(
-      waitForNonemptyFile(fixture.marker, 100),
-      /read readiness exceeded/,
-    );
-  } finally {
-    await fixture.cleanup();
-  }
-  assert.equal(fixture.isExited(), true);
-  assert.equal(fixture.isClosed(), true);
-  assert.throws(
-    () => process.kill(pid, 0),
-    (error: NodeJS.ErrnoException) => error.code === "ESRCH",
+  const directoriesBefore = await readReadyFixtureDirectories();
+  let bodyEntered = false;
+  let pid: number | undefined;
+  await assert.rejects(
+    withReadReadyRunner(
+      { suppressReadiness: true, operationTimeoutMs: 100 },
+      () => {
+        bodyEntered = true;
+      },
+    ),
+    (error: unknown) => {
+      if (!(error instanceof ReadReadyFixtureError)) return false;
+      pid = error.pid;
+      return /read readiness (exceeded|failed)/.test(error.message);
+    },
   );
+  assert.equal(bodyEntered, false);
+  assert.ok(pid !== undefined);
+  assertProcessGone(pid);
+  assert.deepEqual(await readReadyFixtureDirectories(), directoriesBefore);
 });
+
+test(
+  "readiness scope cleans up callback failure and closes timed-out operations",
+  { timeout: 6_000 },
+  async () => {
+    const directoriesBefore = await readReadyFixtureDirectories();
+    let failedBodyPid: number | undefined;
+    await assert.rejects(
+      withReadReadyRunner({}, (runner) => {
+        failedBodyPid = runner.pid;
+        throw new Error("fixture callback failed");
+      }),
+      /fixture callback failed/,
+    );
+    assert.ok(failedBodyPid !== undefined);
+    assertProcessGone(failedBodyPid);
+
+    let timedOutRunner: ReadReadyRunner | undefined;
+    await assert.rejects(
+      withReadReadyRunner({ operationTimeoutMs: 1_000 }, async (runner) => {
+        timedOutRunner = runner;
+        await new Promise<never>(() => {});
+      }),
+      /read-ready operation exceeded 1000 ms/,
+    );
+    assert.ok(timedOutRunner !== undefined);
+    assertProcessGone(timedOutRunner.pid);
+    await assert.rejects(
+      timedOutRunner.cancel(),
+      /read-ready operation is closed outside its scope/,
+    );
+    assert.deepEqual(await readReadyFixtureDirectories(), directoriesBefore);
+  },
+);
 
 test("launch outcomes distinguish no PID from a Python-started missing script", async () => {
   const directory = await mkdtemp(join(tmpdir(), "rlcd-launch-test-"));
@@ -1642,15 +1638,27 @@ test("missing, oversized, and raw diagnostic child output are not echoed", async
     "raw_stdout_overflow",
     {
       signal: laterCancellation.signal,
-      abortAfterOutputMarker: laterCancellation,
+      abortAfterTermAcknowledgement: laterCancellation,
     },
-    ({ result }) => {
+    async ({ result, markers, abortObservation }) => {
       const details = detailsOf(result);
       const text = result.content[0]?.text ?? "";
+      const pid = Number((await readFile(markers.pid, "utf8")).trim());
+      assert.ok(Number.isInteger(pid) && pid > 0);
+      assert.equal(laterCancellation.signal.aborted, true);
+      assert.deepEqual(abortObservation, {
+        acknowledgement: `term-acknowledged:${pid}`,
+        requested: true,
+        signalAborted: true,
+        toolPendingAtRequest: true,
+      });
       assert.equal(details.status, "error");
       assert.equal(details.stopReason, "output_limit");
       assert.equal(details.execution, "unknown");
-      assert.equal(recordField(details, "cleanup").taskTab, "unknown");
+      const cleanup = recordField(details, "cleanup");
+      assert.equal(cleanup.taskTab, "unknown");
+      assert.equal(cleanup.bridgeProcess, "reaped");
+      assertProcessGone(pid);
       assert.doesNotMatch(text, /raw-child-secret|synthetic-typesafe-key/);
       assert.match(
         String(recordField(details, "diagnostic").message),
