@@ -1,6 +1,6 @@
 # RLCD-brwsr
 
-RLCD-brwsr delegates bounded browser decisions to a classifier while ordinary code retains execution and the outer agent retains responsibility for the task.
+RLCD-brwsr delegates a bounded browser task to the pinned Jev Ultrafast Agent while the outer agent retains permissions, planning, recovery and independent outcome verification.
 
 ## Language
 
@@ -9,11 +9,11 @@ The task owner that supplies the goal and remains responsible for permissions, v
 _Avoid_: Browser agent, controller
 
 **Fast loop**:
-A bounded sequence of observations, classifier decisions and deterministic browser actions performed without returning to the outer agent after every action.
+The bounded upstream sequence of observations, Jev decisions and Browser Harness actions performed without returning to the outer agent after every action.
 _Avoid_: Autonomous agent, reasoning loop
 
 **Action candidate**:
-A complete, code-owned browser operation and compatible target or value that the classifier may select. A candidate is data, never executable model output.
+A complete, upstream-code-owned browser operation and compatible target or value that Jev may select. A candidate is data, never executable model output.
 _Avoid_: Model command, generated action
 
 **Completion claim**:

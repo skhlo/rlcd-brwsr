@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>RLCD generated field fixture</title>
+  </head>
+  <body>
+    <main>
+      <h1>Generated field-value acceptance</h1>
+      <p>
+        Enter the destination requested by the goal. The page confirms the
+        expected generated value without submitting data anywhere.
+      </p>
+      <label for="destination-city">Destination city</label>
+      <input id="destination-city" name="destination-city" type="text" />
+      <p id="verification-marker" aria-live="polite">
+        Waiting for a valid destination.
+      </p>
+    </main>
+    <script>
+      const field = document.querySelector("#destination-city");
+      const marker = document.querySelector("#verification-marker");
+      field.addEventListener("input", () => {
+        if (field.value.trim() === "Busan") {
+          document.title = "RLCD generated field fixture complete";
+          marker.textContent =
+            "Accepted generated destination: Busan. Acceptance marker: FIELD-41";
+        } else {
+          document.title = "RLCD generated field fixture";
+          marker.textContent = "Waiting for a valid destination.";
+        }
+      });
+    </script>
+  </body>
+</html>

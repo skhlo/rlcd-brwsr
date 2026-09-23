@@ -1,0 +1,8 @@
+{
+  "jevModel": "jev-1.13.0",
+  "textModelBaseUrl": "https://openrouter.ai/api/v1",
+  "textModel": "inclusionai/ling-3.0-flash",
+  "textModelReasoning": "none",
+  "requestMaxUtf8Bytes": 32768,
+  "terminalMaxUtf8Bytes": 16384
+}

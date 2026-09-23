@@ -1,277 +1,331 @@
-# RLCD-brwsr v0.1 plan
+# RLCD-brwsr plan
 
-Status: approved direction; not implemented.
+Status: the thin Python-owned rewrite is **implemented and locally verified**.
+Corrected implementation `b3b42036` passed 20 automated tests and four repeated
+Pi-TUI/real-Chrome command checks with synthetic provider replies. Those command
+checks invoke the registered tool, not an outer-LLM-issued tool turn. A later
+bounded live helper probe and one local fixture through Pi's normal agent-turn
+path also passed, using real Jev and Ling on that unchanged implementation. The
+current hardened local candidate has a 38-test deterministic suite; it has not
+received a new live, real-Chrome, outer-agent-turn or public-site check. See
+the [verification record](thin-python-evidence.md). The user confirmed
+dropping `maxActions`, selected OpenRouter `inclusionai/ling-3.0-flash`, and
+accepted available native usage with explicitly incomplete Pi totals. The build
+itself excluded live calls. The subsequent allowance covered only the live
+helper probe and one 30-second local fixture; it did not cover public-site
+trials. No push or PR has occurred.
 
-RLCD-brwsr is a minimal Pi extension that uses TypeSafe Jev as a fast
-classifier inside a bounded browser loop. Pi owns the goal, planning,
-permissions, text preparation, verification and difficult recovery. The existing
-Chrome DevTools CLI owns browser observation and deterministic execution.
+The larger experimental Pi-native-helper implementation remains historical at
+`dde01a46dba112dbf9d002aeb2ebe2626363c034`. Its delivery gate was cancelled,
+not passed; four static review findings remain recorded. Recovery preserved all
+three gate correction commits. Nothing was pushed and no new PR was created.
+The old as-built contract remains available in this document's Git history at
+that commit, with historical verification in the issue evidence files.
 
-This optimizes browser work Pi already performs. It is not a new authorization
-system or a claim that browser actions are safer when selected by Jev.
+## Decision and reason
 
-The human-facing name is **RLCD-brwsr**. Its source slug will be `rlcd-brwsr`, and
-its Pi tool will be `rlcd_brwsr_run` because tool names use lowercase letters and
-underscores.
+Use the pinned upstream `Agent.run()` generator and its native API-key text
+helper. Python owns the browser run and its state. Pi launches it, requests stop,
+reaps the process and displays a bounded result. Do not port upstream to
+TypeScript or retain a Pi-Luna callback as another helper backend.
 
-## Interface
+This trades an additional host-local text-provider key for less orchestration:
+no bidirectional helper relay, no TypeScript shadow browser state and no
+cross-language action-history reconciliation. It also deliberately promises
+less after forced termination. [ADR-0003](adr/0003-python-owned-run.md) records
+this change to ADR-0002's later amendments.
+
+## What the investigation established
+
+[Thin Python feasibility](thin-python-feasibility.md) owns the source citations
+and probe findings. The evidence is narrow:
+
+- At the pinned revision, `Agent.run()` returns a synchronous generator. It
+  yields snapshots; exhausting it does not return a separate result object.
+- Eleven offline assertions exercised native completion, text validation,
+  limits and signals with external Browser/provider fakes. Expected failures
+  and unknown cleanup counted as passing assertions, not successful cleanup.
+- Two direct-runtime fixtures used the real Agent, native helper validation,
+  Browser Harness and isolated Chrome, with synthetic Jev/helper HTTP replies.
+  Independent CDP inspection verified the exact click and text-entry targets.
+  Exact close responses were true and the target baseline was restored.
+- A separate normal-retention probe confirmed an exact task target remained
+  inspectable after its Python child exited and was reaped, then closed that
+  target. A preceding harness setup failure is retained; this was not a
+  first-attempt reliability result.
+- At that stage no new Pi wrapper had been tested. No live Jev/helper inference,
+  provider compatibility, public-site reliability, general cancellation
+  guarantee or speed improvement was established.
+
+The source/probe distinction still matters: those direct upstream fixtures were
+a reason to build the wrapper, not acceptance evidence for the implementation.
+
+## Implemented interface
+
+Keep `rlcd_brwsr_run` and initially expose only:
 
 ```ts
 rlcd_brwsr_run({
+  url: string;
   goal: string;
-  maxSteps?: number;
   maxSeconds?: number;
+  retainTab?: boolean;
 });
 ```
 
-The tool acts on the page currently selected by Chrome DevTools CLI. It returns
-control to Pi when the goal appears complete, no allowed action can advance it,
-a consequential step is recognized, execution becomes uncertain, or a budget
-expires.
+- Validate the HTTP(S) URL, nonempty goal and serialized request before starting
+  a process. No shell interpolation or credentials in argv.
+- `maxSeconds` is a coarse stop-request deadline measured by Pi from before
+  startup. A fixed shutdown grace follows it. It is not a promise that no browser
+  action crossed the deadline or that stopping a process rolled back input.
+- `retainTab` applies only to a normal upstream completion claim. Retention
+  requires a usable task-target handle and must not retain the runner process.
+- Schedule sequentially within Pi, without claiming a global browser lock.
 
-The result reports:
+**Implemented contract reduction:** `maxActions` is absent. There is no
+replacement per-call step knob or compatibility alias. Upstream's native limits
+remain unchanged: history counts waits
+and scrolls as well as clicks/fills and is capped at 60, with a separate
+120-decision cap. These are not HTTP-attempt or spend caps. The wrapper adds
+only the coarse `maxSeconds` stop request.
 
-- completion status and stop reason;
-- final URL and bounded page state;
-- bounded source excerpts with URLs and titles from multiple observed pages;
-- compact action trace and Jev distributions;
-- command errors and timing/model usage;
-- deterministic evidence available from the executor; and
-- a final screenshot when useful.
-
-A Jev `DONE` choice is supporting evidence. Pi must verify the requested outcome
-independently.
-
-## Architecture
+## Ownership and smallest implementation
 
 ```text
-Pi calls rlcd_brwsr_run(goal)
-  -> chrome-devtools take_snapshot --output-format=json
-  -> TypeScript retains bounded source evidence from the observation
-  -> TypeScript derives the allowed operation and target choices
-  -> Jev classifies the next operation and compatible target
-  -> TypeScript constructs one fixed chrome-devtools invocation
-  -> Chrome DevTools executes and returns the next snapshot
-  -> repeat within the step and time budgets
+Pi tool
+  -> validate input; start fixed project-local Python with one JSON stdin request
+  -> Python resolves native configuration and requires the existing named Harness daemon
+  -> Python constructs Agent and consumes Agent.run()
+  -> upstream owns observation, Jev selection, native helper HTTP and browser input
+  -> Python projects available state, makes the normal cleanup/retention decision
+  <- one bounded terminal JSON result
 ```
 
-RLCD-brwsr is one TypeScript Pi extension. It calls TypeSafe through the HTTP API
-with built-in `fetch` and invokes Chrome DevTools with `pi.exec(command, args)`.
-It has no Python runtime, TypeSafe SDK dependency, MCP wrapper, skill package,
-additional browser backend, or extension-owned daemon.
+The small TypeScript launcher owns only input validation, process I/O bounds,
+its stop reason, stop/reap handling and presentation. It does not reconstruct
+browser phases or merge helper replies with Python history. Installed Pi 0.85.1
+`pi.exec` lacks the stdin and output-bound controls this interface needs; use a
+small Node built-in `spawn` helper rather than another process package/framework.
+For each valid request, one spawn-first supervisor owns the child, first observed
+stop, original absolute deadline, pipe bounds, escalation and observed reap.
+There is no asynchronous file-access precheck or separate pre-spawn stop owner.
+A no-PID launch error remains a definite pre-start setup result; Python starting
+with an absent script becomes a reaped non-clean result with unknown execution
+and task-tab cleanup. The escalation path is exercised locally with a child that
+ignores `SIGTERM`.
 
-The Chrome DevTools CLI may use its existing daemon. RLCD-brwsr does not manage a
-second process lifecycle or introduce a new service.
+Python owns the Agent reference, current upstream state, known task target,
+provider configuration, result projection, redaction and normal cleanup. Iterate
+`Agent.run()` rather than separately driving `predict` and `act`. Keep state
+local to Python; do not stream a second model of the run to Pi. On a handled
+exception, project only state that actually exists. Do not dump full native
+snapshots: they contain raw model request/answer data and potentially large
+history and page data.
 
-## Classifier contract
+Two small pinned integrations remain justified:
 
-Each observation becomes a compact state containing the goal, current URL and
-title, bounded accessibility text, recent actions, a compact inventory of
-retained sources, and an indexed set of allowed controls from the latest
-accessibility snapshot. The source inventory records observed evidence, not
-inferred research completeness.
+1. Bind upstream's imported `ensure_daemon` startup symbol to Harness's
+   `require_existing_daemon`, retaining the current resolved-configuration and
+   reported-mode checks. Calling direct `Agent` otherwise permits automatic
+   setup/recovery.
+2. Once construction returns a known target, use its pinned handle for optional
+   retention and one direct `Target.closeTarget` call. Report confirmed closure
+   only from a successful response; `Agent.close()` returning is not proof.
 
-One TypeSafe request asks speculative questions over that state:
+No startup target interception, parent fallback-cleanup mode, tab-difference
+ownership inference, generic RPC framework, new daemon or durable run journal
+is part of the implementation.
 
-- a Choice over the operations currently available, plus `DONE` and `BLOCKED`;
-- a Choice over targets compatible with `CLICK`;
-- a Choice over complete `(field, value)` pairs compatible with `TYPE_TEXT`; and
-- a Choice over complete `(field, option)` pairs compatible with `SELECT`.
+## Configuration and operating scope
 
-Every target question states the operation it assumes. Questions run
-independently; code consumes only the target head matching the selected
-operation. The extension validates that every returned choice and probability
-belongs to the offered set before constructing a command.
+Retain the uv-managed Python 3.12 environment, Jev Ultrafast commit
+`1231850a0bf1a0c0341fe408ef1668dbbfdfac46`, Browser Harness 0.1.13 and evaluated
+Jev model pin. Browser Harness remains the single browser-configuration owner.
+Loading the Pi extension stays inert; installation/provisioning is explicit,
+and tool runs require the already-provisioned named daemon while rejecting
+currently resolved remote/cloud configuration and unsupported reported modes.
 
-Jev never supplies a selector, coordinate, URL, shell command, or executable
-JavaScript. The model selects only code-owned enum values and UIDs observed in
-the latest snapshot.
+This intentionally does not attest that an already-running same-named `cdp`
+daemon matches the current endpoint, profile, or local-vs-remote settings.
+Browser Harness consumes those settings at daemon startup, and `cdp` is only a
+reported mode. After any browser setting changes, the operator must explicitly
+stop the existing daemon, restart it, and reprovision through the project setup
+path before preflight or another tool run. Otherwise the stale daemon can still
+reach a remote or otherwise wrong browser.
 
-Pin the evaluated model version rather than using a moving alias. The initial
-candidate is `jev-1.13.0`; thresholds and uncertainty policy must be measured on
-RLCD-brwsr fixtures rather than copied from a cookbook.
-
-## Operations
-
-The initial operation set is deliberately small:
-
-- `CLICK` - observed links, tabs, menu items and low-consequence buttons;
-- `TYPE_TEXT` - observed text, search and editable combobox fields;
-- `SELECT` - observed options for a native select control;
-- `PAGE_UP` and `PAGE_DOWN` - fixed key commands;
-- `WAIT` - a bounded delay followed by a new observation;
-- `DONE`; and
-- `BLOCKED`.
-
-Code maps the selected operation to a fixed command shape:
+Use native `TYPESAFE_API_KEY` and `TEXT_MODEL_*` settings through the authorized
+host-local environment/configuration. Do not introduce a secret store, copy
+existing credentials or read Pi's OAuth credentials. The selected text helper
+is OpenRouter `inclusionai/ling-3.0-flash`; Jev remains the decision model.
+After Browser Harness loads its native workspace environment, one shared runtime
+owner supplies these selected settings process-locally when absent and rejects
+conflicting values before daemon checks or browser startup:
 
 ```text
-CLICK      -> chrome-devtools click <uid> --includeSnapshot --output-format=json
-TYPE_TEXT  -> chrome-devtools fill <uid> <value> --includeSnapshot --output-format=json
-SELECT     -> chrome-devtools fill <uid> <option> --includeSnapshot --output-format=json
-PAGE_UP    -> chrome-devtools press_key PageUp --includeSnapshot --output-format=json
-PAGE_DOWN  -> chrome-devtools press_key PageDown --includeSnapshot --output-format=json
-WAIT       -> bounded sleep, then take_snapshot --output-format=json
+TEXT_MODEL_BASE_URL=https://openrouter.ai/api/v1
+TEXT_MODEL=inclusionai/ling-3.0-flash
+TEXT_MODEL_REASONING=none
 ```
 
-Use the snapshot included by an action when available. Take a separate snapshot
-only when the command cannot return one.
+`TEXT_MODEL_API_KEY` must come from a host-local OpenRouter key; this build did
+not read or configure one during implementation. The later explicitly authorized
+tests reused preserved host-local keys in process environments without copying
+them to another file. The reasoning setting makes the unchanged upstream helper
+send `reasoning.enabled: false`. One subsequent live helper response validated
+`Busan` and reported zero reasoning tokens; this does not guarantee every route
+or request will behave identically. Its current JSON-mode route and
+pricing differ from the model's cheapest advertised route; see the
+[provider evidence](openrouter-ling-3.0-flash.md). An offline probe verified the
+native request shape and local value validation only. No provider adapter or
+routing selector is added.
 
-## Text values
+The helper remains optional for click-only tasks. Native missing-key or invalid
+value errors return sanitized errors and available state, without inventing a
+field value or switching to the outer Pi model. Run results retain the configured
+helper model, base URL and reasoning setting but omit the former guessed
+`models.textHelper.availability`. Preflight's separate
+`textHelperAvailability` reports only whether the resolved key is nonblank; it
+does not prove provider availability or credential validity.
 
-RLCD-brwsr does not generate text in v0.1. Pi places exact field values in quotes
-inside the goal before calling the tool:
+Initial tasks remain benign, unauthenticated and non-booking. The outer agent
+owns permissions and verification. Neither the wrapper nor upstream guarantees
+recognition of every consequential control or prompt-injection immunity. No
+custom extractor, site script, TypeScript port, Chrome-CLI fallback, page-cleanup
+LLM, recordings or automatic rollout is added.
 
-```text
-Search for "Jev System One browser execution".
-```
+## Results and deliberately narrower guarantees
 
-The extension extracts quoted strings as a closed candidate set. Jev selects a
-complete `(field, value)` pair so independently chosen fields and values cannot
-disagree. If no supplied value fits the selected field, the tool stops with
-`needs_text` and returns control to Pi.
+Python returns a small projection: completion claim or stop/error, last actually
+observed page when available, bounded recorded history, configured model names,
+upstream-retained usage, known target, cleanup outcome and a sanitized diagnostic.
+`config/runtime.json` owns a 32 KiB serialized-request cap and one 16 KiB
+terminal/model-visible JSON cap, including JSON escaping and terminal framing.
+The result reports omitted fields/records. Content and details use the same final
+projection. Local executable tests cover overflow, malformed Unicode, non-finite
+numbers and complete-key redaction before clipping.
 
-## First research workload
+- `DONE` is a completion claim, never independent proof of the goal.
+- Redact complete raw values before clipping or preview. Keep both Jev/helper
+  key privacy checks; no OAuth relay exists in this target design.
+- A handled error or cooperative stop may provide available Agent state. A hard
+  kill, failed construction or invalid/missing result may provide none. After a
+  request is accepted for dispatch, an exception escaping final projection falls
+  back to unknown execution and cleanup rather than an input-error claim.
+- Trust child execution and cleanup claims only from one structurally valid
+  terminal envelope followed by an observed zero exit without a signal. After
+  forced, nonzero, signalled, invalid-terminal, or incomplete exits, report
+  execution and cleanup as unknown; do not infer zero side effects, zero charges
+  or closed tabs. A task tab can remain for operator inspection. Do not
+  automatically retry uncertain input.
+- Keep the parent's first stop reason when requested shutdown yields no trusted
+  terminal result. A structurally valid normal completion claim followed by an
+  observed clean zero exit may win a late parent stop race when the child did
+  not report a stopped run; it remains a claim requiring independent
+  verification. Retention is valid only with that completion claim. Confirm
+  child exit before reporting it reaped; a sent signal is not an exit
+  observation. If supervised process evidence would push a child projection
+  over the terminal cap, omit that projection conservatively while retaining
+  the parent's stop and the observed reap.
+- An unexpected EOF on the child's stdout while Python remains alive is not a
+  stop trigger and proves neither completion, process exit, provider
+  cancellation nor cleanup. Browser work can continue until Pi cancellation,
+  the wall deadline or process exit.
+- No live phase-by-phase progress, hard-kill evidence recovery or universal
+  no-dispatch-after-deadline guarantee is promised.
 
-The first end-to-end task is:
+An upstream budget exception is not the same as Jev choosing `BLOCKED`; preserve
+the exception rather than translating solely from upstream's status field.
 
-> Research how to use TypeSafe for RLCD-brwsr. Cover question design,
-> speculative fan-out, response validation, uncertainty, and model limitations.
-> Cite the relevant docs.
+Available usage is only the subset upstream retained. Invalid helper responses,
+failed requests and retry counts can be absent. Do not equate record count with
+request count or missing usage with zero. **Confirmed initial accounting policy:**
+show bounded source-labelled records and unavailable values in tool details;
+omit Pi top-level `usage`. This leaves Pi footer/session totals incomplete and
+must be disclosed. Rate-based estimated totals are outside this initial build.
+Selecting OpenRouter and obtaining advertised rates does not recover missing fields or failed-call
+usage, and is not a reason to build a billing adapter now.
 
-Pi sets the research question and supplies any exact text values. One fast-loop
-call may navigate several documentation pages and gather source material before
-returning. Pi then synthesizes the findings and checks the citations. Jev does
-not write the research brief or independently verify its completeness.
+## Reuse and leave behind
 
-The primary baseline is Pi's normal research approach, including TypeSafe's
-[`llms.txt`](https://docs.typesafe.ai/llms.txt) and directly fetched Markdown
-pages. Do not force the baseline through browser clicks. A separate comparison
-against Pi's Chrome CLI loop can isolate browser acceleration, but cannot alone
-establish that RLCD-brwsr makes this research task faster overall.
+Reuse dependency pins/setup, native Harness configuration and existing-daemon
+checks, inert Pi registration, browser fixtures, independent observation helpers,
+and the redaction/bounding/cleanup lessons. Reuse behavior tests where the
+contract is unchanged; do not preserve the old implementation solely for tests.
 
-### Source evidence
+The rewrite replaced the TypeScript protocol engine and Python command-level
+bridge. It removed the Pi-Luna completion adapter, helper reply channel and
+sentinel backend, shadow state, phase validators/reducers, usage-to-field merge
+and parent fallback cleanup mode. Tests for deliberately removed promises were
+replaced with the reduced public contract. Historical branches, reports, raw
+evidence and the earlier custom-loop work remain retained.
 
-Retain source material as pages are observed, rather than returning only the
-last page. Each evidence record carries an observed source URL, title when
-available, and copied accessibility text. Do not attribute text to a guessed
-URL or replace it with a model-generated summary.
+## Implementation and verification sequence
 
-Code bounds the number of records and both per-record and total text size,
-deduplicates unchanged captures, and reports truncation or omitted material.
-Budget stops and failures return evidence already collected. Exhausting the
-total record or text budget returns control to Pi instead of silently discarding
-earlier sources to continue browsing. An individual excerpt may be truncated
-without ending the run. Pi may fetch sources again to verify or complete the
-brief; those follow-up requests count toward the end-to-end benchmark.
+The 38-test deterministic suite separates its evidence interfaces. Ordinary
+registered Pi-tool cases cross the real runner and pinned Agent/native helper
+while replacing external Browser/CDP and provider interactions. One labelled
+lifecycle case wraps the real Agent to interrupt known-target recovery. Internal
+process/outcome tests exercise spawn, stop precedence, fitting, EOF, hard-stop
+and observed reap without global event/timer patches or whole-extension copies.
+A direct Python projection contract supplies explicit synthetic state rather
+than mutating Agent history. The read-readiness fixture scopes a child, marker
+and workspace through callback and timeout, including the callback's lifetime;
+its cleanup bounds observation, not filesystem deletion or arbitrary callback
+execution. A timed-out filesystem removal reports its exact workspace as
+pending or unconfirmed, and late rejection is handled. Callback JavaScript
+cannot be forcibly cancelled by a Promise race.
 
-Chrome CLI 1.7.0 JSON snapshots contain a structured `snapshot` tree. Node `id`
-values are the action UIDs; the root normally carries the document name and
-URL. Accessibility text is not necessarily viewport-visible, complete page
-source, or a verbatim rendering of the DOM. The CLI does not accumulate evidence
-across navigations or bound snapshot size; RLCD-brwsr owns those result bounds.
+Together they cover click/fill/DONE/BLOCKED/error, missing and malformed helper
+values, preflight/input failure, byte bounds, Unicode/non-finite normalization,
+native `.env` ordering and key privacy, first-stop precedence, post-dispatch
+projection interruption, conservative output fitting, cooperative cleanup,
+non-clean terminal rejection and a reaped TERM-ignoring child. No live credentials
+or model calls were used for this candidate.
 
-## Operating scope and stopping
+The click/default-close, text/retention, time-budget and TUI-cancellation cases
+were repeated successfully at corrected implementation `b3b42036`, using real
+upstream/Harness/Chrome and synthetic provider replies. Independent observers
+checked exact targets, retained field values, actual runner exits and restored
+browser baselines. This verifies command-invoked execution of the registered
+tool in Pi's TUI, not the whole outer-model agent-turn/tool-scheduling path.
 
-Pi decides which authorized work to delegate. The fast loop does not expand
-that authorization or replace Pi's permission and recovery path. V0.1 experiments
-use loopback fixtures and unauthenticated, non-sensitive public documentation.
-Tasks involving credentials, payments, purchases, bookings, uploads, downloads,
-account changes, consent grants, messages, posts, publication, deletion or
-installation remain with Pi.
+The subsequent bounded live follow-up passed: the native OpenRouter helper
+returned a valid field value, and Pi's normal outer-model/tool path completed
+one local text-entry fixture using real Jev and Ling. Independent post-exit
+inspection verified the retained target, then exact cleanup restored the
+baseline. No manual retry or extra browser-tool invocation occurred.
 
-Page content is untrusted data. Neither Jev, an observed UID, nor a harmless
-control label proves an action's effects. Exclude recognized consequential
-controls and return `consequential_action` when such a step is recognized, but
-treat this as a best-effort stop, not a guarantee for arbitrary pages. Do not add
-a per-site policy framework or a separate browser-ownership system for v0.1.
+A benign public-site acceptance task remains pending and needs its own applicable
+allowance. Preserve earlier ledgers; native step limits do not constitute a
+billing budget. Report unknown attempts/charges conservatively.
 
-Stop without another mutation when:
+Do not add a broader test or runtime framework to satisfy every hypothetical
+failure. A discovered limitation may require a narrower disclosed contract,
+not another state owner. The tested live local fixture does not imply general-web
+acceptance, compatibility across providers/configurations, or delivery.
 
-- the selected operation or UID was not offered;
-- Jev's response is malformed or falls below the calibrated uncertainty policy;
-- the selected UID is absent from the decision snapshot, or the executor
-  rejects it as stale;
-- a command reports an uncertain mutation outcome;
-- three non-`WAIT` steps leave the observed state unchanged;
-- the step or wall-clock budget expires; or
-- Pi cancels the tool.
+## Evidence and history
 
-Never retry a browser mutation whose outcome is uncertain. Validating a UID
-against the decision snapshot does not make observation and execution atomic.
-The CLI can reject missing or detached targets, but a surviving element may
-have changed meaning. Concurrent use of the selected page remains an operating
-limitation; sequential tool execution is not an exclusive page lock.
+The canonical development checkout is now `~/Repositories/rlcd-brwsr/`. The
+[archive index](archive.md) owns historical branch/backup locations and explains
+why the former implementation checkout remains for test resources. Pre-consolidation
+raw artifact paths below resolve under that retained checkout.
 
-## Implementation sequence
+- [Thin rewrite verification and limits](thin-python-evidence.md).
+- [Feasibility source/probe record](thin-python-feasibility.md).
+- [Selected OpenRouter helper evidence](openrouter-ling-3.0-flash.md).
+- [Next architecture decision](adr/0003-python-owned-run.md).
+- [Recovered architecture and amendments](adr/0002-wrap-pinned-jev-ultrafast-agent.md).
+- Earlier verification: [#10](issue-10-evidence.md), [#11](issue-11-evidence.md),
+  [#12](issue-12-evidence.md). Those are not tests of this rewrite.
+- Local raw probes and recovery receipts: `artifacts/thin-python-plan/`.
+- Cancelled gate: `01M33MP2Y3PGGAM3EARNPYQMTQ`; unresolved static findings R23-R26
+  are preserved in the local review log, not represented as fixed or reproduced.
 
-1. Add offline tests for snapshot parsing, compatible candidate construction,
-   quoted values, Jev response validation, excluded candidates, loop detection,
-   result redaction and bounded multi-page evidence retention.
-2. Implement `config/pi/extensions/rlcd-brwsr.ts` with injected Jev and CLI seams
-   so tests use deterministic fakes.
-3. Register `rlcd_brwsr_run` with `executionMode: "sequential"` so Pi schedules
-   it sequentially; do not claim this prevents other clients changing the page.
-4. Build a local HTML fixture covering navigation, search, tabs, native selects,
-   scrolling, completion, stale UIDs, unchanged-state loops, adversarial page
-   instructions and evidence retained across multiple pages.
-5. Exercise the fixture through the real Chrome DevTools CLI with a fake Jev
-   responder.
-6. With explicit approval for paid requests, run Jev against the local fixture,
-   then the TypeSafe documentation research task.
-7. Compare the full research workflow with Pi's normal approach. Separately
-   compare browser execution with Pi's agent-driven Chrome CLI loop.
-8. Only after the experiment passes, add the extension to the builder, rollout
-   fixtures and installed baseline.
-
-## Verification and acceptance
-
-Run repository type checking, formatting and tests, plus the Pi integration check
-and a host-only browser check. Verify the visible tool call and result in Pi's
-actual TUI.
-
-Compare identical research questions and independently checked briefs across
-the primary paths. Check coverage of all five requested topics, source support
-for the findings, and citation correctness; a `DONE` choice or a count of
-visited pages is not a passing result. Use the same main model and comparable
-starting knowledge and cache conditions, without seeding either path with the
-other path's findings.
-
-Measure the whole task, including preparation, evidence gathering, synthesis,
-verification and recovery. Record cold and warm wall time, verified success,
-main-model turns and tokens, Jev requests and tokens, browser commands, direct
-HTTP requests, stale decisions, consequential-action stops, and retained
-processes or pages. Report the secondary browser-only comparison separately.
-
-V0.1 is acceptable when:
-
-- every deterministic fixture passes, including excluded-action and
-  adversarial-page cases; excluded actions do not execute in those tests;
-- success, failure, cancellation and timeout leave no RLCD-brwsr-owned process;
-- research briefs meet the same independently checked outcome criteria as
-  Pi's normal research approach; and
-- it reduces median end-to-end wall time or main-model use on the tested tasks,
-  with any trade-off between the two reported explicitly.
-
-Passing fixtures is not a general guarantee about the effects of controls on
-unseen websites. A browser-only speedup without a primary-baseline improvement
-is a narrower result, not acceptance of the research-workflow hypothesis.
-
-## References
-
-The policy shape comes from
-[`browser-use/jev-ultrafast`](https://github.com/browser-use/jev-ultrafast) at
-commit `1231850a0bf1a0c0341fe408ef1668dbbfdfac46`; the current implementation was
-last changed at `452c1ad2dd628008f1d5608f28158d76e49e6cc0`. That project demonstrates
-dynamic operation and operation-specific target heads, validates model outputs,
-never turns model output into executable code, does not retry uncertain browser
-mutations, and treats completion as requiring independent verification.
-RLCD-brwsr adopts those control-flow lessons, not its Python or Browser Harness
-runtime.
-
-The current local executor is
-[`ChromeDevTools/chrome-devtools-mcp`](https://github.com/ChromeDevTools/chrome-devtools-mcp)
-version `1.7.0`, package Git commit
-`774d78f5eef5e610407a0c92fa6ec5ed74b027e8`. Before implementation, record its
-pin in the owning repository artifact rather than relying only on the installed
-global package.
+GitHub issues #9-#13 still describe the prior implementation and have not been
+rewritten by this local implementation task. The approved direction and this
+current implementation must be reconciled with those issues before the work is
+presented as satisfying them. PR #8 and historical research commits remain
+unchanged. The user's later checkout-consolidation request replaced the visible
+experimental working tree with the current implementation while preserving the
+research branches and a verified archive.
