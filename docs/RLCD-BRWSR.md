@@ -261,13 +261,20 @@ evidence and the earlier custom-loop work remain retained.
 
 ## Implementation and verification sequence
 
-The deterministic suite separates its evidence interfaces. Ordinary registered
-Pi-tool cases cross the real runner and pinned Agent/native helper while replacing
-external Browser/CDP and provider interactions. One labelled lifecycle case wraps
-the real Agent to interrupt known-target recovery. Internal process/outcome tests
-exercise spawn, stop precedence, fitting, EOF, hard-stop and observed reap without
-global event/timer patches or whole-extension copies. A direct Python projection
-contract supplies explicit synthetic state rather than mutating Agent history.
+The 38-test deterministic suite separates its evidence interfaces. Ordinary
+registered Pi-tool cases cross the real runner and pinned Agent/native helper
+while replacing external Browser/CDP and provider interactions. One labelled
+lifecycle case wraps the real Agent to interrupt known-target recovery. Internal
+process/outcome tests exercise spawn, stop precedence, fitting, EOF, hard-stop
+and observed reap without global event/timer patches or whole-extension copies.
+A direct Python projection contract supplies explicit synthetic state rather
+than mutating Agent history. The read-readiness fixture scopes a child, marker
+and workspace through callback and timeout, including the callback's lifetime;
+its cleanup bounds observation, not filesystem deletion or arbitrary callback
+execution. A timed-out filesystem removal reports its exact workspace as
+pending or unconfirmed, and late rejection is handled. Callback JavaScript
+cannot be forcibly cancelled by a Promise race.
+
 Together they cover click/fill/DONE/BLOCKED/error, missing and malformed helper
 values, preflight/input failure, byte bounds, Unicode/non-finite normalization,
 native `.env` ordering and key privacy, first-stop precedence, post-dispatch
