@@ -83,8 +83,8 @@ Every `latency_last_30m` and `throughput_last_30m` value in the unauthenticated 
 
 ## Retained source captures
 
-- `artifacts/deepseek-flash-helper/sources/openrouter-model-selected.json` — the complete selected entry extracted only after the 746,199-byte, 455-entry [models catalogue](https://openrouter.ai/api/v1/models) parsed successfully; the capture records retrieval time, source URL, byte count, selection count, and raw-response SHA-256.
-- `artifacts/deepseek-flash-helper/sources/openrouter-endpoints.json` — the complete model-specific [endpoint response](https://openrouter.ai/api/v1/models/deepseek/deepseek-v4.1-flash/endpoints), with retrieval time, source URL, byte count, and raw-response SHA-256.
+- `artifacts/deepseek-flash-helper/sources/openrouter-model-selected.json` - the complete selected entry extracted only after the 746,199-byte, 455-entry [models catalogue](https://openrouter.ai/api/v1/models) parsed successfully; the capture records retrieval time, source URL, byte count, selection count, and raw-response SHA-256.
+- `artifacts/deepseek-flash-helper/sources/openrouter-endpoints.json` - the complete model-specific [endpoint response](https://openrouter.ai/api/v1/models/deepseek/deepseek-v4.1-flash/endpoints), with retrieval time, source URL, byte count, and raw-response SHA-256.
 
 These captures remain local, ignored evidence under `artifacts/`; they do not ship
 in the candidate. The historical Ling provider note preserves its findings and

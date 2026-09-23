@@ -1,5 +1,6 @@
 # RLCD-brwsr
 
+**Active checkout:** `~/Repositories/rlcd-brwsr/`.
 Old experiments are archived in Git and a verified backup, not mixed into the
 current working tree. The sibling checkout is retained only for test resources
 and evidence. See the [archive index](docs/archive.md).

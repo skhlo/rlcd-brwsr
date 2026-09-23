@@ -12,10 +12,9 @@ and Pi's outer model remain unchanged. This configuration-only switch has a
 38-test deterministic suite but no live inference, real-Chrome, outer-agent-turn
 or public-site check. See the [verification record](thin-python-evidence.md).
 The user confirmed dropping `maxActions` and accepted available native usage
-with explicitly incomplete Pi totals. The current build excluded live calls.
-The earlier allowance covered only the historical Ling helper probe and one
-30-second local fixture; it did not cover public-site trials. No push or PR has
-occurred.
+with explicitly incomplete Pi totals. This model change excluded live calls.
+Historical live checks used Ling and covered bounded helper/local-fixture cases,
+not public-site trials. The DeepSeek change is local and unpublished.
 
 The larger experimental Pi-native-helper implementation remains historical at
 `dde01a46dba112dbf9d002aeb2ebe2626363c034`. Its delivery gate was cancelled,
