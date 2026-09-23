@@ -514,7 +514,9 @@ def _run(request: dict[str, Any]) -> dict[str, Any]:
     )
 
 
-def _early_result(status: str, stop_reason: str, message: str) -> dict[str, Any]:
+def _early_result(
+    status: str, stop_reason: str, diagnostic_type: str, message: str
+) -> dict[str, Any]:
     return _raw_projection(
         status=status,
         stop_reason=stop_reason,
@@ -522,7 +524,7 @@ def _early_result(status: str, stop_reason: str, message: str) -> dict[str, Any]
         cleanup="not_created",
         target_id=None,
         state=None,
-        diagnostic={"type": "InputError", "message": message},
+        diagnostic={"type": diagnostic_type, "message": message},
     )
 
 
@@ -545,9 +547,11 @@ def main() -> int:
     try:
         request = _read_request()
     except StopRequested as error:
-        result = _early_result("stopped", "cancelled", str(error))
+        result = _early_result(
+            "stopped", "cancelled", type(error).__name__, str(error)
+        )
     except Exception as error:
-        result = _early_result("error", "invalid_input", str(error))
+        result = _early_result("error", "invalid_input", "InputError", str(error))
     else:
         try:
             result = _run(request)

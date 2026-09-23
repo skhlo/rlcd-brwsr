@@ -1,11 +1,20 @@
 import assert from "node:assert/strict";
-import { ChildProcess } from "node:child_process";
+import { ChildProcess, spawn } from "node:child_process";
+import { once } from "node:events";
 import { readFileSync } from "node:fs";
-import { mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
+import {
+  copyFile,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { test } from "node:test";
 
 import type {
@@ -113,7 +122,9 @@ function arrayField(owner: Record<string, unknown>, key: string): unknown[] {
   return value;
 }
 
-function registeredTool(): RegisteredTool {
+function registeredTool(
+  extension: typeof rlcdBrwsrExtension = rlcdBrwsrExtension,
+): RegisteredTool {
   type CapturedTool = RegisteredTool & {
     execute(
       toolCallId: string,
@@ -131,7 +142,7 @@ function registeredTool(): RegisteredTool {
     },
   } as unknown as ExtensionAPI;
 
-  rlcdBrwsrExtension(pi);
+  extension(pi);
   assert.ok(registered);
   const captured = registered;
   return {
@@ -716,16 +727,76 @@ test(
   },
 );
 
+test("runner cancellation while waiting for input reports the stop diagnostic", async () => {
+  const child = spawn(
+    join(repositoryRoot, ".venv", "bin", "python"),
+    [join(repositoryRoot, "bridge", "rlcd_brwsr_bridge.py")],
+    {
+      cwd: repositoryRoot,
+      env: { ...process.env },
+      shell: false,
+      stdio: ["pipe", "pipe", "pipe"],
+    },
+  );
+  const stdout: Buffer[] = [];
+  child.stdout.on("data", (chunk: Buffer) => stdout.push(chunk));
+  await delay(200);
+  assert.equal(child.kill("SIGTERM"), true);
+  const [exitCode, exitSignal] = (await once(child, "close")) as [
+    number | null,
+    NodeJS.Signals | null,
+  ];
+  assert.equal(exitCode, 0);
+  assert.equal(exitSignal, null);
+  const details = JSON.parse(Buffer.concat(stdout).toString("utf8")) as Record<
+    string,
+    unknown
+  >;
+  assert.equal(details.status, "stopped");
+  assert.equal(details.stopReason, "cancelled");
+  assert.equal(details.execution, "not_started");
+  assert.equal(recordField(details, "cleanup").taskTab, "not_created");
+  assert.equal(recordField(details, "diagnostic").type, "StopRequested");
+});
+
 test("an asynchronous runner launch failure remains not started", async () => {
-  const pythonPath = join(repositoryRoot, ".venv", "bin", "python");
-  const backupPath = `${pythonPath}.rlcd-test-${process.pid}`;
-  await rename(pythonPath, backupPath);
+  const isolatedRoot = await mkdtemp(join(tmpdir(), "rlcd-runtime-test-"));
+  const extensionPath = join(
+    isolatedRoot,
+    "config",
+    "pi",
+    "extensions",
+    "rlcd-brwsr.ts",
+  );
+  const runtimeConfigPath = join(isolatedRoot, "config", "runtime.json");
+  const pythonPath = join(isolatedRoot, ".venv", "bin", "python");
+  const runnerPath = join(isolatedRoot, "bridge", "rlcd_brwsr_bridge.py");
   try {
+    await mkdir(dirname(extensionPath), { recursive: true });
+    await mkdir(dirname(pythonPath), { recursive: true });
+    await mkdir(dirname(runnerPath), { recursive: true });
+    await copyFile(
+      join(repositoryRoot, "config", "pi", "extensions", "rlcd-brwsr.ts"),
+      extensionPath,
+    );
+    await copyFile(
+      join(repositoryRoot, "config", "runtime.json"),
+      runtimeConfigPath,
+    );
+    await symlink(
+      join(repositoryRoot, "node_modules"),
+      join(isolatedRoot, "node_modules"),
+      "dir",
+    );
     await writeFile(pythonPath, "#!/missing-rlcd-test-interpreter\n", {
       encoding: "utf8",
       mode: 0o755,
     });
-    const result = await registeredTool().execute(
+    await writeFile(runnerPath, "", "utf8");
+    const isolatedModule = await import(pathToFileURL(extensionPath).href);
+    const isolatedExtension =
+      isolatedModule.default as typeof rlcdBrwsrExtension;
+    const result = await registeredTool(isolatedExtension).execute(
       "test-call",
       {
         url: "https://example.test/start",
@@ -741,8 +812,7 @@ test("an asynchronous runner launch failure remains not started", async () => {
     assert.equal(cleanup.taskTab, "not_created");
     assert.equal(cleanup.bridgeProcess, "not_started");
   } finally {
-    await rm(pythonPath, { force: true });
-    await rename(backupPath, pythonPath);
+    await rm(isolatedRoot, { recursive: true });
   }
 });
 
