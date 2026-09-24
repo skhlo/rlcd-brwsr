@@ -821,6 +821,23 @@ function compactRunResult(details: Record<string, unknown>): string {
     appendOmission("details.reporting qualifying evidence");
   }
 
+  const compactLocation: Record<string, unknown> = {
+    targetId: details.targetId,
+    url: observation?.url ?? null,
+    title: observation?.title ?? null,
+  };
+  const compactReporting: Record<string, unknown> = {
+    status: detailReporting.status,
+    sourceOmitted: detailReporting.sourceOmitted,
+    selectionOmitted: detailReporting.selectionOmitted,
+    diagnostic: detailReporting.diagnostic,
+  };
+  const compactOutput: Record<string, unknown> = {
+    byteLimit: runtimeConfig.terminalMaxUtf8Bytes,
+    detailsClipped: detailOutput.clipped === true,
+    clipped: detailOutput.clipped === true || currentOmissions().length > 0,
+    omissions: currentOmissions(),
+  };
   const compact: Record<string, unknown> = {
     outcome: {
       status: details.status,
@@ -828,26 +845,12 @@ function compactRunResult(details: Record<string, unknown>): string {
       execution: details.execution,
       completionClaim: claim,
     },
-    lastObservedLocation: {
-      targetId: details.targetId,
-      url: observation?.url ?? null,
-      title: observation?.title ?? null,
-    },
+    lastObservedLocation: compactLocation,
     evidence: scoredEvidence.map((item) => item.compact),
     cleanup,
     diagnostic: details.diagnostic,
-    reporting: {
-      status: detailReporting.status,
-      sourceOmitted: detailReporting.sourceOmitted,
-      selectionOmitted: detailReporting.selectionOmitted,
-      diagnostic: detailReporting.diagnostic,
-    },
-    output: {
-      byteLimit: runtimeConfig.terminalMaxUtf8Bytes,
-      detailsClipped: detailOutput.clipped === true,
-      clipped: detailOutput.clipped === true || currentOmissions().length > 0,
-      omissions: currentOmissions(),
-    },
+    reporting: compactReporting,
+    output: compactOutput,
   };
 
   let text = JSON.stringify(compact);
@@ -868,36 +871,22 @@ function compactRunResult(details: Record<string, unknown>): string {
       );
       compactEvidenceRecords.splice(lowest, 1);
       scoredEvidence.splice(lowest, 1);
-      const reporting = recordCopy(compact.reporting);
-      reporting.selectionOmitted = true;
-      compact.reporting = reporting;
+      compactReporting.selectionOmitted = true;
       appendOmission("compact.evidence record");
+    } else if (compactLocation.title !== null) {
+      compactLocation.title = null;
+      appendOmission("compact.lastObservedLocation.title");
+    } else if (compactLocation.url !== null) {
+      compactLocation.url = null;
+      appendOmission("compact.lastObservedLocation.url");
+    } else if (compactReporting.diagnostic !== null) {
+      compactReporting.diagnostic = null;
+      appendOmission("compact.reporting.diagnostic");
     } else {
-      const location = recordCopy(compact.lastObservedLocation);
-      if (location.title !== null) {
-        location.title = null;
-        appendOmission("compact.lastObservedLocation.title");
-      } else if (location.url !== null) {
-        location.url = null;
-        appendOmission("compact.lastObservedLocation.url");
-      } else {
-        const reporting = recordCopy(compact.reporting);
-        if (reporting.diagnostic !== null) {
-          reporting.diagnostic = null;
-          compact.reporting = reporting;
-          appendOmission("compact.reporting.diagnostic");
-        } else {
-          throw new Error(
-            "protected compact result exceeds terminal byte limit",
-          );
-        }
-      }
-      compact.lastObservedLocation = location;
+      throw new Error("protected compact result exceeds terminal byte limit");
     }
-    const output = recordCopy(compact.output);
-    output.clipped = true;
-    output.omissions = currentOmissions();
-    compact.output = output;
+    compactOutput.clipped = true;
+    compactOutput.omissions = currentOmissions();
     text = JSON.stringify(compact);
   }
   return text;

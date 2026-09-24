@@ -583,41 +583,30 @@ def select_handoff(
             "usage": usage,
         }
     except StopRequested:
-        report = _empty_report()
-        report.update(
-            status="cancelled",
-            sourceCoverage="partial" if source_omitted else "complete",
-            sourceOmitted=source_omitted,
-            candidateCount=len(candidates),
-            diagnostic={
-                "type": "StopRequested",
-                "message": "Handoff reporting was cancelled after browser cleanup.",
-            },
-        )
-        return report, None
+        failure_status = "cancelled"
+        failure_diagnostic = {
+            "type": "StopRequested",
+            "message": "Handoff reporting was cancelled after browser cleanup.",
+        }
     except ReportValidationError:
-        report = _empty_report()
-        report.update(
-            status="error",
-            sourceCoverage="partial" if source_omitted else "complete",
-            sourceOmitted=source_omitted,
-            candidateCount=len(candidates),
-            diagnostic={
-                "type": "ReportingValidationError",
-                "message": "Handoff reporting returned an invalid bounded response.",
-            },
-        )
-        return report, None
+        failure_status = "error"
+        failure_diagnostic = {
+            "type": "ReportingValidationError",
+            "message": "Handoff reporting returned an invalid bounded response.",
+        }
     except Exception:
-        report = _empty_report()
-        report.update(
-            status="error",
-            sourceCoverage="partial" if source_omitted else "complete",
-            sourceOmitted=source_omitted,
-            candidateCount=len(candidates),
-            diagnostic={
-                "type": "ReportingProviderError",
-                "message": "Handoff reporting request failed after browser cleanup.",
-            },
-        )
-        return report, None
+        failure_status = "error"
+        failure_diagnostic = {
+            "type": "ReportingProviderError",
+            "message": "Handoff reporting request failed after browser cleanup.",
+        }
+
+    report = _empty_report()
+    report.update(
+        status=failure_status,
+        sourceCoverage="partial" if source_omitted else "complete",
+        sourceOmitted=source_omitted,
+        candidateCount=len(candidates),
+        diagnostic=failure_diagnostic,
+    )
+    return report, None

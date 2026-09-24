@@ -1,582 +1,214 @@
-# Python-owned runner - verification history
+# Python-owned runner verification
 
-[Compact handoff](#compact-handoff) is the latest local verification.
-The preceding rewrite and tab-targeting evidence below retains its original
-tested heads and scope.
+This document owns the current verification status, evidence classes, known
+limits, and compact commit/receipt index. The complete pre-cleanup chronology is
+still available without restoring it to the working tree:
+
+```bash
+git show c9a655a:docs/thin-python-evidence.md
+```
+
+Historical artifacts that live only in the locked sibling checkout are mapped
+by [docs/archive.md](archive.md). Current-checkout raw receipts remain under
+`artifacts/`; they are evidence, not setup instructions or authorization to
+repeat live work.
 
 ## Compact handoff
 
-Verified runtime: `0b3c5ab0e34a002b98c279a9a5fa354ffd508c9b`, with additional
-protected-fact test assertions at `f6a7c5466f34364e8c84affbe8ab54dc3984599b`.
-The current feature branch replaces run-tool content/details identity with two
-bounded surfaces. Python keeps the full diagnostic projection in Pi `details`.
-TypeScript builds separate model-facing JSON containing only outcome, exact
-last-observed location, selected source evidence, cleanup, the primary
-diagnostic, reporting state and omission disclosure. Discovery remains
-unchanged. Installed Pi 0.85.1 documentation and runtime source confirm that
-provider tool-result messages use `content`; `details` remains structured tool
-state/rendering metadata.
+At cleanup base `c9a655ad1a2c8ab8d7bd03ced772474167878e06`, the owner accepts
+the local, unpublished implementation as a good-enough operating baseline with
+independent verification. This is a product decision. It does not add evidence
+of accuracy, relevance, reliability, speed, provider cost, or complete billing.
+Future optimization should answer observed lost information, avoidable follow-up,
+or slowness rather than pursue smaller output by itself.
 
-One post-cleanup reporting module optionally uses the pinned Jev transport for
-normal completion claims or native `BLOCKED` with observations. It sanitizes
-complete native keys plus nonempty bare/header Bearer values, bounds the
-6,000-character upstream visible text at 24,576 UTF-8 bytes, and builds at most
-128 candidates of at most 512 bytes. Generic short paragraphs and label/value
-lines precede bounded fallback windows. Only allowlisted fields from the last six
-actions enter the 98,304-byte request; rejected in-window actions and bounded
-page/input/candidate truncation mark source coverage partial. Batched
-per-candidate Nouls include units, periods, estimates, exclusions, caveats and
-ambiguity. Code strictly validates answer IDs/types/ranges plus model and usage,
-resolves substantial duplicates, and copies at most three source records. The
-0.5 threshold is an evaluation policy. Missing source/key, provider/validation
-error or cooperative report interruption produces no raw-text fallback and does
-not change browser facts.
+### Current deterministic and synthetic evidence
 
-The corrected fitter bounds the pre-report diagnostic projection first. Optional
-reporting evidence, metadata and `jev_handoff` usage cannot evict page text,
-history or native usage that already fit. If no optional report block fits, the
-parent explicitly presents reporting unavailable. Native `usage: null` remains
-honest unavailable metadata. Terminal validators reject array-valued scalar
-enums without tightening unrelated diagnostics.
+The span/context implementation at `3d9f0f6` recorded:
 
-Current deterministic evidence:
+- 70/70 deterministic tests passing across the registered tools, real Python
+  runner, and pinned Agent/native helper, with external Browser/CDP and provider
+  interactions replaced;
+- direct projection checks passing for protected outcome, location, cleanup,
+  diagnostic, privacy, usage, omission, and fitting facts;
+- TypeScript, Prettier, no-write Python parsing, shell syntax, lock stability,
+  pin stability, and Git whitespace checks passing; and
+- one isolated Pi 0.87.1 TUI slash command passing 24/24 assertions through the
+  production registration and runner with synthetic browser/provider boundaries.
 
-- All 67 Node tests pass. Corrected regressions cover short Bearer privacy,
-  combined source omissions, nullable native usage, report-pressure priority,
-  strict scalar enums, useful short evidence groups, two goals over one generic
-  document, and the unsupported near-cap omission-label construction as a
-  non-throw control. Follow-up guards exercise 23/24 native usage-record capacity
-  through the production producer/parent, and an actually absent report with
-  maximal omission labels. Non-null target identity, primary diagnostic and all
-  original outcome/cleanup facts are checked in both output surfaces. Existing
-  browser ownership, reporting failures, bounds, tab-targeting guards, cleanup,
-  terminal trust and supervision assertions remain.
-- TypeScript, Prettier, no-write compilation of relevant Python files, shell syntax,
-  lock stability and Git whitespace checks pass. Dependencies, pins, manifests
-  and lockfiles are unchanged.
-- Guard proof: temporarily restoring all three scalar `String(...)` coercions
-  made the malformed-array test accept a trusted completion and fail. Restoring
-  narrow string validation made the same test pass; both logs are retained.
-  A later guard break that erased compact target identity failed both pressure
-  guards; restoring the runtime passed them and the full 67-test suite.
-- Targeted Standards/Spec rechecks resolved the runtime findings. The remaining
-  protected-fact verification gap was closed by the strengthened tests and a
-  read-only closure check; no runtime change followed that closure.
-- An actual Pi 0.87.1 TUI slash command invoked the production registered run
-  definition and real runner with synthetic browser/provider boundaries. All 20
-  assertions passed. Exact content was 821 bytes versus 2,362-byte details, a
-  65.2% reduction. Evidence was exactly the 63 bytes containing the requested
-  total and distant exclusion, with zero repeated filler occurrences. The
-  isolated Pi had no model or persisted session. The command was not an
-  outer-model-issued turn and never connected to Chrome.
-- Seven production-shaped sanitized reconstructions completed with no browser or
-  provider call. Verified old and corrected Python projections fed their actual
-  TypeScript outcome interpreters: 8,117 old-visible bytes versus 5,697
-  new-content bytes (29.8% smaller), and 12,074 new-details bytes versus new
-  content (52.8% smaller). Five cases are shortened reconstructions from
-  independent observations, not original Agent snapshots. The two synthetic
-  goals use the same document and retained zero configured filler occurrences.
-  These are JSON-surface comparisons, not original-live-payload, latency, cost or
-  end-to-end performance measurements. Deterministic selection proves plumbing,
-  not Jev quality.
+The TUI check was command-driven, not an outer-model-issued turn. It did not
+connect to Chrome or call a live model. Its five-candidate request used broader
+context to interpret fine spans, returned exactly 56 bytes of requested
+amount/exclusion evidence in 820 bytes of compact content, retained 1,822 bytes
+of bounded details, and leaked none of the unrelated context into evidence.
+Raw receipts: [span-judge handoff](../artifacts/compact-output/span-judges/HANDOFF.md),
+[acceptance summary](../artifacts/compact-output/span-judges/pi-tui/acceptance-summary.json),
+and [parent checks](../artifacts/compact-output/span-judges/parent-checks.log).
 
-Raw evidence, exact outputs, replay inputs/results, guard logs, check logs and
-resource receipts remain under `artifacts/compact-output/implementation/`; the
-bounded correction receipts are in `correction/` and `correction/pressure-followup/`.
-Those implementation checks made no live provider request, public-site task,
-user-tab operation, browser service change, dependency operation or publication.
+The subsequent behavior-preserving cleanup reran all 70 tests, types and
+formatting. Offline request/report/compact-output parity receipts were
+byte-identical; selector policies and algorithms were AST-identical. No live
+trial was repeated. Receipts: `artifacts/cleanup-good-enough/`.
 
-### Bounded live relevance follow-up
+These checks establish structure, bounds, lifecycle behavior at synthetic
+external boundaries, and exact-copy presentation. They do not establish model
+quality or general browser reliability.
 
-The owner separately approved seven sanitized model-only Jev cases with all
-browser tabs untouched. All seven logical calls completed with valid responses:
-seven observed client POST attempts, all HTTP 200, with no manual or native retry.
-The normal native environment loader read the existing workspace configuration
-and supplied TypeSafe authentication in the evaluation process. The credential
-store was not manually inspected, copied or changed; resolved key values were
-kept out of argv, logs and retained artifacts. DeepSeek and the outer Pi model
-were not called.
+### Evidence classes
 
-Six of seven configured evidence-retention checks passed. The shortened Google
-query/results/weather-label excerpt received relevance 0.28 and was not selected.
-Naver's corresponding Korean excerpt was selected at 0.52, near the 0.5 policy
-threshold. Maps search labels and the sanitized local-overview state survived;
-the community case retained the recorded SCROLL_DOWN action. Two goals over one
-synthetic document selected different records: the identifier alone, or the
-estimated amount and monthly period plus its distant service-charge exclusion.
-Neither selected the configured filler. Every selected record exactly matched
-an offered sanitized source record.
+Keep these results distinct:
 
-The Google result is a miss against this shortened fixture's expected excerpt,
-not evidence that a full live Google page or browser task would fail. The
-code-owned location and outcome remain available independently of text selection.
-No-match is a relevance judgment, not proof of absence. No prompt, threshold,
-code or corpus was changed in response to this small sample.
+- **Deterministic registered-tool tests** cross production public seams but
+  replace external browser/provider behavior.
+- **Synthetic Pi-TUI checks** invoke the production tool from an actual Pi TUI
+  command. The latest span check had synthetic browser/provider boundaries and
+  no outer-model turn. Earlier rewrite/tab-target checks used real isolated
+  Chrome with synthetic providers at their recorded heads.
+- **Actual outer-turn browser pilots** use Pi's normal model/tool path, the real
+  pinned Jev/provider path, and independently inspect the exact target. They are
+  task observations, not reliability rates.
+- **Live model-only replays** call the reporting model on retained sanitized
+  states without a browser task. Their checks concern selected excerpts/status,
+  not browser success.
+- **Offline replays** regenerate production requests/presentation without a
+  model or browser.
+- **Synthetic oracle calculations** assign hand-authored scores to show what the
+  representation can express. They are not predictions of Jev behavior.
 
-Selection took 175-514 ms per case (median 187 ms); the evaluation completed in
-1,667 ms. Successful responses reported 5,461 input and 348 output tokens.
-These are isolated reporting measurements, not browser-task/outer-agent timing
-or a complete bill. Five inputs were shortened independent-observation
-reconstructions, and two were goals on one synthetic document; none were current
-browser observations or full original Agent snapshots. This is partial semantic
-acceptance, not a seven-of-seven pass, general reliability, or an end-to-end win.
+### Actual outer-turn public-page pilot
 
-Evidence is retained in `artifacts/compact-output/live-evaluation/`:
-`REPORT.md`, `authorization.json`, `attempts.json`, `results.json`, `summary.json`
-and `run.py`. No browser/daemon connection or tab action occurred, the HTTP
-client was closed and no evaluation process remained. Nothing was pushed or
-published. Broader semantic/public-site quality and complete billing remain
-unestablished; further live trials need a separate finite allowance.
+At recorded head `6cf6a80` (runtime `0b3c5ab`), three normal-session public-page
+tasks used real Jev and direct DeepSeek through the registered tool: a Google
+search, Wikipedia article navigation, and a birth-date lookup continuing on the
+same exact Wikipedia target. All three completion claims were independently
+verified with one read-only exact-target inspection each. There was no tool-call
+retry or extra recovery inspection. The two returned pilot targets were then
+closed with acknowledgement and the exact browser baseline was restored.
 
-### Normal-session public-page pilot
+This proves those three task outcomes on that recorded head. It does not prove a
+reliability rate, general public-site quality, a speedup, or a cost reduction.
+The shared observer exposed the birth date before the third goal, so the final
+zero-action continuation demonstrates goal-conditioned retrieval from existing
+state rather than newly obtaining the fact. Compact content totaled 3,533 bytes;
+the reporter's model work remained substantial and complete billing remained
+unknown. Raw receipt: [real-use pilot report](../artifacts/compact-output/real-use-pilot/REPORT.md).
 
-A separately authorized three-call pilot ran at `6cf6a80` with real Jev and direct
-DeepSeek through the actual tools in the current outer-agent session. Google
-search, Wikipedia search/article opening, and a birth-date lookup continuing on
-that same Wikipedia target all passed independent exact-target inspection. Each
-used one inspection, with no extra recovery inspection or manual browser retry.
-Google returned useful evidence, unlike the earlier shortened reconstruction;
-this different observation does not disprove that miss. Wikipedia navigation
-returned boilerplate excerpts, while the birth-date reply included the correct
-article value but repeated it with leading punctuation.
+### Offline representation and latest live model-only result
 
-| Task              | Session call-to-result | Delegation-to-verification | Content / new details bytes |
-| ----------------- | ---------------------: | -------------------------: | --------------------------: |
-| Google search     |                4.164 s |                   14.666 s |               1,470 / 4,473 |
-| Wikipedia article |                4.938 s |                   25.738 s |               1,005 / 4,497 |
-| Birth-date lookup |                1.422 s |                   15.636 s |               1,058 / 3,627 |
+The saved seven-case span replay used no model or browser. All cases retained
+complete meaningful source coverage. The three pilot request shapes contained
+84/116/114 candidates and 50,049/70,046/68,705 serialized bytes, larger than the
+superseded grouped requests. Hand-authored oracle scores then produced useful
+pilot content of 1,390/751/832 bytes, or 2,973 bytes total versus the exactly
+reproduced historical 3,533. Protected outcome, location, cleanup, and diagnostic
+facts were held constant. This 15.9% calculation proves only that the structure
+can represent a smaller useful handoff.
 
-Total compact content was 3,533 bytes versus 12,597 bytes of **new diagnostics**,
-not the old visible format. No matched timing baseline or returned-content
-token measurement was made. The cycle includes caller/outer-agent gaps and ends
-at verification; observer operations took 415-432 ms. Setup, restoration,
-between-case analysis and reporting are separate. The shared observer was
-broader than necessary and exposed the birth date during the article-opening
-check, before the planned third call. Thus that zero-action continuation tests
-goal-conditioned retrieval, not obtaining new information more efficiently.
+The subsequently authorized live span replay made seven model-only TypeSafe
+calls against the same sanitized cases. It passed **three of six positive
+excerpt checks plus the negative control: four of seven configured checks**.
+These were selected-excerpt/status checks, not seven browser tasks and not three
+browser failures. The date appeared once; the identifier and qualified estimate
+were retained without configured filler. Google and Wikipedia selected weak or
+irrelevant excerpts instead of the expected page text, and the Korean example
+returned no evidence despite the expected text being available. Every returned
+record was still an exact offered source copy.
 
-Reporting scored 83, 115 and 113 candidates and recorded 63,679 Jev input / 6,232
-output tokens across three calls. The 12 browser-decision records totalled 66,108
-input / 4,482 output tokens; two helper records totalled 1,020 input / 17 output.
-Smaller returned text is not proof of less overall model work or cost. Provider
-attempts/retries, failed-call usage and complete billing remain unknown, and the
-pilot does not establish a speedup or general reliability.
+Holding historical browser facts fixed, the live selections produced a 3,255-byte
+offline counterfactual versus 3,533 bytes, 7.9% smaller. Smaller output with
+missing expected evidence is not successful general compression. For the same
+three source/goal pairs, reporting usage was 62,622 input and 6,292 output tokens,
+near the original pilot's 63,679/6,232 rather than the lower grouped replay. No
+paired latency, end-to-end speed, billing, or reliability benefit is established.
 
-The browser connection was initially unavailable. With explicit user approval,
-only the stale named Harness daemon was stopped, the isolated Chrome/profile
-was restored on unchanged loopback CDP port 63729, and Harness was reprovisioned.
-Ordinary Chrome was left alone. Both exact pilot targets were closed with
-acknowledgment and the post-restoration baseline was restored. The restored
-isolated browser and Harness remain running for tool use; process identities and
-receipts are in `artifacts/compact-output/real-use-pilot/REPORT.md`. That directory
-also retains results, verification, metrics, cleanup and source-copy/privacy
-checks. No production or selector change, dependency operation or publication
-occurred. Boilerplate selection, near-duplicate evidence and reporting candidate
-expansion remain optimization work, not fixes completed by this pilot.
-
-### Focused local selector refinement
-
-The initial local selector refinement at
-`4f976c0800339811c4ad1e6b2549b16a6e1e8228` addressed the pilot's structural
-findings in the reporting owner without changing the browser, transport, model,
-threshold or public tool contract. Long single-newline paragraphs now coalesce adjacent short
-lines into contiguous source slices near 128 UTF-8 bytes, widening grouping only
-under candidate pressure and retaining ordinary blank-delimited short paragraphs.
-Fallback slices remain token-aligned and bounded without overlap. One named
-trusted policy in request state defines direct goal evidence, necessary
-qualifications, treatment of generic site furniture and untrusted candidate
-data; each independent Noul references that policy, the goal and its exact
-candidate index. Page deduplication ignores locations and cut flags for identical
-text and handles only the observed leading-semicolon/whitespace presentation
-variant. It does not normalize general punctuation, numbers, currency, signs,
-units, versions, caveats or action step identity.
-
-Two new registered-tool guards pass through the production bridge with synthetic
-provider/browser boundaries. A 48-line generic document is reduced to contiguous
-exact candidates with complete nonwhitespace coverage, one shared policy,
-allowlisted state and per-question candidate references. A separate composition
-collapses two date duplicates while retaining signed, currency/unit, version and
-caveat-bearing identities; selected output remains an exact offered record and
-omission counters remain conservative. The pre-fix run failed both guards, and
-the final full deterministic suite passes 69/69.
-
-A synthetic callback replay regenerated requests from the same three saved pilot
-observations. Candidate counts changed from 83/115/113 to 9/18/16; serialized
-requests changed from 58,430/81,554/80,117 bytes to
-5,388/10,068/9,201 bytes. Every new page candidate was a contiguous exact source
-slice, all nonwhitespace source characters were covered, and the largest page
-candidate was 156 bytes. The retained old scores do not map to the grouped
-candidates and were not compared. An isolated actual Pi-TUI slash command passed
-22/22 structural assertions with synthetic boundaries; it retained the exact
-63-byte amount/exclusion evidence and protected diagnostic surface.
-
-These offline fakes establish request structure, deterministic selection,
-coverage, limits and surface plumbing only. They do not establish improved live
-relevance, actual new token use, latency, billing or broader reliability. No live
-provider, browser, credential, daemon or user-tab operation was part of this
-refinement verification.
-
-#### Consolidated selector correction
-
-Correction `82333404355750be247d3752d1485a860b8013d0` from the frozen refinement
-candidate keeps the same reporting owner
-and adds bounded context at coalesced-line boundaries. The next forward group may
-include at most two immediately preceding complete short lines and at most 64
-UTF-8 bytes of backward context without crossing a blank paragraph or exceeding
-the 512-byte record cap. Source validation now checks union coverage of ordered
-exact slices because these context records can overlap. Identity normalization
-now requires a leading semicolon followed by whitespace; bare and no-space
-semicolon forms remain exact. A direct public-reporting guard also proves that
-otherwise identical actions with different steps remain separate while an exact
-repeated same-step action deduplicates.
-
-Before repair, production reporting with synthetic callbacks selected no record
-for a generic split `Total:`/`$12` boundary and collapsed `;excluded` with
-`excluded`. Both correction guards pass after repair. The full deterministic
-suite passes 69/69, including the existing two-goal, qualification/filler,
-oversized-token, redaction, failure, cap, reporting-pressure and protected-fact
-checks.
-
-The corrected same-input replay kept candidate counts at 9/18/16 and request
-sizes at 5,541/10,530/9,663 bytes for Google/Wikipedia/birth. Against the original
-58,430/81,554/80,117-byte request shapes, those remain 90.5%/87.1%/87.9% smaller.
-All three requests had complete union coverage of ordered exact slices. The
-retained birth observation now offers `Born`, `Hedwig Eva Maria Kiesler` and
-`November 9, 1914` together in one bounded record. The largest corrected record
-was 188 bytes. Old scores were not reused across changed boundaries.
-
-A repeated isolated Pi 0.87.1 TUI slash-command acceptance passed 22/22 through
-the production registered tool with synthetic browser/provider boundaries. It
-retained the exact 63 bytes of requested amount/exclusion evidence, zero filler,
-821-byte compact content and 2,362-byte details. This was command-driven rather
-than an outer-model-issued turn. No offline score, structural replay or synthetic
-TUI check proves live relevance, actual token use, latency, billing or broader
-reliability. Targeted closure found Standards 1 resolved / 0 unresolved /
-0 introduced and Spec 3 resolved / 0 unresolved / 0 introduced. The parent
-independently reran all 69 tests, types, formatting and protected-runtime/pin
-stability checks successfully.
-
-#### Corrected-selector live checks: efficiency gain, minimality unresolved
-
-The owner then authorized seven sanitized model-only cases, at most 21 client
-POST attempts, without browser operations or manual retries. All seven finished
-in seven observed POST attempts, all HTTP 200. Six positive cases retained their
-expected text; the navigation-only negative control correctly returned no match.
-The identifier and estimate goals on the same synthetic document selected
-different records, retained the estimate's monthly period and distant exclusion,
-and excluded their configured filler. The shortened Korean example also retained
-its expected text. All evidence was an exact offered source copy.
-
-For the three saved full bounded pilot observations with identical goals,
-reported Jev input tokens fell from 63,679 to 9,697 (84.8%), and output tokens
-from 6,232 to 872 (86.0%). All seven cases reported 13,526 input / 1,128 output
-tokens. Per-case reporting times were 208-609 ms, median 275 ms. This is not an
-end-to-end timing comparison, measured bill or broad reliability claim.
-
-Quality remains mixed. Wikipedia excerpts now include the requested name but
-also menu/appearance/citizenship material. The birth date appears in a useful
-Born/name/date record, yet also in another passage, alongside unnecessary
-citizenship/occupation text. Literal whole-record deduplication does not remove
-that semantic repetition. The automated checks establish expected-text recall
-and negative-control status, not perfect relevance or minimality.
-
-An offline counterfactual used the unchanged production presenter with historical
-browser facts and the new report/usage. It first reproduced all original compact
-objects and byte counts exactly. Content grew from 1,470/1,005/1,058 bytes to
-1,680/1,419/1,349 bytes: 3,533 to 4,448 total, **25.9% larger**. Protected outcome,
-location, cleanup and primary diagnostic remained identical. This is a
-production-presentation calculation, not three new browser returns. The initial
-comparison harness incorrectly supplied the parent-only reap field as part of
-a child terminal; removing that field corrected the harness, not production.
-
-Thus the reporting-efficiency improvement is measured, but the primary
-minimal-communication goal remains only partially achieved. No further policy,
-threshold, corpus or runtime tuning followed these results. All seven cases are
-consumed; additional live trials need new authorization. No browser/daemon
-connection, tab operation, credential-store edit or publication occurred.
-The normal native loader supplied existing TypeSafe authentication, with values
-excluded from argv/logs/artifacts. Complete billing remains unknown.
-Evidence and scripts are retained under
-`artifacts/compact-output/selector-refinement/live-evaluation/`, including
-`REPORT.md`, response/attempt receipts, token comparison and the counterfactual
-content comparison.
-
-### Span-judge continuation: context separated from output spans
-
-At `3d9f0f694f8f838949cb43de0f1382e165b4cf61`, the reporting owner sends one bounded
-`judgmentContext` alongside shorter
-selectable records. Long fragmented paragraphs offer individual lines; long
-lines and prose use token-aligned spans near 128 bytes, preserving one larger
-unsplittable token when it fits 512 bytes. Adjacent spans coalesce only under
-candidate pressure. Source, candidate and request-fit omissions remain explicit,
-even when text still exists in the context. One shared policy and each
-candidate-path Noul state that only the offered exact page span or allowlisted
-action record is judged; context is untrusted interpretation data and cannot
-enter returned evidence automatically.
-
-A public registered-tool regression was observed red before implementation: the
-synthetic provider required `judgmentContext`, so the old reporter returned an
-error rather than the requested short amount and qualification. The corrected
-case passes and proves the unrelated context appears only in the request context,
-not evidence or compact content. Replacement guards also cover individual
-fragmented lines, complete candidate-pressure coverage, honest request-pressure
-omission, a 300-byte unsplittable Unicode token, strict date/semicolon identity,
-distant qualifications, action steps, bounds, errors and protected facts. The
-full deterministic suite passes 70/70; the direct projection seam reports 8/8.
-The former reduced-group-count and same-record label/value assertions were
-removed because context now owns those relationships while returned spans remain
-fine-grained.
-
-The seven saved cases were replayed OFFLINE through production request generation
-with zero-score callbacks. All retained complete meaningful source coverage. The
-three pilot states produced 84/116/114 questions, 50,049/70,046/68,705 serialized
-request bytes and page spans no larger than 127 bytes. These are larger requests
-than the prior grouped 9/18/16 shape; no request-token reduction is claimed.
-Explicitly labelled synthetic oracle judgments, not reused scores, separately
-passed simple recall, boilerplate, duplicate, qualification and exact-copy checks
-on the pilot states. The unchanged production presenter first reproduced each
-historical compact object and byte count exactly, held protected outcome,
-location, cleanup and diagnostic fields constant, then produced 1,390/751/832
-bytes instead of 1,470/1,005/1,058. The total was 2,973 versus 3,533 bytes, a
-15.9% potential reduction. This demonstrates structural representability only,
-not live Jev precision, tokens, latency, billing or reliability.
-
-An actual isolated Pi 0.87.1 TUI slash command invoked the production registered
-tool with synthetic browser/provider boundaries. All 24 assertions passed. The
-five-candidate request used the broader label/value context and returned exactly
-56 bytes of requested amount/exclusion evidence in 820-byte compact content,
-versus 1,822-byte details, with zero unrelated-context occurrences in evidence.
-It was command-driven, not an outer-model turn. No live call, browser/daemon
-connection, credential access, service change or installation occurred. The
-task-owned Paseo terminal and isolated work directory were removed; the existing
-Harness remained untouched. Artifacts are retained under
-`artifacts/compact-output/span-judges/`. The parent reran all 70 tests, types,
-formatting and protected-runtime/pin checks successfully. Standards review found
-no hard violation and two deferred style suggestions. Both Spec observations
-were inherited: a parent AST comparison showed the provider validator,
-action-projection normalization and identity functions unchanged from the base.
-No new blocking defect was identified; this does not disprove inherited concerns.
-See `span-judges/REVIEW.md` for the full disposition.
-
-#### Live span-judge evaluation: smaller excerpts, mixed relevance
-
-The owner separately authorized the same seven sanitized cases once, with at
-most 21 native client POST attempts and no manual retries or browser actions.
-Seven logical calls completed in seven observed client POST attempts, all HTTP 200. No corpus, prompt or threshold was changed after seeing the results.
-
-Three of six positive excerpt checks passed, plus the negative control:
-**four of seven configured checks**, not seven successful browser tasks.
-The date appeared once as the exact offered `; November 9, 1914` span. The
-identifier case and estimate/monthly-period/distant-exclusion case retained their
-expected facts without configured filler. Google selected `Weather result`, an
-unnecessary value-less `Precipitation:` label and a search action, but missed the
-expected Busan/query text in page evidence. Wikipedia selected `External links`,
-`inventor` and a search action rather than the expected name. The Korean case
-returned no evidence despite the requested text being available. The absent-price
-negative control correctly returned no match. Every selected record was an exact
-source copy; no-match still is not proof of absence.
-
-The unchanged production presenter first reproduced the historical compact
-outputs exactly. Holding their outcome/location/cleanup/diagnostic facts fixed
-and replacing only reporting/usage with the live selections produced
-1,445/976/834 bytes, totalling **3,255 versus 3,533 bytes (7.9% smaller)**.
-This is an offline counterfactual, not new browser returns. Historical Google and
-Wikipedia URLs/titles still carry their query/article identity; failures here
-are selected-excerpt checks, not failed browser outcomes. Smaller output with
-missing expected evidence is not successful general compression. The earlier
-2,973-byte synthetic oracle was a potential representation, not a prediction.
-
-For the same three source/goal pairs, reporting usage was 62,622 input / 6,292
-output tokens, versus 63,679 / 6,232 originally and 9,697 / 872 in the grouped
-replay. Most grouped-shape token savings were surrendered. Across all seven
-cases, responses reported 68,907 input / 6,708 output tokens. Reporting times
-were 201-972 ms, median 313 ms; the loop took 2,918 ms after imports/native
-configuration loading. No paired latency, end-to-end speed or billing benefit
-is established, and complete attempts/retries/billing remain unknown.
-
-All seven cases are consumed. Context/span separation is structurally verified,
-but judgment/ranking quality remains unresolved; no further tuning or additional
-inference followed. No browser/daemon connection, tab action, credential-store
-edit, installation or publication occurred. The normal native loader supplied
-existing TypeSafe authentication, with values excluded from argv/logs/artifacts.
-Receipts, comparisons and scripts are retained under
-`artifacts/compact-output/span-judges/live-evaluation/`.
-
-Historical rewrite tested implementation: `b3b42036685eba64f3e7bc8ccc296e16b9910fe9`.
-The initial rewrite is `3f984e54`; the corrected implementation was checked again,
-not accepted solely on the earlier candidate's results. These runs preceded
-checkout consolidation: their `artifacts/` paths resolve under the retained
-`rlcd-brwsr-jev-ultrafast` checkout, as recorded in the [archive index](archive.md).
-
-## Automated and review checks
-
-- `pnpm check`: 20 passing tests, TypeScript checks, formatting and Python
-  compilation. The tests cross the registered tool, real Python runner and
-  pinned upstream Agent/native helper, replacing external browser/provider work.
-- `uv lock --check`, shell syntax and Git whitespace checks passed. Dependency
-  pins and both lockfiles are unchanged.
-- A deliberately broken close-acknowledgement guard made its public-seam test
-  fail, then passed after restoration.
-- Four correction regressions were observed red before their fixes: native
-  workspace helper conflicts masked by defaults; post-dispatch projection
-  interruption misreported as not started; terminal claims trusted after a
-  nonzero exit; and output fitting replacing the parent's time-budget stop.
-  Additional checks cover a flushed terminal followed by forced termination,
-  invalid envelopes and child-native-environment key privacy.
-- Independent targeted Standards and Spec rechecks found no unresolved
-  documented-standard or specification defect. A test-only scenario-branching
-  maintainability heuristic was deferred rather than adding a fake framework.
-
-The corrected supervisor requires a valid terminal envelope and a clean observed
-exit before accepting child claims. Forced/non-clean/incomplete outcomes remain
-unknown, with the parent's first stop and observed process reap preserved.
-Native Harness environment loading precedes selected-helper defaults and conflict
-checks in both the runner and preflight.
-
-## Actual Pi TUI and Chrome
-
-Four cases passed again at the corrected implementation, each in a fresh Pi
-0.85.1 TUI with the real runner, upstream Agent, existing Harness and approved
-isolated Chrome. Jev and helper HTTP replies were synthetic. Independent CDP and
-process observers checked outcomes rather than trusting the completion claim.
-
-| Case                     | Independent observation                                                                                                                      |
-| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| Click, default close     | `ORBIT-27` observed on the exact task target before close; runner exited and target disappeared.                                             |
-| Text, explicit retention | `Busan` and `FIELD-41` observed on the exact retained target after runner exit; only that target was then closed with a successful response. |
-| Time budget              | Delayed synthetic reply reached; result was `stopped/time_budget`; actual runner exit and task-target absence verified.                      |
-| TUI Escape               | Escape sent during the visible command's run; result was `stopped/cancelled`; actual runner exit and task-target absence verified.           |
-
-Each case restored the exact four-target baseline. The fixture, observer/Pi
-terminals, runner processes and task tabs were stopped or independently observed
-absent; fixture port 43113 was free. The existing isolated Chrome, Harness and
-profile were retained, not installed or restarted by this build.
-
-**Invocation limitation:** a test slash command loaded the production extension
-and invoked the registered tool definition's real `execute` method. These were
-not outer-LLM-issued tool turns and do not verify Pi's entire agent-turn/tool
-scheduling path. The isolated Pi state had no copied authentication or model;
-no outer Pi, Jev or OpenRouter inference was performed.
+All seven authorized calls are consumed. No prompt, threshold, corpus, or code
+was tuned after the results. Raw receipts:
+[live report](../artifacts/compact-output/span-judges/live-evaluation/REPORT.md),
+[attempts](../artifacts/compact-output/span-judges/live-evaluation/attempts.json),
+[results](../artifacts/compact-output/span-judges/live-evaluation/results.json),
+and [content comparison](../artifacts/compact-output/span-judges/live-evaluation/content-comparison.json).
+A further live trial requires a new finite allowance.
 
 ## Bounded live follow-up
 
-The user subsequently authorized one native Ling helper probe followed by one
-30-second local browser fixture through a normal Pi agent turn. Both passed at
-`4e243c24` (unchanged production `b3b42036`). The existing host-local TypeSafe and
-OpenRouter keys were loaded only into test process environments; no credential
-file was copied or global Pi configuration changed.
+The earlier corrected Python-owned rewrite at runtime `b3b42036` passed four
+actual Pi-TUI/isolated-Chrome journeys with synthetic provider replies: created
+click/default close, created text/retention, wall deadline, and TUI cancellation.
+Independent observers checked exact targets, browser effects, child exits, and
+restored baselines. The invocation was command-driven rather than an
+outer-model-issued tool turn. Its detailed artifacts remain in the retained
+sibling checkout identified by [the archive index](archive.md).
 
-- The unchanged native helper returned validated `Busan` in 1,450 ms. OpenRouter
-  reported model `inclusionai/ling-3.0-flash`, provider `DeepInfra`, 186 tokens,
-  zero reasoning tokens and cost `0.00001212` USD. The request used JSON mode and
-  disabled reasoning. These are observations of one successful call, not a
-  latency/reliability guarantee or universal routing claim.
-- In a fresh, explicitly scoped Pi TUI, the existing outer model
-  `openai-codex/gpt-5.6-sol` issued exactly one standard `rlcd_brwsr_run` tool
-  call. Pi's normal tool lifecycle executed the production extension with live
-  Jev and Ling. No model reply was substituted. The browser tool returned in
-  about 3,865 ms with a completion claim and a retained target.
-- After independent observation of Python exit, direct CDP inspection of that
-  exact existing target verified `Busan` and `FIELD-41` without navigation.
-  Exact-target closure succeeded and restored the four-target baseline. This
-  live case covers the normal agent-turn path that the earlier test commands
-  did not cover; it does not cover every user extension/configuration.
-- Two Jev decision records and one helper record were retained by the browser
-  run. Two outer Pi completions were observed. Record counts are not asserted
-  to be HTTP attempt counts; upstream retries and failed-call usage remain
-  unknown, and no manual retry or extra browser-tool call occurred.
+A later bounded follow-up at `4e243c24` used the then-selected OpenRouter Ling
+field helper and one local fixture through Pi's normal outer-model/tool path.
+The helper payload and retained exact target were independently verified, then
+cleaned up. That is historical evidence for Ling at its recorded head, not
+provider evidence for the current direct DeepSeek helper. The owning provider
+note links this heading so the anchor is retained.
 
-Keep cost provenance separate. OpenRouter's two successful helper responses
-report `0.00002634` USD together. Pi separately calculates a `0.01443` USD
-rate-based estimate for the outer model; it is not an observed Codex bill or
-additional charge. TypeSafe cost and complete billing remain unknown. The
-30-second browser limit was a time limit, not a spend cap.
-
-The two loaded native key values were absent from a full-value scan of the
-local artifacts; Pi OAuth secrets were not inspected. The fixture, runner,
-observers and temporary terminals were stopped. Chrome/Harness, their profile,
-unrelated terminals and the four-target baseline remain retained.
-
-## Remaining limits and retained evidence
-
-The live follow-up establishes this helper payload and this local fixture, not
-general model quality, public-site reliability, complete billing or general
-interruption recovery. Hard termination/construction uncertainty has offline
-coverage, not a real-browser cleanup guarantee. Native usage remains incomplete
-and absent from Pi's top-level totals. A benign public-site acceptance task and
-publication remain pending; GitHub issues describing the superseded
-implementation have not been closed or represented as satisfied.
-
-Raw, local-only artifacts remain under `artifacts/thin-python-build/`:
-
-- `standards-review.md`, `spec-review.md`, `review-decisions.md`, and both rechecks;
-- `spec-probes/` and `correction/` for reproductions and red/green logs;
-- `tui/` for the first candidate, including setup attempts;
-- `tui-correction/REPORT.md`, `LEDGER.md` and case evidence for the corrected head.
-
-Live evidence remains separately under `artifacts/thin-python-live/`: `REPORT.md`,
-`CALL-LEDGER.md`, `RESOURCE-LEDGER.md`, request/response metadata, standard Pi tool
-lifecycle events and independent target/process observations. Raw responses,
-authorization headers and credential values were not retained.
-
-Earlier experiments and the cancelled, not-passed delivery gate remain historical
-and unchanged. No push, PR, merge or new delivery-gate run was performed by that
-verification phase.
+The current direct-DeepSeek route was subsequently exercised by the three-task
+public pilot above. Current model-only replays used Browser Harness's normal
+native loader to resolve existing host-local keys without manually inspecting,
+copying, or editing the credential store. Values were excluded from arguments
+and retained artifacts. Earlier live phases retain their own credential-loading
+provenance in their receipts. These observations are not a provider-validity
+guarantee or permission to reuse credentials for another experiment.
 
 ## Existing-tab targeting
 
-Corrected runtime candidate: `ff49875efb8d07274967a5eb75e976737891759a`.
-The initial feature was `3bf2dd32a2f40f81530ddb0a5091f0686524204d`, based on
-`0206246a67964172e46cf91b1878e3ae907711ca`. These artifact paths resolve in the
-canonical checkout, not the retained sibling.
+Corrected candidate `ff49875` added read-only discovery and exact borrowed-tab
+continuation/navigation. Its deterministic suite passed 54 tests. A fresh Pi
+0.87.1 TUI command used real isolated Chrome and synthetic provider replies and
+passed 13/13 assertions covering discovery, same-target continuation, explicit
+navigation, created-tab closure, primary-error preservation, independent focus
+release/detach reporting, and unrelated-target preservation.
 
-The initial feature passed 49 tests and two 12-assertion command-driven
-Pi/Chrome checks. Consolidated review and bounded synthetic probes nevertheless
-reproduced six gaps: native-workspace discovery redaction, cleanup exception
-independence, opaque-ID ordering, blank-ID omission, scalar cleanup validation,
-and rejection of correctly sanitized URL metadata. Only synthetic keys were
-used; no actual credential disclosure was observed. Those initial happy-path
-checks were not treated as resolving the findings.
+This was command-driven fixture evidence, not an outer-model turn, live-provider
+check, or general-web test. Forced exits can still strand focus emulation or an
+attachment. Raw receipt:
+[tab-targeting correction handoff](../artifacts/tab-targeting/implementation/correction/HANDOFF.md).
 
-After the owner approved one correction batch:
+## Known limits
 
-- All six regressions went red before their fixes and green afterward. A
-  restored guard proof also failed when cleanup String coercion was temporarily
-  reintroduced, then passed after restoring strict string narrowing.
-- All 54 tests, TypeScript, Prettier, no-write Python compilation, shell syntax,
-  lock checks and Git diff checks passed. The parent repeated the full suite,
-  type check and formatter. Pins and lockfiles remained unchanged.
-- Targeted Standards recheck: 3 resolved, 0 unresolved, 0 introduced. Targeted
-  Spec recheck: 4 resolved, 0 unresolved, 0 introduced, including the parent-added
-  sanitized-metadata case. ID ordering overlaps both axes. The duplicated HTTP
-  predicate heuristic remains deferred.
-- Standalone, unconfigured Ruff still reports 16 findings: 14 inherited and two
-  broad ordinary-exception cleanup catches required by the approved ownership
-  contract. It is not a configured repository gate; no inline suppression or
-  narrower handling was used to hide the conflict.
+The accepted baseline retains these limits:
 
-A new Pi 0.87.1 TUI slash-command pass exercised both production registrations
-and the real runner/native Agent/Harness/Chrome with synthetic external
-providers. Thirteen assertions passed. Independent CDP observations verified
-same-URL tab distinction, sequential continuation on one exact ID, explicit
-navigation of another ID, tested form/viewport preservation, detached sessions,
-created-tab default closure, and preservation of unrelated page IDs/titles/URLs.
-A task-owned-tab case injected a primary provider error and a focus-disable
-AttributeError: the primary error survived, focus release was unconfirmed,
-exact detach was acknowledged, and the observer found the target detached.
+- Current context/span separation is structurally verified, but the latest live
+  reporter missed three expected positive excerpts. A `no_match` is not proof
+  that useful source text is absent.
+- A completion claim is not independent proof. Public-site evidence consists of
+  three recorded tasks, not a reliability sample or prompt-injection guarantee.
+- `maxSeconds` is a coarse parent stop deadline. Hard termination can leave
+  execution, created-tab cleanup, borrowed focus emulation, and attachment
+  unknown; no parent fallback repair exists.
+- Existing-daemon checks do not attest that a same-named `cdp` daemon still uses
+  current endpoint/profile settings.
+- Usage includes only retained upstream records. Attempts, retries, failed-call
+  usage, provider cost, and complete billing can be unknown, and Pi top-level
+  totals omit native calls.
+- Direct `deepseek-flash` is a mutable alias. Recorded successful calls do not
+  guarantee future provider acceptance, latency, JSON adherence, or quality.
+- The current branch is local and unpublished. GitHub issues that describe the
+  superseded implementation are not represented as satisfied.
+- Earlier cancelled-gate findings concern the removed larger protocol and remain
+  historical; cancellation was never rewritten as a pass.
 
-This was not an outer-LLM-issued turn or live-provider/public-site acceptance.
-Focus-disable acknowledgement still does not prove restoration of original
-focus; forced exits can strand emulation/attachment; daemon identity binding,
-completion claims and usage retain their documented limits. No speed, general
-reliability or complete billing claim follows from these fixtures.
+No old semantic result is upgraded by the good-enough product decision. In
+particular, failed excerpt checks remain failures and synthetic checks remain
+synthetic.
 
-Raw evidence is retained under `artifacts/tab-targeting/implementation/`:
-`REVIEW.md`, original axis reports and `review-probes/` record the findings;
-`correction/HANDOFF.md`, `correction/RESOURCE-LEDGER.md`, `correction/checks/`,
-`correction/acceptance/`, and `correction/recheck-{standards,spec}.md` record the
-fixes and verification. Task tabs, attachments, processes, terminals, fixture
-listener, temporary Serve route and acceptance work directory were cleaned.
-Shared Chrome/Harness, Maps and unrelated resources were preserved. No push,
-PR, merge, delivery gate, live inference or public-site task occurred in this
-feature/correction work.
+## Commit and receipt index
+
+| Reference             | What it establishes                                                                               | Raw record                                                                                               |
+| --------------------- | ------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `b3b42036`            | Corrected Python-owned rewrite and actual Pi-TUI/Chrome fixture journeys with synthetic providers | Retained sibling checkout; see [archive.md](archive.md)                                                  |
+| `ff49875`             | Corrected exact existing-tab targeting                                                            | [correction handoff](../artifacts/tab-targeting/implementation/correction/HANDOFF.md)                    |
+| `0b3c5ab` / `f6a7c54` | Corrected compact details/content split and protected-fact pressure guards                        | [pressure follow-up](../artifacts/compact-output/implementation/correction/pressure-followup/HANDOFF.md) |
+| `6cf6a80`             | Three actual outer-turn public-page tasks and exact-target verification on the recorded runtime   | [pilot report](../artifacts/compact-output/real-use-pilot/REPORT.md)                                     |
+| `8233340`             | Corrected grouped selector and its synthetic/live-model evidence                                  | [correction handoff](../artifacts/compact-output/selector-refinement/correction/HANDOFF.md)              |
+| `3d9f0f6`             | Current context/span separation, 70 tests, offline replay, and 24-assertion synthetic TUI check   | [span handoff](../artifacts/compact-output/span-judges/HANDOFF.md)                                       |
+| `c9a655a`             | Latest model-only span result: four of seven configured excerpt/status checks                     | [live report](../artifacts/compact-output/span-judges/live-evaluation/REPORT.md)                         |
+
+For the removed chronology and every older section, use
+`git show c9a655a:docs/thin-python-evidence.md`. Do not delete retained evidence
+because it is old; [archive.md](archive.md) owns sibling locations and resource
+retention constraints.

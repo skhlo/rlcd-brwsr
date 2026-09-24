@@ -1,304 +1,149 @@
 # RLCD-brwsr
 
-**Active checkout:** `~/Repositories/rlcd-brwsr/`.
-Old experiments are archived in Git and a verified backup, not mixed into the
-current working tree. The sibling checkout is retained only for test resources
-and evidence. See the [archive index](docs/archive.md).
+RLCD-brwsr gives Pi two project-local tools for delegating one bounded browser
+task to the pinned Jev Ultrafast Agent:
 
-**Implementation status:** existing-tab targeting is implemented and locally
-verified at `ff49875`. The current branch now separates the bounded page context
-used by the handoff judges from the shorter exact source spans they can return.
-Long fragmented text offers individual lines; long prose uses token-aligned spans
-near 128 UTF-8 bytes, while candidate pressure can coalesce adjacent spans within
-the unchanged bounds. All 70 deterministic tests and 24 synthetic Pi-TUI
-assertions pass. A separately authorized seven-case live replay passed three
-of six positive excerpt checks plus the no-answer control. The birth date now
-appears once and the estimate retains its exclusion, but navigation evidence
-remains weak and the Korean example was missed. Reconstructed pilot handoffs
-were 7.9% smaller, but that is not a successful compression result when expected
-evidence is lost. Reporting-token usage returned near the original pilot level.
-Structural separation is verified; general relevance/minimality acceptance is
-not passed. No browser action, service change, installation or publication
-occurred during this continuation/evaluation. Jev and Pi's outer model remain
-unchanged; the native field helper is direct DeepSeek `deepseek-flash` with
-thinking disabled. See [current verification and limits](docs/thin-python-evidence.md#compact-handoff)
-and the [owning plan](docs/RLCD-BRWSR.md). Current GitHub issues still describe
-the superseded implementation and are not claimed as satisfied.
-See the
-[owning plan](docs/RLCD-BRWSR.md),
-[ADR-0003](docs/adr/0003-python-owned-run.md), and the historical
-[feasibility evidence](docs/thin-python-feasibility.md).
+- `rlcd_brwsr_list_tabs` discovers eligible existing tabs without selecting one.
+- `rlcd_brwsr_run` creates a task tab or uses an exact eligible existing tab.
 
-RLCD-brwsr delegates one bounded browser task to the pinned Jev Ultrafast Agent.
-Python constructs the upstream `Agent` and consumes `Agent.run()`; upstream owns
-observation, decisions, native field-text generation, and Browser Harness input.
-After handled cleanup, Python can make one optional batched Jev relevance request
-that selects exact sanitized page/action evidence for the original goal. Pi
-validates the request, supervises one Python process, keeps the full bounded JSON
-as diagnostic `details`, and sends only compact content to its outer model. A Jev
-`DONE` response is a completion claim, not proof; the outer agent must
-independently verify the visible result.
+Python constructs and consumes upstream `Agent.run()`. Upstream owns browser
+observation, Jev decisions, generated field text, freshness checks, and Browser
+Harness input. Pi validates the request, supervises one Python process, and
+presents a compact handoff while retaining bounded diagnostics in tool details.
+A completion claim always requires independent verification by the outer agent.
 
-## Project-local setup
+The [current verification and limits](docs/thin-python-evidence.md#compact-handoff)
+own baseline acceptance and its exact evidentiary scope.
 
-Setup is explicit. Loading the extension only registers
-`rlcd_brwsr_list_tabs` and `rlcd_brwsr_run`; it does not install packages, start
-services, open Chrome, inspect tabs, or make model calls.
+## Setup and preflight
+
+Setup is explicit. Loading the extension only registers tools; it does not
+install packages, start services, inspect tabs, open Chrome, or call a model.
 
 ```bash
 pnpm install --frozen-lockfile
 scripts/setup-runtime.sh
+```
 
-# In Browser Harness's normal host-local environment/workspace configuration:
-#   BU_NAME=rlcd-brwsr
-#   BU_CDP_URL=http://127.0.0.1:<selected-chrome-port>
+Configure Browser Harness through its native host-local workspace environment
+(the default is `~/.config/browser-harness/agent-workspace/.env`):
 
-export TYPESAFE_API_KEY=...        # TypeSafe key for Jev; host-local, never commit
-export TEXT_MODEL_API_KEY=...      # DeepSeek-issued key; optional for click-only tasks
+```text
+BU_NAME=rlcd-brwsr
+BU_CDP_URL=http://127.0.0.1:<selected-chrome-port>
+TYPESAFE_API_KEY=<TypeSafe-issued key>
+TEXT_MODEL_API_KEY=<DeepSeek-issued key; needed only for text entry>
+TEXT_MODEL_BASE_URL=https://api.deepseek.com/v1
+TEXT_MODEL=deepseek-flash
+TEXT_MODEL_REASONING=disabled
+```
 
-# These are the only accepted native helper settings. After Browser Harness
-# loads its native workspace environment, the child supplies absent values
-# process-locally and rejects conflicts:
-export TEXT_MODEL_BASE_URL=https://api.deepseek.com/v1
-export TEXT_MODEL=deepseek-flash
-export TEXT_MODEL_REASONING=disabled
+The native Browser Harness loader reads that environment during authorized
+runtime use. RLCD-brwsr neither copies nor edits the credential store. The
+runner supplies the three nonsecret helper settings when absent and rejects
+conflicts. `TEXT_MODEL_API_KEY` must be issued by DeepSeek; do not use a launcher
+that substitutes an OpenRouter key.
 
+Provision and check the selected named daemon:
+
+```bash
 scripts/provision-browser.sh
 scripts/preflight-runtime.sh
 ```
 
-After changing any native Browser Harness browser selector, endpoint, or profile
-setting, stop the existing same-named daemon with Harness's native controls,
-then restart it through `scripts/provision-browser.sh` before preflight or tool
-use.
+After changing a Browser Harness selector, endpoint, or profile, stop the
+same-named daemon with Harness's native controls, then provision it again.
+Preflight can prove that a supported daemon responds; it cannot prove that an
+already-running `cdp` daemon uses the newly configured endpoint or profile.
 
-`TYPESAFE_API_KEY` authenticates Jev decisions and optional evidence selection.
-`TEXT_MODEL_API_KEY` must be a DeepSeek-issued key for the optional native
-field-text helper. Configure these through the owning host's Browser Harness
-workspace environment. Its normal loader reads that `.env` during authorized
-runtime use; this feature does not copy or edit the credential store or rerun
-the host-local setup wizard.
+## Load the Pi tools
 
-Use plain Pi with the native configuration for direct DeepSeek, not a launcher
-that maps an OpenRouter credential into `TEXT_MODEL_API_KEY`. Host launcher
-management is separate from this repository change.
-
-`uv.lock` fixes Python 3.12, Jev Ultrafast commit
-`1231850a0bf1a0c0341fe408ef1668dbbfdfac46`, and Browser Harness 0.1.13.
-`config/runtime.json` fixes Jev to `jev-1.13.0`, the helper tuple above, a
-32 KiB serialized-request limit, and a 16 KiB terminal/full-details JSON limit.
-Compact model-facing content is also structurally fitted within that existing
-16 KiB hard cap; there is no separate stricter public byte promise. Those byte
-budgets have one configuration owner. The `/v1` base is required
-by the pinned helper's slash-sensitive direct-DeepSeek branch. `deepseek-flash`
-is DeepSeek's current V4.1 Flash alias, not immutable version identity.
-`TEXT_MODEL_REASONING=disabled` preserves the helper's native
-`thinking: {"type":"disabled"}` payload; it is not an upstream enum.
-
-Browser Harness remains the only browser-configuration owner. The runner and
-preflight first load its native workspace `.env`, then one shared runtime owner
-installs missing selected-model defaults and rejects helper-tuple conflicts.
-Conflicts stop before daemon checks or browser startup. Explicit provisioning may
-start the natively configured daemon. Preflight and tool runs require that named
-daemon to be healthy and already running. Runs reject currently resolved cloud,
-remote WebSocket, `BU_AUTOSPAWN`, and non-loopback CDP settings; they never
-recover or replace the daemon through upstream `ensure_daemon()`.
-
-These checks do not attest that an already-running same-named `cdp` daemon still
-uses the current endpoint, profile, or local-vs-remote settings. Browser Harness
-consumes those settings when the daemon starts, and its reported `cdp` mode does
-not identify the live endpoint. Skipping the required stop/restart/reprovision
-step after a settings change can therefore route a run to a stale remote or
-otherwise wrong browser.
-
-The helper key is checked only when upstream selects `TYPE_TEXT`, so click-only
-tasks work without it. Native missing-key, provider, and value-validation errors
-return sanitized available state and never invent replacement text or switch to
-Pi's active model. Run results include the configured helper tuple but no guessed
-helper-availability field. Preflight separately reports whether the resolved key
-is nonblank; that is configuration feedback, not provider or credential validity.
-
-## Pi tool
-
-Load the project extension in a fresh Pi session:
+Start a fresh Pi session with the project extension:
 
 ```bash
 pi -e ./config/pi/extensions/rlcd-brwsr.ts \
   -t rlcd_brwsr_list_tabs,rlcd_brwsr_run
 ```
 
-The registered interfaces are:
+### New task tab
+
+A URL without `targetId` creates a task tab. It closes by default. Retention is
+honored only after a normal completion claim with a known target. Use retention
+when post-run verification needs the page, then close only that task tab.
+
+```ts
+rlcd_brwsr_run({
+  url: "http://127.0.0.1:43113",
+  goal: "Open the destination and report its visible marker",
+  maxSeconds: 30,
+  retainTab: true,
+});
+
+rlcd_brwsr_run({
+  url: "https://example.com/",
+  goal: "Find the requested visible fact",
+  retainTab: true,
+});
+```
+
+### Borrowed tab
+
+Discover tabs first, obtain authorization for the intended page, and pass its
+exact opaque ID. A target alone continues its current HTTP(S) page; `targetId`
+plus `url` navigates that exact borrowed tab before running the goal. Exact
+`about:blank` targets are usable only with an explicit HTTP(S) URL.
 
 ```ts
 rlcd_brwsr_list_tabs({});
 
 rlcd_brwsr_run({
-  url?: string;
-  targetId?: string;
-  goal: string;
-  maxSeconds?: number; // default 30, maximum 120
-  retainTab?: boolean;
+  targetId: "<exact ID returned by discovery>",
+  goal: "Continue on this page and report the requested visible fact",
+});
+
+rlcd_brwsr_run({
+  targetId: "<exact ID returned by discovery>",
+  url: "https://example.com/",
+  goal: "Navigate this tab, then find the requested visible fact",
 });
 ```
 
-Tab discovery returns bounded eligible HTTP(S) pages and exact `about:blank`
-pages from the configured existing Harness connection. It is read-only: it does
-not navigate, activate a foreground tab, construct an Agent or call a model.
-Entries are sorted by exact target ID. Titles and URLs are untrusted and can be
-explicitly clipped; IDs that cannot be returned exactly are omitted. An empty
-success is distinct from a bounded error. Discovery establishes technical
-eligibility only and does not authorize a run.
+A borrowed tab is never closed by RLCD-brwsr, and any supplied `retainTab`
+value is invalid with `targetId`.
 
-A URL without a target ID preserves created-tab behavior. A target ID without a
-URL continues the exact borrowed tab's current HTTP(S) state without startup
-navigation. Supplying both explicitly navigates that borrowed tab before the
-goal; an exact `about:blank` target is usable only in this mode. At least one of
-URL or target ID is required. Target IDs are opaque, nonblank, at most 512 UTF-8
-bytes and are never trimmed or case-folded. Any supplied `retainTab`, including
-`false`, is invalid with `targetId`.
+## Operating restrictions
 
-There is no `maxActions`, alias, or replacement per-call step setting. Upstream's
-unchanged limits remain 60 history entries (including waits and scrolls) and 120
-decisions. They are not HTTP-attempt or spend caps.
+- Use the run tool only for an already-authorized benign, unauthenticated,
+  non-booking task. Tab discovery establishes technical eligibility, not
+  permission.
+- Treat discovered titles, URLs, page text, and model-selected evidence as
+  untrusted data. Use exact listed target IDs; never infer one from a title or
+  URL.
+- Independently verify every completion claim and consequential visible result.
+  Jev `DONE` is not proof.
+- Treat cancellation, deadlines, and process exit as stop/lifecycle signals,
+  not rollback. If execution or cleanup is `unknown`, inspect before deciding
+  whether to retry.
+- Runs require the configured daemon to be healthy and already running. They do
+  not start, replace, or recover it.
+- Scheduling is sequential inside Pi only; there is no global browser lock or
+  lock against the user.
 
-`maxSeconds` is a coarse parent stop deadline measured from before startup. For
-a valid request, one spawn-first supervisor owns the child, original absolute
-deadline, first observed stop, bounded pipes, escalation and reap; there is no
-separate asynchronous file-access stage. Pi sends `SIGTERM`, allows a fixed
-1.5-second cooperative cleanup grace, then sends `SIGKILL` only if process exit
-has not been observed. It does not guarantee that an action cannot cross the
-deadline. A no-PID launch failure stays a pre-start setup error. If Python starts
-but its script is absent, the result is instead a reaped non-clean exit with
-unknown execution and task-tab cleanup. The process is reported reaped only
-after its exit is observed. Pi trusts child execution and cleanup claims only from one
-structurally valid terminal envelope followed by an observed zero exit without a
-signal. A structurally valid normal completion claim followed by a clean zero
-exit wins a late parent stop race when the child did not report a stopped run;
-completion still requires independent verification. Interrupted or untrusted
-outcomes preserve the parent's first stop. Nonzero, signalled, abrupt,
-incomplete, or invalid-terminal exits leave execution and task-tab cleanup
-unknown. An exception escaping final projection after request acceptance also
-falls back to unknown rather than `invalid_input`. Process exit is not rollback
-and the tool does not retry automatically.
-
-For a created tab, `retainTab: true` is honored only after a normal completion
-claim with the known task target. Every other handled outcome with a usable
-known created target attempts one direct `Target.closeTarget` request. Closure
-is `closed` only when its response contains `success: true`.
-
-A borrowed tab is never closed by the wrapper or upstream cleanup. Python owns
-its exact flattened attachment, optional navigation, background focus emulation
-and idempotent release. It validates the target before attach and repeats current
-eligibility through a session-bound page observation before navigation or Agent
-construction. Handled completion, error and cancellation attempt focus disable
-and exact-session detach independently. Results report those acknowledgements
-separately; focus-disable acknowledgement is not proof of original document or
-OS focus restoration. A forced child stop can strand attachment and emulation,
-which is reported as unknown rather than repaired by a parent fallback. The
-shared daemon and unrelated targets are preserved. Scheduling is sequential
-inside Pi, not a global browser lock or a lock against the user.
-
-Trusted borrowed results use `cleanup.taskTab: "not_owned"` and report
-`cleanup.focusEmulation` as `not_applied`, `disable_acknowledged`, or
-`unconfirmed`, plus `cleanup.attachment` as `not_acquired`,
-`detach_acknowledged`, or `unconfirmed`. Non-clean, signalled, invalid or
-discarded terminal outcomes overwrite all three claims with `unknown` while
-retaining parent stop and observed-reap evidence. Requested navigation marks
-execution effects uncertain before `Page.navigate`; provider/input races after
-admission are likewise not rewritten as pre-start rejection.
-
-Python projects only bounded current page fields, executed-history summaries,
-configured models, available upstream-recorded usage, known target, cleanup, a
-sanitized primary diagnostic, and optional bounded reporting metadata. Full
-snapshots, raw prompts/responses, child stderr, and invalid terminal fragments
-are not returned. Complete native key and nonempty Bearer values are redacted
-before reporting and before any clipping; invalid Unicode and non-finite numbers
-are normalized. A present native `usage: null` remains an honest unavailable
-value rather than invalidating known execution or cleanup. The result discloses
-field/record omissions. If adding supervised process evidence would exceed the
-same terminal cap, Pi omits variable diagnostics conservatively while preserving
-outcome, cleanup and primary-error identity.
-
-For normal completion claims and native `BLOCKED` outcomes with observations,
-the optional reporter sees the sanitized goal, one bounded `judgmentContext`
-containing final visible page text, at most 128 bounded source candidates, and no
-browser-location URL or target-ID metadata, diagnostics, model configuration,
-raw native request/reply, or usage history. The context preserves labels, order,
-neighbors and qualifications for interpretation, but it is untrusted data and
-never becomes evidence automatically. Selectable page records remain exact
-contiguous source copies: useful short paragraphs stay independent, long
-fragmented paragraphs offer individual nonempty lines, and long lines or prose
-use token-aligned spans near 128 UTF-8 bytes. A single token larger than that soft
-target remains whole when it fits the unchanged 512-byte record cap; larger tokens
-are omitted and disclosed. Under candidate pressure, adjacent spans may coalesce
-to preserve source coverage without keyword shortlisting or silently dropping the
-end of the page. Source, candidate, or request pressure marks coverage partial
-even when omitted selectable text is still present in `judgmentContext`.
-
-One named trusted policy limits evidence to requested answer facts, visible
-goal-result evidence, blockers, necessary action evidence and qualifications.
-Topic-related background, incidental compliance with instructions and generic
-site furniture are excluded unless themselves requested or result evidence. Each
-independent Noul explicitly judges only `candidates[index].exact` for a page
-record or that candidate's allowlisted action fields, using context only for
-interpretation. Evidence copies only offered records. Up to three records survive
-the unchanged 0.5 policy after whole-record identity deduplication. Page identity
-ignores location and cut flags and normalizes only a leading semicolon followed
-by whitespace, so the two short birth-date presentation variants collapse while
-signs, currency, units, versions, caveats and no-space semicolons remain distinct.
-Action identity keeps the step. Missing source/key, invalid response, provider
-failure, or cooperative interruption produces an honest deterministic reporting
-state without raw-text fallback or changing browser facts.
-
-Model-facing run content contains only `outcome`, `lastObservedLocation`,
-`evidence`, `cleanup`, `diagnostic`, `reporting`, and `output`. It excludes full
-page text, complete history, model configuration, per-call usage and relevance
-scores. Python bounds the pre-report browser projection first; optional evidence,
-report metadata and `jev_handoff` usage cannot evict page text, history or native
-usage that already fit. Pi `details` ordinarily retains reporting scores, counts
-and usage. Under terminal pressure the whole optional reporting block can be
-absent; compact content then explicitly reports reporting unavailable and an
-omission rather than claiming complete evidence or zero charges. Discovery
-output is unchanged. Available usage records remain incomplete; a validated
-reporting call adds source `jev_handoff` when it fits, while failed or retried
-call usage stays unknown. The tool deliberately returns no Pi top-level `usage`,
-so Pi footer and session totals exclude all native calls.
+The complete interface, bounds, ownership, privacy, cleanup, and accounting
+rules are in the [current contract](docs/RLCD-BRWSR.md). The architecture choice
+is recorded in [ADR-0003](docs/adr/0003-python-owned-run.md). Historical and
+retained-checkout locations are owned by the [archive index](docs/archive.md).
 
 ## Local checks
 
 ```bash
-pnpm fixture # loopback fixture: http://127.0.0.1:43113
+pnpm fixture # optional loopback fixture on http://127.0.0.1:43113
 pnpm check
 uv lock --check
 git diff --check
 ```
 
-The deterministic suite includes registered-tool cases that cross the real
-Python runner and pinned `Agent.run()`/native helper while substituting external
-Browser Harness CDP and provider responses. It now checks context-assisted short
-span selection without context leakage, individual fragmented lines, complete
-coverage under candidate coalescing, honest request-pressure omissions, the
-512-byte token rule, explicit candidate paths and span scope, strict semicolon and
-action-step identities, distant qualifications, scroll-action evidence, report
-failure/interruption, privacy and all existing machine-fact bounds. Separate
-process/outcome and direct projection checks retain the earlier lifecycle
-guarantees.
-
-An isolated Pi 0.87.1 TUI slash command invoked the production registered run
-definition with synthetic browser and provider boundaries. All 24 assertions
-passed: a broader five-span context made the requested short amount and distant
-exclusion selectable, while the compact 820-byte result returned exactly 56
-source bytes and none of the unrelated context; details were 1,822 bytes. The
-saved seven-case structural replay used no model or browser. The three pilot
-requests had 84/116/114 questions and 50,049/70,046/68,705 serialized bytes,
-with complete meaningful source coverage and page spans no larger than 127
-bytes. Those requests are larger than the prior grouped requests, so no request
-reduction is claimed. Explicitly labelled synthetic oracle scores produced useful
-compact outputs of 1,390/751/832 bytes on the historical pilot states, totaling
-2,973 versus the exactly reproduced historical 3,533 bytes. Protected facts were
-held constant. This 15.9% potential reduction proves only that the structure can
-represent a smaller useful handoff. A later seven-case live check did not match
-that oracle: four configured checks passed, three expected excerpt checks failed,
-and counterfactual pilot content totalled 3,255 bytes. All evidence remained exact
-source copies, but the smaller output does not establish sufficient relevance.
-That allowance is consumed; further live trials need new authorization.
+The deterministic suite substitutes external browser/provider boundaries while
+crossing the registered tools, real Python runner, and pinned upstream
+Agent/native helper. Live inference or browser acceptance requires separate,
+explicit authorization.

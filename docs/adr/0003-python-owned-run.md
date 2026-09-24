@@ -1,256 +1,131 @@
 # Let upstream Python own the run
 
-Status: accepted and implemented; the tab-targeting amendment is locally
-verified at corrected candidate `ff49875`. The compact-handoff amendment
-separates goal-aware model-facing content from bounded diagnostic `details`; its
-latest span-judge amendment also separates the full bounded context used for
-judgment from shorter exact evidence spans. All 70 deterministic tests and 24
-isolated command-driven Pi-TUI assertions pass with synthetic external
-boundaries. A saved-input replay retained complete meaningful source coverage,
-and explicitly synthetic oracle judgments represented useful pilot handoffs in
-2,973 bytes versus the exactly reproduced historical 3,533 bytes. This is not
-live Jev evidence. A subsequent authorized seven-case span replay passed only
-three positive excerpt checks and the negative control. The date/estimate cases
-worked, but navigation excerpts stayed weak and the Korean case was missed.
-Counterfactual replies were smaller while missing expected evidence; reporting
-tokens returned near the original level. This is not general relevance/minimality
-acceptance. Earlier grouped results remain historical. Existing tabs/services
-were left alone; the native loader supplied credentials for authorized
-model-only requests without copying or editing the credential store. The
-helper remains direct DeepSeek `deepseek-flash` with native thinking disabled;
-Jev and Pi's outer model are unchanged. See the
-[current verification record](../thin-python-evidence.md#compact-handoff), which
-preserves older browser, selector, rewrite and live Ling evidence at their
-recorded heads. Publication, general semantic acceptance and general-web
-reliability remain unestablished. Supersedes ADR-0002's command-level orchestration,
-Pi-native helper relay and parent shadow-state design, not its dependency pins or
-native Browser Harness ownership.
+Status: accepted and implemented locally; unpublished.
 
-Use the pinned `Agent.run()` generator and native API-key text helper behind a
-small Pi process launcher. Python owns the `Agent`, upstream state, result
-projection, known-target retention, and handled-run cleanup. Pi validates the
-public input, then one spawn-first supervisor sends one JSON request over stdin,
-bounds both child pipes, owns the first stop reason and original absolute
-deadline, escalates `SIGTERM` to `SIGKILL` only while exit remains unobserved,
-waits for the child to be reaped, and presents one terminal result. There is no
-asynchronous file-access precheck or separate pre-spawn stop owner.
+## Context
 
-The run interface requires `goal`, accepts optional `maxSeconds`, and requires
-at least one of `url` or `targetId`. A URL alone creates a tab and preserves the
-existing optional `retainTab` policy. A target ID alone continues the exact
-borrowed tab without startup navigation; supplying both explicitly navigates
-that borrowed tab before the goal. `retainTab` is invalid whenever `targetId`
-is supplied, including when its value is false. A separate read-only
-`rlcd_brwsr_list_tabs` tool discovers bounded eligible page targets without
-navigation, foreground selection, Agent construction or model calls. Discovery
-is technical eligibility, not authorization. `maxActions` remains removed
-without an alias or replacement setting. Upstream retains its 60-history-entry
-and 120-decision limits. The parent wall deadline is coarse and is not a
-no-dispatch guarantee.
+The earlier wrapper split one browser run across a command-level Python bridge
+and a TypeScript protocol engine. Pi relayed text-helper completions, kept shadow
+browser state, reconciled progress, and attempted parent-side cleanup. That
+created two owners for run history, lifecycle, helper state, and cleanup while
+still depending on revision-pinned Jev and Browser Harness behavior.
 
-`config/runtime.json` is the single owner for the 32 KiB serialized-request cap,
-16 KiB terminal/full-details JSON cap, Jev model, and selected native helper.
-Compact model-facing content is structurally fitted within the same hard cap:
-direct DeepSeek `deepseek-flash` at `https://api.deepseek.com/v1`, with
-`TEXT_MODEL_REASONING=disabled`. The `/v1` path preserves the pinned helper's
-slash-sensitive direct-DeepSeek branch, and the non-`none` reasoning value keeps
-its native `thinking: {"type":"disabled"}` request instead of the OpenRouter
-`reasoning` shape. The model name is DeepSeek's current V4.1 Flash alias, not an
-immutable version pin.
+The pinned Jev `Agent.run()` already owns observation, decisions, native field
+text, freshness checks, actions, and run state. It exposes a synchronous
+generator and fixed native limits, but no cancellation token, strict action
+deadline, stable target-ownership API, or complete usage accounting. A smaller
+wrapper is possible only by accepting conservative results after interruption.
 
-One shared runtime owner first loads Browser Harness's native workspace
-environment, then supplies the selected `TEXT_MODEL_BASE_URL`, `TEXT_MODEL`, and
-`TEXT_MODEL_REASONING` values in its process when absent and rejects conflicts
-before daemon checks or browser startup. `TEXT_MODEL_API_KEY` is a DeepSeek-issued
-key and remains optional until upstream selects a fill. Run results retain the
-selected helper tuple but omit guessed helper availability; preflight separately
-reports nonblank resolved key presence without claiming provider or credential
-validity. There is no Pi OAuth/Luna completion, backend selector, or replacement
-helper orchestration.
+The browser result also needs a bounded handoff to Pi's outer model. Full page
+and history state is useful for diagnosis but too broad for routine model-facing
+content. Earlier candidate-grouping refinements mixed interpretation context
+with selectable output and accumulated amendment chronology in this ADR.
 
-The implementation retains three revision-pinned integrations:
+## Decision
 
-1. Rebind upstream's imported `ensure_daemon` symbol to Browser Harness's
-   `require_existing_daemon` after rejecting currently resolved remote/cloud
-   configuration and unsupported reported modes.
-2. For a created tab, use the known target after `Agent` construction for normal
-   requested retention or one direct `Target.closeTarget` call, reporting
-   `closed` only for `success: true`.
-3. For a borrowed tab, acquire one exact flattened session and temporarily bind
-   the pinned `jev_ultrafast.agent.Browser` factory to a Browser object that
-   retains native observation, freshness and input behavior. Its lifetime owner
-   performs optional exact-session navigation, background focus emulation,
-   explicit focus disable and `Target.detachFromTarget`; it never invokes the
-   normal Browser constructor or `Target.closeTarget`.
+Use the pinned upstream `Agent.run()` and native API-key field-text helper behind
+a small Pi process launcher:
 
-The existing-daemon check does not bind a same-named `cdp` daemon to the current
-endpoint, profile, or local-vs-remote settings; the reported mode is not endpoint
-attestation. Browser Harness consumes those settings at daemon startup. After a
-browser setting changes, the operator must stop the existing daemon, restart it,
-and reprovision before preflight or another run, or the stale daemon can still
-reach a remote or otherwise wrong browser. This accepted limitation avoids a
-second configuration-to-daemon binding owner.
+- Python exclusively owns the Agent, upstream state, target handle, normal
+  cleanup, bounded projection, redaction, and optional evidence reporting.
+- Pi validates public input, starts one fixed Python child, owns one absolute
+  deadline and first parent stop, bounds pipes, escalates and observes reap,
+  validates one terminal envelope, and builds compact model-facing content.
+- Browser Harness remains the sole browser-configuration and input owner.
+- The outer agent owns authorization, consequential-action judgment, recovery,
+  and independent verification of every completion claim.
 
-Python consumes `Agent.run()` rather than calling `predict` and `act`. Its full
-result contains only bounded existing page/history/model/usage state, target and
-cleanup outcomes, a sanitized primary diagnostic, and optional bounded reporting
-metadata. Complete native keys and nonempty bare/header Bearer values are
-redacted before reporting and clipping. Full snapshots and raw prompts/responses
-are not projected. Native usage remains source-labelled and incomplete; a
-present `usage: null` is retained as unavailable rather than discarding trusted
-run facts. Pi receives no top-level `usage`, so footer/session totals are
-knowingly incomplete.
+There is no TypeScript port, command-level `predict`/`act` loop, Pi-native helper
+relay, shadow browser state, phase protocol, parent fallback cleanup, alternate
+helper backend, or automatic retry.
 
-After handled cleanup, one Python reporting module can issue one batched Noul
-request through the pinned `jev_ultrafast.model.post_json` transport for normal
-completion or native `BLOCKED` with available observations. It builds generic
-bounded candidates from sanitized final visible text and the last six recorded
-actions. Page candidates prefer short generic paragraphs and label/value lines
-before bounded fallback windows while preserving exact source text and token
-boundaries. Action candidates expose only step, operation, action label and
-page-change. Rejected in-window actions and bounded page/input/candidate
-truncation all mark source coverage partial. The model
-judges relevance, including units, periods, estimates, exclusions, caveats and
-ambiguity. Code validates every answer/model/usage field, resolves substantial
-overlap, applies the evaluation-only 0.5 threshold, and copies at most three
-source records. The request has a 98,304-byte bound and at most 128 candidates;
-the pinned observer supplies at most 6,000 characters of visible text.
+The implementation retains only three private, revision-pinned integrations:
+existing-daemon rebinding, exact created-target close/retention, and an
+exact-session borrowed-tab Browser adapter. The
+[current contract](../RLCD-BRWSR.md) owns their precise interface, lifecycle,
+configuration, privacy, output, and verification requirements.
 
-The reporter receives no browser-location URL or target-ID metadata, diagnostic,
-configuration, usage history or raw native request/reply data. Visible page text
-may itself contain addresses; those remain source text rather than injected
-location metadata. Missing source/key, provider or
-validation failure, and cooperative interruption return explicit reporting
-states with no raw-text fallback and never replace the browser outcome or
-primary diagnostic. A validated response adds one `jev_handoff` usage record;
-failed/retried usage remains unknown. Reporting shares the original parent wall
-deadline and adds no cleanup grace or second stop owner.
+## Current handoff decision
 
-### Selector-refinement amendment
+After handled browser cleanup, Python may make one batched Jev reporting request
+for a normal completion claim or native `BLOCKED` outcome with an observation.
+It sends two deliberately separate source views:
 
-The reporting description immediately above remains decision history; this
-amendment supersedes its candidate grouping, policy placement and identity
-details. The same reporting module remains the sole owner of candidate
-construction, request policy and deterministic selection. Ordinary short
-blank-delimited paragraphs remain independent. In a long single-newline paragraph, forward
-coalescing targets about 128 UTF-8 bytes. At each coalesced-line boundary the
-next record may also include up to two immediately preceding complete short
-lines, bounded to 64 UTF-8 bytes of backward context and the unchanged 512-byte
-whole-record cap. It does not cross a blank-paragraph boundary or split lines or
-tokens to manufacture context. Forward progress and normal source coverage are
-unchanged; coverage is the union of ordered exact slices, and bounded fallback
-windows remain non-overlapping. This overlap improves local boundary context but
-does not guarantee that every arbitrarily long field fits one record.
+1. `judgmentContext` - the bounded, sanitized final visible page text in source
+   order, used only to interpret labels, neighbors, and qualifications.
+2. candidates - exact selectable page spans plus allowlisted recent action
+   fields. Only these records can become evidence.
 
-The request carries one named trusted selection policy shared by concise
-candidate-specific Nouls. Conservative identity compares whole records: page
-location and cut flags are ignored, and only a leading semicolon followed by
-whitespace is normalized. Bare and no-space semicolons, qualifiers, punctuation,
-values, units and versions remain exact. Action identity includes its step, so
-otherwise identical different-step actions remain separate while an exact
-repeated same-step action can deduplicate. Source overlap can legitimately remain
-when records contain different information. This is not substring, word-set or
-semantic deduplication, and it adds no architectural owner or lifecycle promise.
+Useful short paragraphs remain independent. Long fragmented text offers
+individual nonempty lines; long prose uses token-aligned spans near 128 UTF-8
+bytes. Candidate pressure may coalesce adjacent spans within the unchanged
+512-byte record bound to preserve source coverage. The request retains one
+shared usefulness policy, independent candidate-path Nouls, the 0.5 evaluation
+threshold, and a three-record output cap.
 
-### Span-judge separation amendment
+Context is untrusted data, never an instruction source or automatic output.
+Evidence is copied only from offered records. Source/request omissions are
+reported even when omitted selectable text remains in context. This separation
+keeps qualifications available to the judge without requiring surrounding page
+text in the compact handoff.
 
-The selector-refinement grouping above remains decision history. This amendment
-supersedes its grouping and boundary-context behavior while retaining the same
-reporting owner, `select_handoff` interface, transport, model, one batched request,
-independent Nouls, 0.5 threshold, three-record cap, strict response schema and all
-lifecycle/error safeguards.
+This section consolidates and supersedes this ADR's prior reporting,
+selector-refinement, and span-judge amendments. It does not reverse their final
+decisions; it replaces their chronology with the current architecture. The full
+pre-consolidation text remains available with:
 
-Request state now has one named `judgmentContext` string containing the sanitized,
-bounded final visible page text in original order. It preserves labels, neighboring
-lines and qualifications for interpretation but is untrusted data, never an
-instruction source, returned evidence or automatic compact content. The only
-other source content is the offered candidates: page records expose exact spans;
-action records retain the existing step, operation, label and page-change
-allowlist. Browser location, target, diagnostics, configuration and usage remain
-excluded.
+```bash
+git show c9a655a:docs/adr/0003-python-owned-run.md
+```
 
-Selectable page spans are intentionally shorter. Useful short blank-delimited
-paragraphs remain independent; long fragmented paragraphs offer individual
-nonempty lines. Long lines and prose use token-aligned spans near 128 UTF-8 bytes,
-with the unchanged 512-byte hard cap. One larger unsplittable token remains whole
-when it fits that cap; a larger token is omitted and disclosed rather than cut.
-Under candidate pressure only, adjacent source spans may coalesce up to the hard
-cap to preserve coverage without lexical shortlisting or late-source loss. Any
-source, span, candidate or request-fit omission marks coverage partial even if
-that text is still visible in `judgmentContext`.
+## Rationale
 
-The shared policy and every candidate-path Noul explicitly limit judgment to the
-offered page `exact` field or allowlisted action record, using context only for
-interpretation. Useful evidence means requested answer facts, visible goal-result
-evidence, blockers, necessary actions and qualifications. Topic-related
-biography/background, incidental compliance such as staying on a page, and
-generic site furniture are not answers unless themselves requested or result
-evidence. Questions remain independent and cannot assume another answer. The
-existing semicolon-followed-whitespace identity now collapses the two short
-birth-date variants; signs, currencies, units, versions, caveats, no-space
-semicolons and different action steps remain distinct.
+One run-state owner removes cross-language phase reconciliation and lets the
+pinned upstream implementation own the behavior it already couples. The native
+field-text path avoids a bidirectional helper protocol. One terminal result
+makes lifecycle trust depend on a clean observed exit rather than on progress
+messages that can disagree with process state.
 
-Tests no longer require a reduced grouping count or a label and value in one
-returned record. Those assertions belonged to the superseded representation:
-`judgmentContext` now retains the relationship while fine exact spans alone are
-eligible for output. Replacement guards require full meaningful source coverage,
-explicit span scope, no context leakage and exact offered evidence. This changes
-no browser, supervisor, presenter or machine-fact owner.
+Separate diagnostic and model-facing surfaces preserve bounded machine facts for
+inspection while reducing routine context. Separating judgment context from
+selectable evidence allows fine exact copies without discarding distant labels
+or qualifications. The reporting module remains one owner rather than a generic
+schema, ranking, or browser framework.
 
-Python first bounds the pre-report browser projection, then fits optional
-reporting evidence, metadata and `jev_handoff` usage in the remaining space.
-Reporting cannot evict page text, history or native usage that already fit. If no
-report block fits, details may omit it. Pi then explicitly presents reporting as
-unavailable with omission state; it does not imply complete evidence or zero
-reporting charges. Run `content` is separately built from exactly `outcome`,
-`lastObservedLocation`, `evidence`, `cleanup`, `diagnostic`, `reporting`, and
-`output`. It excludes full page text, history, model configuration, per-call
-usage and relevance scores. Structural fitting drops whole evidence records,
-then optional location/report fields, while preserving outcome, cleanup, opaque
-IDs and primary-error identity. Both surfaces retain the existing 16 KiB hard
-cap. Discovery stays unchanged.
+The tradeoffs are accepted:
 
-Only one structurally valid terminal envelope followed by an observed zero exit
-without a signal can carry child execution and cleanup claims. A valid normal
-completion claim may win a late parent stop race when the child did not report a
-stopped run; retention requires that completion claim, which still needs
-independent outer verification. Interrupted or untrusted outcomes preserve the
-parent's first stop. Agent-construction interruption, nonzero or forced exit,
-or missing/invalid terminal output from a started child leaves execution and
-task-tab cleanup unknown. Synchronous or asynchronous no-PID launch failures
-remain `not_started`/`not_created`. If Python starts but its script is absent,
-the observed non-clean exit instead leaves execution and task-tab cleanup
-unknown. An exception escaping projection after request acceptance also falls
-back to unknown rather than `invalid_input`. A fitting
-fallback preserves a parent's first cancellation/deadline and observed process
-reap if adding that evidence
-would exceed the terminal cap. The borrowed owner validates exact target type and current URL before attach,
-then repeats current eligibility through a session-bound page/frame observation
-before navigation or Agent construction. HTTP(S) pages can continue in place;
-`about:blank` requires an explicit HTTP(S) URL. Missing, closed or unsuitable
-targets do not fall back by URL, title or target difference. Borrowed cleanup
-reports focus-disable and detach acknowledgements independently. An acknowledged
-focus disable does not prove restoration of document or OS focus, and a forced
-child exit can strand both emulation and attachment in the persistent daemon.
-There is no startup target interception for created tabs, parent fallback
-cleanup, tab-difference inference, automatic retry, progress journal, generic
-protocol framework, or strict action-at-deadline guarantee.
+- The host must supply a TypeSafe key and, for text entry, a separate
+  DeepSeek-issued key through Browser Harness's native environment.
+- A hard stop can lose state and strand created/borrowed cleanup; the result is
+  `unknown`, not reconstructed certainty.
+- The parent deadline is coarse and cannot promise no boundary action.
+- Existing-daemon health does not attest endpoint/profile identity.
+- Optional reporting adds model work and can miss useful evidence.
+- Native usage and Pi totals remain incomplete.
+- Private pinned seams must be retested on dependency updates.
 
-Ordinary registered-tool tests cross the real runner and actual pinned
-Agent/native helper while substituting external Browser/CDP and provider
-interactions. They also exercise discovery, exact borrowed continuation and
-navigation, ownership-aware cleanup and forced-exit uncertainty through those
-public tool interfaces. One labelled lifecycle case wraps the real Agent for
-known-target recovery. Internal process/outcome tests and a direct Python
-projection contract cover supervision and synthetic oversized state without
-global event/timer patches, whole-extension copies or Agent-history mutation.
-Historical TUI command checks exercise real Chrome with synthetic provider
-replies at their recorded heads. The later live Ling follow-up covers one helper
-payload and a local fixture through Pi's normal agent turn on that historical
-production code; it is not provider evidence for the current direct DeepSeek
-selection. Tab-targeting acceptance, when recorded in the owning plan and local
-handoff, is command-invoked registered-tool evidence with synthetic providers,
-not live-provider or outer-model evidence. These checks do not establish general
-model quality, complete billing, public-site reliability or delivery. The
-[owning plan](../RLCD-BRWSR.md) records the evidence and remaining limits; the
-[feasibility record](../thin-python-feasibility.md) remains historical evidence.
+These are narrower, inspectable guarantees rather than reasons to recreate the
+larger protocol.
+
+## Consequences
+
+- Extension loading stays inert; setup and provisioning remain explicit.
+- Runs require the configured local daemon to be already running and preserve
+  the shared daemon and unrelated targets.
+- Created tabs can be retained only after a normal completion claim; borrowed
+  tabs are never wrapper-owned.
+- Interrupted or untrusted exits preserve parent-observed stop/reap facts and
+  report browser effects and cleanup conservatively.
+- Full snapshots, prompts, replies, raw stderr, and credential values do not
+  enter results.
+- Compact content and bounded diagnostic details are distinct surfaces under one
+  configured hard cap.
+
+ADR-0003 supersedes ADR-0002's command-level orchestration, Pi-native helper
+relay, parent shadow-state, and fallback-cleanup direction. It retains the
+upstream dependency pins, native Browser Harness ownership, explicit setup, and
+inert registration decisions. ADR-0002 remains decision history, not the current
+implementation contract.
+
+Verification status, known limits, commit references, and raw receipts are owned
+by [thin-python-evidence.md](../thin-python-evidence.md#compact-handoff).

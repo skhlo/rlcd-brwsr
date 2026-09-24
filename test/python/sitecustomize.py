@@ -293,6 +293,19 @@ class _ProjectionInterruptPage(dict):
         return super().get(key, default)
 
 
+def _static_report_page(title: str, text: str, marker: str) -> dict[str, object]:
+    return {
+        "url": _STATE["url"],
+        "title": title,
+        "text": text,
+        "scroll": {"y": 0},
+        "actions": [{"id": "wait", "kind": "wait", "label": "Wait"}],
+        "marker": marker,
+        "page_key": marker,
+        "guards": {},
+    }
+
+
 def _page():
     if _SCENARIO in {
         "report_goal_document",
@@ -301,61 +314,45 @@ def _page():
         "report_cancelled",
         "report_missing_key",
     }:
-        return {
-            "url": _STATE["url"],
-            "title": "Generic plan comparison",
-            "text": (
+        return _static_report_page(
+            "Generic plan comparison",
+            (
                 "Requested identifier: ITEM-482.\n\n"
                 + "Background notes that do not answer the requested fact. " * 18
                 + "\n\nEstimated total: 120 credits per month.\n\n"
                 + "Additional generic notes. " * 18
                 + "\n\nEstimate excludes service charges."
             ),
-            "scroll": {"y": 0},
-            "actions": [{"id": "wait", "kind": "wait", "label": "Wait"}],
-            "marker": "report-goal-document",
-            "page_key": "report-goal-document",
-            "guards": {},
-        }
+            "report-goal-document",
+        )
     if _SCENARIO == "report_span_context":
-        return {
-            "url": _STATE["url"],
-            "title": "Generic account summary",
-            "text": (
+        return _static_report_page(
+            "Generic account summary",
+            (
                 "Account summary "
                 + "x" * 110
                 + "\nRequested monthly total:\n120 credits per month.\n"
                 + "Unrequested biographical background.\n\n"
                 + "Estimate excludes service charges."
             ),
-            "scroll": {"y": 0},
-            "actions": [{"id": "wait", "kind": "wait", "label": "Wait"}],
-            "marker": "report-span-context",
-            "page_key": "report-span-context",
-            "guards": {},
-        }
+            "report-span-context",
+        )
     if _SCENARIO == "report_fragmented":
-        return {
-            "url": _STATE["url"],
-            "title": "Generic fragmented record",
-            "text": "\n".join(
+        return _static_report_page(
+            "Generic fragmented record",
+            "\n".join(
                 ["Context " + "x" * 110, "Total:", "$12"]
                 + [
                     f"Field {index:03d}: synthetic value {index:03d}."
                     for index in range(48)
                 ]
             ),
-            "scroll": {"y": 0},
-            "actions": [{"id": "wait", "kind": "wait", "label": "Wait"}],
-            "marker": "report-fragmented",
-            "page_key": "report-fragmented",
-            "guards": {},
-        }
+            "report-fragmented",
+        )
     if _SCENARIO == "report_duplicates":
-        return {
-            "url": _STATE["url"],
-            "title": "Generic duplicate records",
-            "text": "\n\n".join(
+        return _static_report_page(
+            "Generic duplicate records",
+            "\n\n".join(
                 [
                     "November 9, 1914",
                     ";  November 9, 1914",
@@ -374,44 +371,30 @@ def _page():
                     "excluded",
                 ]
             ),
-            "scroll": {"y": 0},
-            "actions": [{"id": "wait", "kind": "wait", "label": "Wait"}],
-            "marker": "report-duplicates",
-            "page_key": "report-duplicates",
-            "guards": {},
-        }
+            "report-duplicates",
+        )
     if _SCENARIO == "report_qualification":
-        return {
-            "url": _STATE["url"],
-            "title": "Generic estimate",
-            "text": (
+        return _static_report_page(
+            "Generic estimate",
+            (
                 "Estimated total: 120 credits.\n\n"
                 + "General explanatory material. " * 24
                 + "\n\nEstimate excludes service charges."
             ),
-            "scroll": {"y": 0},
-            "actions": [{"id": "wait", "kind": "wait", "label": "Wait"}],
-            "marker": "report-qualification",
-            "page_key": "report-qualification",
-            "guards": {},
-        }
+            "report-qualification",
+        )
     if _SCENARIO == "report_redaction":
-        return {
-            "url": _STATE["url"],
-            "title": "Generic redaction",
-            "text": (
+        return _static_report_page(
+            "Generic redaction",
+            (
                 f"Provider key {os.environ.get('TYPESAFE_API_KEY', '')}. "
                 f"Authorization: Bearer {os.environ.get('TEXT_MODEL_API_KEY', '')}. "
                 "Bare synthetic value Bearer abc. "
                 "Synthetic header Authorization: Bearer xyz. "
                 "Approved marker CLEAR-19."
             ),
-            "scroll": {"y": 0},
-            "actions": [{"id": "wait", "kind": "wait", "label": "Wait"}],
-            "marker": "report-redaction",
-            "page_key": "report-redaction",
-            "guards": {},
-        }
+            "report-redaction",
+        )
     if _SCENARIO == "report_scroll":
         if _STATE["destination"]:
             return {
