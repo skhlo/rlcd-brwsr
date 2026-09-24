@@ -12,8 +12,15 @@ Harness input. Pi validates the request, supervises one Python process, and
 presents a compact handoff while retaining bounded diagnostics in tool details.
 A completion claim always requires independent verification by the outer agent.
 
-The [current verification and limits](docs/thin-python-evidence.md#compact-handoff)
-own baseline acceptance and its exact evidentiary scope.
+This is an experimental capability, not a general browser-reliability or speed
+claim. These docs describe the revision you are viewing. The Python-owned base
+was merged in [PR #16](https://github.com/skhlo/rlcd-brwsr/pull/16); later features
+may require a feature-branch checkout rather than `main`.
+
+The [verification record](docs/thin-python-evidence.md) distinguishes tested
+outcomes from known limits. Current work is tracked in
+[GitHub issues](https://github.com/skhlo/rlcd-brwsr/issues); the earlier #9–#13
+implementation plan is superseded by the [current contract](docs/RLCD-BRWSR.md).
 
 ## Setup and preflight
 
@@ -111,6 +118,34 @@ rlcd_brwsr_run({
 A borrowed tab is never closed by RLCD-brwsr, and any supplied `retainTab`
 value is invalid with `targetId`.
 
+## Co-browse in a visible tab
+
+The repo includes an explicitly invoked
+[`co-browse` skill](.pi/skills/co-browse/SKILL.md). Start Pi from this checkout
+with the tools loaded as above, then invoke it with a task:
+
+```text
+/skill:co-browse Search Wikipedia for Blancpain and its watchmaking history.
+```
+
+Use `/reload` if the skill was added or edited during the current Pi session.
+The outer agent establishes the authorized Chrome session, exact tab and
+foreground visibility; Jev chooses the in-tab actions and targets from an
+outcome goal. RLCD does not foreground a tab itself. Available window controls
+or the user's help are required, and setup must pause if visibility cannot be
+established.
+
+Related steps stay in one bounded call. Routine use requires one independent
+result read or explicit user confirmation, not a test suite or per-action audit.
+The working tab stays open and visible unless the user requests otherwise.
+
+**Known failure:** Jev can repeatedly scroll/revisit a section until its native
+action cap even when the final page satisfies the requested position. See
+[#17](https://github.com/skhlo/rlcd-brwsr/issues/17) and the
+[co-browse observations](docs/thin-python-evidence.md#visible-co-browse-observations).
+Inspect the exact tab before deciding whether to retry; do not treat the cap as
+proof that no useful work occurred.
+
 ## Operating restrictions
 
 - Use the run tool only for an already-authorized benign, unauthenticated,
@@ -131,8 +166,9 @@ value is invalid with `targetId`.
 
 The complete interface, bounds, ownership, privacy, cleanup, and accounting
 rules are in the [current contract](docs/RLCD-BRWSR.md). The architecture choice
-is recorded in [ADR-0003](docs/adr/0003-python-owned-run.md). Historical and
-retained-checkout locations are owned by the [archive index](docs/archive.md).
+is recorded in [ADR-0003](docs/adr/0003-python-owned-run.md). The
+[archive index](docs/archive.md) describes historical work and which evidence is
+public versus operator-local.
 
 ## Local checks
 

@@ -1,9 +1,11 @@
 # Direct DeepSeek Flash provider evidence
 
-Status: **selected and implemented locally**. Verified **2026-09-23 UTC** from
-unauthenticated first-party DeepSeek documentation, the installed native helper,
-and deterministic offline request checks. No credential was read, no DeepSeek
-API request or inference was made, and no speed was measured.
+Status: **selected in this repository revision**. The original compatibility
+scout used unauthenticated first-party DeepSeek documentation, the installed
+native helper, and deterministic offline request checks on **2026-09-23 UTC**.
+That scout read no credential, made no DeepSeek API request or inference, and
+measured no speed. Later live observations are recorded separately in the
+[current verification evidence](thin-python-evidence.md#actual-outer-turn-public-page-pilot).
 
 ## Selected tuple
 
@@ -19,9 +21,22 @@ non-thinking mode - not evidence that requests will be faster.
 
 ## Compatibility result
 
-DeepSeek currently documents **`deepseek-flash`** as the model name and identifies its current model version as **DeepSeek-V4.1-Flash** ([first call](https://api-docs.deepseek.com/), [models and pricing](https://api-docs.deepseek.com/quick_start/pricing), [retained extracts](../artifacts/deepseek-direct/sources/first-api-call.md)). The alias is not an immutable version pin: the same documentation says retired legacy aliases are now served by DeepSeek-V4.1-Flash. The current mapping is verified; a permanent mapping is not.
+DeepSeek currently documents **`deepseek-flash`** as the model name and
+identifies its current model version as **DeepSeek-V4.1-Flash** in the
+[first-call guide](https://api-docs.deepseek.com/) and
+[models and pricing](https://api-docs.deepseek.com/quick_start/pricing). The
+alias is not an immutable version pin: the same documentation says retired
+legacy aliases are now served by DeepSeek-V4.1-Flash. The current mapping is
+verified; a permanent mapping is not.
 
-The generic OpenAI-format base is `https://api.deepseek.com`. First-party integration guides also document `https://api.deepseek.com/v1` as a base and `https://api.deepseek.com/v1/chat/completions` as a full endpoint ([retained `/v1` extracts](../artifacts/deepseek-direct/sources/v1-compatibility.md)). Client-specific guidance varies because clients assemble paths differently. For this helper, the recommended `/v1` base constructs the documented full endpoint exactly.
+The generic OpenAI-format base is `https://api.deepseek.com`. First-party
+integration guides also document `https://api.deepseek.com/v1` as a base in the
+[nanobot example](https://api-docs.deepseek.com/quick_start/agent_integrations/nanobot/)
+and `https://api.deepseek.com/v1/chat/completions` as a full endpoint in the
+[WorkBuddy example](https://api-docs.deepseek.com/quick_start/agent_integrations/workbuddy/).
+Client-specific guidance varies because clients assemble paths differently. For
+this helper, the recommended `/v1` base constructs the documented full endpoint
+exactly.
 
 DeepSeek's OpenAI-format thinking control is:
 
@@ -29,7 +44,16 @@ DeepSeek's OpenAI-format thinking control is:
 { "thinking": { "type": "disabled" } }
 ```
 
-The API reference says `disabled` selects non-thinking mode; thinking otherwise defaults to enabled at high effort ([thinking-mode extract](../artifacts/deepseek-direct/sources/thinking-mode.md)). DeepSeek also documents `response_format: {"type":"json_object"}` for JSON Output. It requires a prompt that says JSON and describes the desired shape, both of which the native `TEXT_VALUE` prompt does. DeepSeek warns that JSON Output can occasionally return empty content ([JSON extract](../artifacts/deepseek-direct/sources/json-output.md)); the helper's existing parser rejects empty or malformed output rather than typing it.
+The [thinking-mode guide](https://api-docs.deepseek.com/guides/thinking_mode/)
+and [Chat Completions API reference](https://api-docs.deepseek.com/api/create-chat-completion)
+say `disabled` selects non-thinking mode; thinking otherwise defaults to
+enabled at high effort. DeepSeek also documents
+`response_format: {"type":"json_object"}` in its
+[JSON Output guide](https://api-docs.deepseek.com/guides/json_mode/). It requires
+a prompt that says JSON and describes the desired shape, both of which the
+native `TEXT_VALUE` prompt does. DeepSeek warns that JSON Output can
+occasionally return empty content; the helper's existing parser rejects empty
+or malformed output rather than typing it.
 
 The API-key dashboard linked by DeepSeek's first-call page is **https://platform.deepseek.com/api_keys**. Its unauthenticated page returned CloudFront 403 during this check, so the verified fact is the official documentation's link target, not dashboard contents.
 
@@ -53,10 +77,10 @@ base-specific branch.
 The maintained registered-tool fake-HTTP seam and deterministic text-entry
 fixture assert the exact endpoint, model, native `thinking` disablement, absence
 of the OpenRouter `reasoning` field, JSON-object format, and 1,024-token cap. The
-retained red/control/green logs under
-`artifacts/deepseek-direct/verification/` show that the former OpenRouter tuple
-and direct DeepSeek with the wrong `none` value fail this assertion, while the
-selected tuple passes.
+ignored operator-local receipts at `artifacts/deepseek-direct/verification/`
+(not distributed with the public repository) show that the former OpenRouter
+tuple and direct DeepSeek with the wrong `none` value fail this assertion, while
+the selected tuple passes.
 
 There are two configuration incompatibilities to avoid:
 
@@ -65,19 +89,14 @@ There are two configuration incompatibilities to avoid:
 
 ## Native credential handoff
 
-`TYPESAFE_API_KEY` is the TypeSafe-issued key for Jev decisions.
-`TEXT_MODEL_API_KEY` is the DeepSeek-issued key for optional field text. The
-parent-owned, human-run four-stage wizard will supply these variable names, the
-selected tuple, and credential values in Browser Harness's native workspace
-`.env`; this implementation does not author or run that wizard and did not read
-or write the host `.env`.
+Follow the [README setup](../README.md#setup-and-preflight) for Browser Harness's
+native workspace environment. `TYPESAFE_API_KEY` must be TypeSafe-issued for Jev
+decisions. `TEXT_MODEL_API_KEY` must be DeepSeek-issued for optional field text;
+an OpenRouter key is the wrong provider credential for this route. The original
+offline scout did not read or write the host environment.
 
-Do not use the retained old `pi-rlcd` launcher with this direct route. It injects
-an OpenRouter key into `TEXT_MODEL_API_KEY`, creating a wrong-provider credential
-path. The parent task will make that launcher fail closed without deleting it;
-this repository change does not edit the launcher.
-
-This is offline request-construction evidence only. It does not establish
-credential validity, live provider acceptance, latency, throughput, model
-quality, JSON adherence in a live response, reliability, billing, or
-browser-task success.
+The 2026-09-23 offline scout alone does not establish credential validity, live
+provider acceptance, latency, throughput, model quality, live JSON adherence,
+reliability, billing, or browser-task success. The later recorded live pilots
+establish only their observed outcomes; they do not guarantee future acceptance,
+performance, cost, or general browser reliability.

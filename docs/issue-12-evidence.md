@@ -1,5 +1,13 @@
 # Issue #12 evidence
 
+> **Historical and superseded.** The command-level progress protocol and parent
+> fallback cleanup recorded here are no longer the implementation. See the
+> [current contract](RLCD-BRWSR.md) and
+> [current verification evidence](thin-python-evidence.md#compact-handoff).
+> Pending statements below are historical, not current work assignments.
+> `artifacts/` paths identify ignored operator-local receipts that are not
+> distributed as public links.
+
 Base: `123313f8fb3c2647d553a34e1450248559e090db`.
 
 The interrupted-run slice stays behind the registered `rlcd_brwsr_run` tool and

@@ -1,6 +1,9 @@
 # Let upstream Python own the run
 
-Status: accepted and implemented locally; unpublished.
+Status: accepted. The initial Python-owned implementation was merged in
+[PR #16](https://github.com/skhlo/rlcd-brwsr/pull/16). Later tab-targeting and
+handoff amendments below describe this revision, not a claim that every feature
+is already on the default branch.
 
 ## Context
 

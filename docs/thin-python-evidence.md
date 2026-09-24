@@ -8,15 +8,16 @@ still available without restoring it to the working tree:
 git show c9a655a:docs/thin-python-evidence.md
 ```
 
-Historical artifacts that live only in the locked sibling checkout are mapped
-by [docs/archive.md](archive.md). Current-checkout raw receipts remain under
-`artifacts/`; they are evidence, not setup instructions or authorization to
-repeat live work.
+The [archive index](archive.md) separates public history from operator-local
+resources. This document publishes evidence summaries, not the raw receipts:
+`artifacts/` is ignored and does not ship with a clone. Paths below are local
+receipt locators, not public download links. No receipt or historical trial is
+setup guidance or authorization to repeat live work.
 
 ## Compact handoff
 
-At cleanup base `c9a655ad1a2c8ab8d7bd03ced772474167878e06`, the owner accepts
-the local, unpublished implementation as a good-enough operating baseline with
+At cleanup base `c9a655ad1a2c8ab8d7bd03ced772474167878e06`, the owner accepted
+the then-local implementation as a good-enough operating baseline with
 independent verification. This is a product decision. It does not add evidence
 of accuracy, relevance, reliability, speed, provider cost, or complete billing.
 Future optimization should answer observed lost information, avoidable follow-up,
@@ -41,9 +42,8 @@ connect to Chrome or call a live model. Its five-candidate request used broader
 context to interpret fine spans, returned exactly 56 bytes of requested
 amount/exclusion evidence in 820 bytes of compact content, retained 1,822 bytes
 of bounded details, and leaked none of the unrelated context into evidence.
-Raw receipts: [span-judge handoff](../artifacts/compact-output/span-judges/HANDOFF.md),
-[acceptance summary](../artifacts/compact-output/span-judges/pi-tui/acceptance-summary.json),
-and [parent checks](../artifacts/compact-output/span-judges/parent-checks.log).
+Local receipts under `artifacts/compact-output/span-judges/`: `HANDOFF.md`,
+`pi-tui/acceptance-summary.json`, and `parent-checks.log`.
 
 The subsequent behavior-preserving cleanup reran all 70 tests, types and
 formatting. Offline request/report/compact-output parity receipts were
@@ -91,7 +91,33 @@ The shared observer exposed the birth date before the third goal, so the final
 zero-action continuation demonstrates goal-conditioned retrieval from existing
 state rather than newly obtaining the fact. Compact content totaled 3,533 bytes;
 the reporter's model work remained substantial and complete billing remained
-unknown. Raw receipt: [real-use pilot report](../artifacts/compact-output/real-use-pilot/REPORT.md).
+unknown. Local receipt: `artifacts/compact-output/real-use-pilot/REPORT.md`.
+
+### Visible co-browse observations
+
+Two later normal-session tasks exercised the repo-scoped skill with a real,
+authorized Chrome tab visible to the user:
+
+- At `c0a8ae5`, a Wikipedia search reached the Blancpain article and returned a
+  completion claim. Independent exact-target inspection confirmed the article
+  and History content. The outer agent then performed one direct scroll for
+  reading position and checked visibility again. This was a successful shared
+  workflow, not proof that Jev alone handled final positioning.
+- At `1a4db4e`, the amended skill delegated navigation and final positioning to
+  Jev. One call requested the actual Fifty Fathoms heading near the top with its
+  opening paragraph visible. The loop repeatedly scrolled/revisited the section
+  and returned `ValueError: Stopped at the 60-action demo budget`, not a
+  completion claim. One read-only inspection afterward found the heading at
+  75–97 px and its paragraph at 110–240 px within a visible 987 px viewport.
+  There was no corrective action or retry. The final state satisfied the goal,
+  but the first step at which it did so is unknown.
+
+The second observation is tracked with the exact goal and retained action tail
+in [issue #17](https://github.com/skhlo/rlcd-brwsr/issues/17). Cause and
+repeatability remain open. The borrowed tab and shared browser services were
+left available to the user. These observations add neither a reliability rate
+nor a speed claim. Local first-task receipt:
+`artifacts/co-browse-blancpain/RESULT.md`.
 
 ### Offline representation and latest live model-only result
 
@@ -122,11 +148,9 @@ near the original pilot's 63,679/6,232 rather than the lower grouped replay. No
 paired latency, end-to-end speed, billing, or reliability benefit is established.
 
 All seven authorized calls are consumed. No prompt, threshold, corpus, or code
-was tuned after the results. Raw receipts:
-[live report](../artifacts/compact-output/span-judges/live-evaluation/REPORT.md),
-[attempts](../artifacts/compact-output/span-judges/live-evaluation/attempts.json),
-[results](../artifacts/compact-output/span-judges/live-evaluation/results.json),
-and [content comparison](../artifacts/compact-output/span-judges/live-evaluation/content-comparison.json).
+was tuned after the results. Local receipts under
+`artifacts/compact-output/span-judges/live-evaluation/`: `REPORT.md`,
+`attempts.json`, `results.json`, and `content-comparison.json`.
 A further live trial requires a new finite allowance.
 
 ## Bounded live follow-up
@@ -136,8 +160,9 @@ actual Pi-TUI/isolated-Chrome journeys with synthetic provider replies: created
 click/default close, created text/retention, wall deadline, and TUI cancellation.
 Independent observers checked exact targets, browser effects, child exits, and
 restored baselines. The invocation was command-driven rather than an
-outer-model-issued tool turn. Its detailed artifacts remain in the retained
-sibling checkout identified by [the archive index](archive.md).
+outer-model-issued tool turn. Its detailed artifacts remain in an
+operator-local retained checkout; [the archive index](archive.md) explains
+which evidence is distributed publicly.
 
 A later bounded follow-up at `4e243c24` used the then-selected OpenRouter Ling
 field helper and one local fixture through Pi's normal outer-model/tool path.
@@ -165,8 +190,8 @@ release/detach reporting, and unrelated-target preservation.
 
 This was command-driven fixture evidence, not an outer-model turn, live-provider
 check, or general-web test. Forced exits can still strand focus emulation or an
-attachment. Raw receipt:
-[tab-targeting correction handoff](../artifacts/tab-targeting/implementation/correction/HANDOFF.md).
+attachment. Local receipt:
+`artifacts/tab-targeting/implementation/correction/HANDOFF.md`.
 
 ## Known limits
 
@@ -175,8 +200,12 @@ The accepted baseline retains these limits:
 - Current context/span separation is structurally verified, but the latest live
   reporter missed three expected positive excerpts. A `no_match` is not proof
   that useful source text is absent.
-- A completion claim is not independent proof. Public-site evidence consists of
-  three recorded tasks, not a reliability sample or prompt-injection guarantee.
+- A completion claim is not independent proof. The public-page pilot and later
+  co-browse observations are small task samples, not a reliability rate or
+  prompt-injection guarantee.
+- Jev can continue acting until its native cap despite a satisfactory final
+  page position; [#17](https://github.com/skhlo/rlcd-brwsr/issues/17) remains
+  unresolved. The single observation does not establish its cause.
 - `maxSeconds` is a coarse parent stop deadline. Hard termination can leave
   execution, created-tab cleanup, borrowed focus emulation, and attachment
   unknown; no parent fallback repair exists.
@@ -187,8 +216,10 @@ The accepted baseline retains these limits:
   totals omit native calls.
 - Direct `deepseek-flash` is a mutable alias. Recorded successful calls do not
   guarantee future provider acceptance, latency, JSON adherence, or quality.
-- The current branch is local and unpublished. GitHub issues that describe the
-  superseded implementation are not represented as satisfied.
+- Branch publication is not a merge or release. The base Python-owned runner
+  merged in [PR #16](https://github.com/skhlo/rlcd-brwsr/pull/16); later feature
+  availability depends on the selected revision. The superseded #9–#13
+  checklists are not represented as satisfied by newer evidence.
 - Earlier cancelled-gate findings concern the removed larger protocol and remain
   historical; cancellation was never rewritten as a pass.
 
@@ -198,17 +229,22 @@ synthetic.
 
 ## Commit and receipt index
 
-| Reference             | What it establishes                                                                               | Raw record                                                                                               |
-| --------------------- | ------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| `b3b42036`            | Corrected Python-owned rewrite and actual Pi-TUI/Chrome fixture journeys with synthetic providers | Retained sibling checkout; see [archive.md](archive.md)                                                  |
-| `ff49875`             | Corrected exact existing-tab targeting                                                            | [correction handoff](../artifacts/tab-targeting/implementation/correction/HANDOFF.md)                    |
-| `0b3c5ab` / `f6a7c54` | Corrected compact details/content split and protected-fact pressure guards                        | [pressure follow-up](../artifacts/compact-output/implementation/correction/pressure-followup/HANDOFF.md) |
-| `6cf6a80`             | Three actual outer-turn public-page tasks and exact-target verification on the recorded runtime   | [pilot report](../artifacts/compact-output/real-use-pilot/REPORT.md)                                     |
-| `8233340`             | Corrected grouped selector and its synthetic/live-model evidence                                  | [correction handoff](../artifacts/compact-output/selector-refinement/correction/HANDOFF.md)              |
-| `3d9f0f6`             | Current context/span separation, 70 tests, offline replay, and 24-assertion synthetic TUI check   | [span handoff](../artifacts/compact-output/span-judges/HANDOFF.md)                                       |
-| `c9a655a`             | Latest model-only span result: four of seven configured excerpt/status checks                     | [live report](../artifacts/compact-output/span-judges/live-evaluation/REPORT.md)                         |
+Commit references identify source/documentation checkpoints, not public copies
+of the ignored raw receipts. Evidence classes and limits are stated above.
+
+| Reference             | What it records                                                                                          |
+| --------------------- | -------------------------------------------------------------------------------------------------------- |
+| `b3b42036`            | Python-owned rewrite and actual Pi-TUI/Chrome fixtures with synthetic providers; later merged via PR #16 |
+| `ff49875`             | Corrected exact existing-tab targeting                                                                   |
+| `0b3c5ab` / `f6a7c54` | Compact content/details split and protected-fact pressure guards                                         |
+| `6cf6a80`             | Three actual outer-turn public-page tasks on the recorded runtime                                        |
+| `8233340`             | Corrected grouped selector and its synthetic/live-model evidence                                         |
+| `3d9f0f6`             | Context/span separation, 70 tests, offline replay and synthetic TUI check                                |
+| `c9a655a`             | Live span result: four of seven configured excerpt/status checks                                         |
+| `a521ea9`             | Behavior-preserving cleanup with 70 tests and offline parity checks                                      |
+| `c0a8ae5` / `1a4db4e` | Repo-scoped co-browse skill and subsequent goal-based delegation; observations above                     |
 
 For the removed chronology and every older section, use
 `git show c9a655a:docs/thin-python-evidence.md`. Do not delete retained evidence
-because it is old; [archive.md](archive.md) owns sibling locations and resource
-retention constraints.
+because it is old; [archive.md](archive.md) distinguishes public history from
+operator-local resources whose retention is managed separately.

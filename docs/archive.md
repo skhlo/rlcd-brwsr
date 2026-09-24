@@ -1,63 +1,54 @@
-# Active checkout and research archive
+# Historical work and evidence archive
 
-Use **`~/Repositories/rlcd-brwsr/`** for development and running the current
-extension. Its branch is `feat/jev-ultrafast-pi`; Paseo labels the workspace
-**Active extension**. There is no active `experiments/` directory.
+This page is public wayfinding for earlier RLCD-brwsr work. Read each document
+as describing the repository revision in which it appears; its presence here
+does not mean that every later feature is on the default branch.
 
-## Old research - preserved, not maintained
+## Current entry points
 
-The earlier custom TypeScript/Chrome-CLI loop, research comparisons, Maps probes,
-fixtures, ledgers and reports remain in Git, outside the current working tree.
-The archive contains the entire historical repository layout, so references
-inside those old reports have not been rewritten.
+- [RLCD-brwsr contract](RLCD-BRWSR.md) - current interface, ownership, bounds,
+  and safety envelope.
+- [ADR-0003](adr/0003-python-owned-run.md) - current Python-owned architecture.
+- [Python-owned runner verification](thin-python-evidence.md#compact-handoff) -
+  current evidence classes, recorded revisions, and limits.
+- [Issue #17](https://github.com/skhlo/rlcd-brwsr/issues/17) - current known
+  action-cap cycling report. It is an open investigation, not a verified fix.
 
-| Historical work                              | Preserved branch                                             | Commit                                     |
-| -------------------------------------------- | ------------------------------------------------------------ | ------------------------------------------ |
-| Latest experimental checkout and Maps probes | `feat/bounded-observation-test`, `chore/maps-snapshot-probe` | `6df4b4b0f8b17420f9c9bc0a8176072312ec6de3` |
-| Research fast-loop comparison                | `feat/research-fast-loop`                                    | `5dafb11448e54d0a6fa23213dde550da367ee784` |
+## Published history
 
-For example, inspect a report without switching the active checkout:
+The initial Python-owned implementation merged through
+[PR #16](https://github.com/skhlo/rlcd-brwsr/pull/16) at
+[`4f4d42aa98c68aa10007ef831a163a7dd867990c`](https://github.com/skhlo/rlcd-brwsr/commit/4f4d42aa98c68aa10007ef831a163a7dd867990c).
+Later tracked documents and code should still be read at their own revision.
 
-```bash
-git show 6df4b4b:experiments/research-fast-loop/RESEARCH-COMPARISON.md
-```
+The earlier custom TypeScript/Chrome-CLI research summary and source are public
+at
+[`5dafb11448e54d0a6fa23213dde550da367ee784`](https://github.com/skhlo/rlcd-brwsr/commit/5dafb11448e54d0a6fa23213dde550da367ee784)
+in still-open [PR #8](https://github.com/skhlo/rlcd-brwsr/pull/8). Later Maps
+probes and backup bundles remain operator-local, not part of that published
+research history. The research PR is historical context, not a prerequisite to
+merge for the current implementation.
 
-An independent local backup is retained at:
+Issues [#9](https://github.com/skhlo/rlcd-brwsr/issues/9),
+[#10](https://github.com/skhlo/rlcd-brwsr/issues/10),
+[#11](https://github.com/skhlo/rlcd-brwsr/issues/11),
+[#12](https://github.com/skhlo/rlcd-brwsr/issues/12), and
+[#13](https://github.com/skhlo/rlcd-brwsr/issues/13) describe superseded
+implementation stages. Their acceptance criteria are historical and are not
+marked as passed. The retained summaries for three of those stages are
+[issue #10 evidence](issue-10-evidence.md),
+[issue #11 evidence](issue-11-evidence.md), and
+[issue #12 evidence](issue-12-evidence.md).
 
-```text
-~/Archives/rlcd-brwsr/research-6df4b4b.bundle
-```
+## Evidence availability
 
-Its SHA-256 is
-`5bac1275f488eed658e0d7c13f8a81266c58dbbd10e2461f4bdd0e54bf76498f`.
-The bundle contains complete history for all three branch references. Verification
-included a bare restore, `git fsck --full`, exact branch-head checks and all 71
-tracked experiment files. The bare restore is also retained at
-`~/Archives/rlcd-brwsr/verified-restore.git`; the archive README explains restoration.
-No historical branch, commit, ledger or report was deleted, and no remote or PR
-was changed. Archived trial instructions are not the current extension's setup
-or permission to resume paid experiments.
+Tracked documents provide the public source, summaries, and stated limits.
+Detailed raw receipts under `artifacts/` are gitignored operator-local evidence,
+not files or links distributed with the public repository. A local artifact path
+in a historical record is therefore only a locator for an operator who already
+has that retained evidence.
 
-## Retained verification checkout - not a second development root
-
-`~/Repositories/rlcd-brwsr-jev-ultrafast/` remains detached at `938abe5` and locked
-against accidental worktree removal/pruning. Paseo labels it **Retained
-verification - do not develop** under **RLCD retained test resources**.
-
-It is retained because it contains the existing isolated Chrome profile, the
-Harness runtime used by the running test daemon, and prior verification
-artifacts. Those paths were not moved, and Chrome/Harness were not restarted.
-Do not delete this checkout while those resources still use it. Retiring it is a
-separate resource migration/cleanup task.
-
-Historical references to `artifacts/thin-python-plan/`, `artifacts/thin-python-build/`
-and `artifacts/thin-python-live/` resolve under that retained checkout. New
-consolidation evidence is under the canonical checkout's `artifacts/consolidation/`.
-
-The canonical checkout has its own pinned `.venv` and Node dependencies,
-materialized from local caches with frozen locks. It does not use a symlink to
-the retained checkout's Python environment. Browser Harness still owns browser
-selection; its existing named daemon remains the shared test resource.
-
-This organization does not install or auto-load the Pi extension. Loading and
-credential setup remain as documented in the [README](../README.md).
+Retained worktrees, browser profiles, bundles, and other raw resources remain
+operator-managed. This public index intentionally omits host paths and resource
+operation instructions. Archived trial records are not current setup guidance
+or authorization to repeat live work.
