@@ -269,10 +269,11 @@ The initial 0.5 threshold is evaluation policy, not a reliability claim.
 
 Python bounds the legacy browser diagnostic projection before adding reporting,
 so optional evidence, metadata and `jev_handoff` usage cannot evict page text,
-history or native usage that already fit. Pi `details` ordinarily keeps reporting
-scores, counts and available `jev_handoff` usage. If no report block fits, details
-can omit that optional block and compact presentation explicitly reports
-reporting unavailable, source/selection omission and unknown accounting.
+history or native usage that already fit. Reporting usage also fits only in the
+remaining 24-record capacity. Pi `details` ordinarily keeps reporting scores,
+counts and available `jev_handoff` usage. If no report block fits, details can
+omit that optional block and compact presentation reports only that reporting
+evidence and usage are unavailable; absence alone does not establish why.
 Model-facing content is a different compact object with only `outcome`,
 `lastObservedLocation`, selected source `evidence`,
 `cleanup`, primary `diagnostic`, bounded `reporting` status and `output`

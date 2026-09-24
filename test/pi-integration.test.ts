@@ -338,7 +338,10 @@ function nearLimitTerminal(): Record<string, unknown> {
   return details;
 }
 
-function nearLimitOmissionTerminal(minimal: boolean): Record<string, unknown> {
+function nearLimitOmissionTerminal(
+  minimal: boolean,
+  includeReporting = true,
+): Record<string, unknown> {
   const details = terminalDetails(
     minimal
       ? {
@@ -363,6 +366,7 @@ function nearLimitOmissionTerminal(minimal: boolean): Record<string, unknown> {
       textHelper: { configuredModel: "", baseUrl: "", reasoning: "" },
     };
   }
+  if (!includeReporting) delete details.reporting;
   const output = recordField(details, "output");
   const labels = Array.from(
     { length: 32 },
@@ -370,8 +374,16 @@ function nearLimitOmissionTerminal(minimal: boolean): Record<string, unknown> {
   );
   output.clipped = true;
   output.omissions = labels;
-  const target = terminalByteLimit - 44;
   const size = () => Buffer.byteLength(JSON.stringify(details), "utf8");
+  let target = terminalByteLimit - 44;
+  if (!includeReporting) {
+    const cleanup = recordField(details, "cleanup");
+    const beforeProcessEvidence = size();
+    cleanup.bridgeProcess = "reaped";
+    const processEvidenceBytes = size() - beforeProcessEvidence;
+    delete cleanup.bridgeProcess;
+    target = terminalByteLimit - processEvidenceBytes;
+  }
   const available = target - size();
   assert.ok(available >= 0);
   const each = Math.floor(available / labels.length);
@@ -382,6 +394,76 @@ function nearLimitOmissionTerminal(minimal: boolean): Record<string, unknown> {
   }
   assert.equal(size(), target);
   return details;
+}
+
+async function productionReportingPressureTerminals(): Promise<
+  Record<string, Record<string, unknown>>
+> {
+  const directory = await mkdtemp(join(tmpdir(), "rlcd-usage-pressure-test-"));
+  const stdout: Buffer[] = [];
+  const stderr: Buffer[] = [];
+  let closed = false;
+  const child = spawn(
+    join(repositoryRoot, ".venv", "bin", "python"),
+    [
+      "-I",
+      "-B",
+      "-c",
+      'import runpy, sys; sys.path.insert(0, sys.argv[1]); runpy.run_path(sys.argv[2], run_name="__main__")',
+      join(repositoryRoot, "bridge"),
+      join(fakePythonPath, "reporting_pressure_terminals.py"),
+    ],
+    {
+      cwd: repositoryRoot,
+      env: {
+        HOME: directory,
+        TMPDIR: directory,
+        PATH: process.env.PATH,
+        PYTHONNOUSERSITE: "1",
+        PYTHONDONTWRITEBYTECODE: "1",
+      },
+      shell: false,
+      stdio: ["ignore", "pipe", "pipe"],
+    },
+  );
+  child.stdout.on("data", (chunk: Buffer) => stdout.push(chunk));
+  child.stderr.on("data", (chunk: Buffer) => stderr.push(chunk));
+  child.on("error", () => {
+    // The close result and captured stderr own the fixture outcome.
+  });
+  const close = new Promise<{
+    code: number | null;
+    signal: NodeJS.Signals | null;
+  }>((resolveClose) => {
+    child.once("close", (code, signal) => {
+      closed = true;
+      resolveClose({ code, signal });
+    });
+  });
+
+  try {
+    const result = await within(close, 3_000, "reporting pressure projection");
+    assert.equal(result.code, 0, Buffer.concat(stderr).toString("utf8"));
+    assert.equal(result.signal, null);
+    const parsed: unknown = JSON.parse(Buffer.concat(stdout).toString("utf8"));
+    assert.ok(isRecord(parsed));
+    assert.ok(isRecord(parsed.oneRemainingSlot));
+    assert.ok(isRecord(parsed.noRemainingSlots));
+    return parsed as Record<string, Record<string, unknown>>;
+  } finally {
+    if (!closed) child.kill("SIGTERM");
+    if (!closed) {
+      try {
+        await within(close, 500, "reporting pressure TERM shutdown");
+      } catch {
+        if (!closed) child.kill("SIGKILL");
+      }
+    }
+    if (!closed) {
+      await within(close, 1_000, "reporting pressure KILL shutdown");
+    }
+    await rm(directory, { recursive: true });
+  }
 }
 
 function registeredTool(
@@ -2099,6 +2181,50 @@ test("outcome interpretation rejects array-valued usage and reporting scalars", 
   assert.equal(recordField(rejected, "cleanup").taskTab, "unknown");
 });
 
+test("production projection fits optional reporting usage within the parent record limit", async () => {
+  const projected = await productionReportingPressureTerminals();
+  const expected = {
+    oneRemainingSlot: { native: 23, reporting: 1 },
+    noRemainingSlots: { native: 24, reporting: 0 },
+  } as const;
+
+  for (const [name, counts] of Object.entries(expected)) {
+    const result = interpretRlcdChildOutcome(
+      childOutcome(projected[name] as Record<string, unknown>),
+    );
+    const details = detailsOf(result);
+    assert.equal(details.status, "completion_claim");
+    assert.equal(details.execution, "completed");
+    assert.equal(recordField(details, "cleanup").taskTab, "closed");
+    const records = arrayField(recordField(details, "usage"), "records");
+    const nativeRecords = records.filter(
+      (record) =>
+        isRecord(record) &&
+        (record.source === "jev_decision" || record.source === "text_helper"),
+    );
+    const reportingRecords = records.filter(
+      (record) => isRecord(record) && record.source === "jev_handoff",
+    );
+    assert.equal(nativeRecords.length, counts.native);
+    assert.equal(reportingRecords.length, counts.reporting);
+    assert.equal(records.length, 24);
+
+    if (name === "noRemainingSlots") {
+      const detailsOmissions = arrayField(
+        recordField(details, "output"),
+        "omissions",
+      );
+      assert.ok(detailsOmissions.includes("reporting usage record"));
+      assert.ok(
+        arrayField(
+          recordField(compactOf(result), "output"),
+          "omissions",
+        ).includes("details.reporting usage record"),
+      );
+    }
+  }
+});
+
 test("missing optional reporting stays explicit without replacing browser facts", () => {
   const terminal = terminalDetails({
     status: "completion_claim",
@@ -2124,8 +2250,8 @@ test("missing optional reporting stays explicit without replacing browser facts"
   const compact = compactOf(result);
   const reporting = recordField(compact, "reporting");
   assert.equal(reporting.status, "unavailable");
-  assert.equal(reporting.sourceOmitted, true);
-  assert.equal(reporting.selectionOmitted, true);
+  assert.equal(reporting.sourceOmitted, null);
+  assert.equal(reporting.selectionOmitted, null);
   assert.equal(
     recordField(reporting, "diagnostic").type,
     "ReportingUnavailable",
@@ -2134,6 +2260,49 @@ test("missing optional reporting stays explicit without replacing browser facts"
     arrayField(recordField(compact, "output"), "omissions").includes(
       "details.reporting unavailable",
     ),
+  );
+});
+
+test("near-cap absent reporting summarizes compact omission metadata without losing details", () => {
+  const terminal = nearLimitOmissionTerminal(true, false);
+  const originalOmissions = [
+    ...arrayField(recordField(terminal, "output"), "omissions"),
+  ];
+  const result = interpretRlcdChildOutcome(childOutcome(terminal));
+  const details = detailsOf(result);
+  assert.equal(details.stopReason, "synthetic_error");
+  assert.equal(Object.hasOwn(details, "reporting"), false);
+  assert.deepEqual(
+    arrayField(recordField(details, "output"), "omissions"),
+    originalOmissions,
+  );
+  assert.equal(
+    Buffer.byteLength(JSON.stringify(details), "utf8"),
+    terminalByteLimit,
+  );
+
+  const compact = compactOf(result);
+  const compactOmissions = arrayField(
+    recordField(compact, "output"),
+    "omissions",
+  );
+  assert.ok(
+    compactOmissions.includes(
+      "details omissions summarized; see details.output.omissions",
+    ),
+  );
+  assert.ok(compactOmissions.includes("details.reporting unavailable"));
+  const reporting = recordField(compact, "reporting");
+  assert.equal(reporting.status, "unavailable");
+  assert.equal(reporting.sourceOmitted, null);
+  assert.equal(reporting.selectionOmitted, null);
+  assert.match(
+    String(recordField(reporting, "diagnostic").message),
+    /evidence and usage metadata are unavailable/i,
+  );
+  assert.doesNotMatch(
+    String(recordField(reporting, "diagnostic").message),
+    /budget|preserv|omit/i,
   );
 });
 

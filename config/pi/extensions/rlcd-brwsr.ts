@@ -774,13 +774,13 @@ function compactRunResult(details: Record<string, unknown>): string {
     ? recordCopy(details.reporting)
     : {
         status: "unavailable",
-        sourceOmitted: true,
-        selectionOmitted: true,
+        sourceOmitted: null,
+        selectionOmitted: null,
         evidence: [],
         diagnostic: {
           type: "ReportingUnavailable",
           message:
-            "Optional handoff reporting and its usage metadata were omitted to preserve bounded browser diagnostics.",
+            "Optional handoff reporting evidence and usage metadata are unavailable.",
         },
       };
   const detailEvidence = Array.isArray(detailReporting.evidence)
@@ -795,11 +795,21 @@ function compactRunResult(details: Record<string, unknown>): string {
         (value): value is string => typeof value === "string",
       )
     : [];
-  const omissions = detailOmissions.map((label) => `details.${label}`);
+  const omissionSummary =
+    "details omissions summarized; see details.output.omissions";
+  let inheritedOmissions = detailOmissions.map((label) => `details.${label}`);
+  let inheritedOmissionsSummarized = false;
+  const compactOmissions: string[] = [];
+  const currentOmissions = () => [...inheritedOmissions, ...compactOmissions];
+  const summarizeInheritedOmissions = () => {
+    if (inheritedOmissions.length === 0 || inheritedOmissionsSummarized) return;
+    inheritedOmissions = [omissionSummary];
+    inheritedOmissionsSummarized = true;
+  };
   const appendOmission = (label: string) => {
-    if (!omissions.includes(label) && omissions.length < 32) {
-      omissions.push(label);
-    }
+    if (currentOmissions().includes(label)) return;
+    compactOmissions.push(label);
+    if (currentOmissions().length > 32) summarizeInheritedOmissions();
   };
   if (!reportingAvailable) {
     appendOmission("details.reporting unavailable");
@@ -835,15 +845,17 @@ function compactRunResult(details: Record<string, unknown>): string {
     output: {
       byteLimit: runtimeConfig.terminalMaxUtf8Bytes,
       detailsClipped: detailOutput.clipped === true,
-      clipped: detailOutput.clipped === true || omissions.length > 0,
-      omissions,
+      clipped: detailOutput.clipped === true || currentOmissions().length > 0,
+      omissions: currentOmissions(),
     },
   };
 
   let text = JSON.stringify(compact);
   while (utf8Bytes(text) > runtimeConfig.terminalMaxUtf8Bytes) {
     const compactEvidenceRecords = compact.evidence;
-    if (
+    if (!inheritedOmissionsSummarized && inheritedOmissions.length > 0) {
+      summarizeInheritedOmissions();
+    } else if (
       Array.isArray(compactEvidenceRecords) &&
       compactEvidenceRecords.length
     ) {
@@ -884,7 +896,7 @@ function compactRunResult(details: Record<string, unknown>): string {
     }
     const output = recordCopy(compact.output);
     output.clipped = true;
-    output.omissions = omissions;
+    output.omissions = currentOmissions();
     compact.output = output;
     text = JSON.stringify(compact);
   }

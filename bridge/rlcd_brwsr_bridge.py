@@ -478,6 +478,12 @@ def _bound_projection(result: dict[str, Any]) -> dict[str, Any]:
             _append_omission(omissions, "reporting qualifying evidence")
         result["reporting"] = reporting
         if isinstance(records, list):
+            remaining_record_capacity = max(0, _USAGE_RECORD_LIMIT - len(records))
+            retained_reporting_usage = reporting_usage[:remaining_record_capacity]
+            if len(retained_reporting_usage) < len(reporting_usage):
+                _append_omission(omissions, "reporting usage record")
+                output["clipped"] = True
+            reporting_usage = retained_reporting_usage
             records.extend(reporting_usage)
 
         while len(_json_bytes(result)) + 1 > TERMINAL_MAX_UTF8_BYTES:
