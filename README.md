@@ -12,8 +12,10 @@ retains the bounded diagnostic projection. All 67 deterministic tests and an
 isolated command-driven Pi-TUI check passed with synthetic browser/provider
 boundaries. A separately authorized seven-case live Jev replay retained expected
 evidence in six cases; the shortened Google case returned no excerpt. This is
-limited relevance evidence, not a general quality guarantee. No user tab was
-touched by the compact-output verification.
+limited relevance evidence, not a general quality guarantee. A subsequent
+three-task normal-session public-page pilot passed independent verification,
+but exposed boilerplate/duplicate selection and high reporting-token overhead.
+Only pilot-owned tabs were operated; existing user tabs were left alone.
 Jev and Pi's outer model remain unchanged; the native field helper is direct
 DeepSeek `deepseek-flash` with thinking disabled. The feature is local and
 unpublished. See [current verification and limits](docs/thin-python-evidence.md#compact-handoff)

@@ -7,12 +7,14 @@ has 67-test deterministic plus isolated command-driven Pi-TUI evidence with
 synthetic browser/provider boundaries. A separately authorized live reporting
 replay retained expected evidence in six of seven sanitized cases; one shortened
 Google case returned no excerpt. This is limited semantic evidence, not general
-relevance or public-site acceptance. No user tabs were touched. The
+relevance acceptance. A later three-task normal-session public-page pilot passed
+independent verification on pilot-owned tabs but exposed boilerplate/duplicate
+selection and reporting-token overhead. Existing user tabs were left alone. The
 helper remains direct DeepSeek `deepseek-flash` with native thinking disabled;
 Jev and Pi's outer model are unchanged. See the
 [current verification record](../thin-python-evidence.md#compact-handoff), which
 preserves older tab-targeting, rewrite and live Ling evidence at their recorded
-heads. Publication and public-site acceptance remain pending. Supersedes
+heads. Publication and general-web reliability remain unestablished. Supersedes
 ADR-0002's command-level orchestration,
 Pi-native helper relay and parent shadow-state design, not its dependency pins or
 native Browser Harness ownership.

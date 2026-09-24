@@ -9,7 +9,10 @@ browser/provider boundaries. Production-shaped sanitized reconstructions compare
 the verified old and corrected interpreters without browser actions. A separately
 authorized seven-case real-Jev replay retained expected source evidence in six
 cases; the shortened Google case returned no excerpt. This is limited semantic
-evidence, not general relevance acceptance. No user tab was touched. The native helper remains direct DeepSeek
+evidence, not general relevance acceptance. A later three-task normal-session
+public-page pilot passed exact-target verification using only pilot-owned tabs;
+boilerplate, duplicate evidence and reporting-token expansion remain limitations.
+The native helper remains direct DeepSeek
 `deepseek-flash` with thinking disabled; Jev and Pi's outer model are unchanged.
 See the [current verification record](thin-python-evidence.md#compact-handoff)
 and retained local artifacts under `artifacts/compact-output/implementation/`.

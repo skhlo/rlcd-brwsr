@@ -128,6 +128,52 @@ client was closed and no evaluation process remained. Nothing was pushed or
 published. Broader semantic/public-site quality and complete billing remain
 unestablished; further live trials need a separate finite allowance.
 
+### Normal-session public-page pilot
+
+A separately authorized three-call pilot ran at `6cf6a80` with real Jev and direct
+DeepSeek through the actual tools in the current outer-agent session. Google
+search, Wikipedia search/article opening, and a birth-date lookup continuing on
+that same Wikipedia target all passed independent exact-target inspection. Each
+used one inspection, with no extra recovery inspection or manual browser retry.
+Google returned useful evidence, unlike the earlier shortened reconstruction;
+this different observation does not disprove that miss. Wikipedia navigation
+returned boilerplate excerpts, while the birth-date reply included the correct
+article value but repeated it with leading punctuation.
+
+| Task              | Session call-to-result | Delegation-to-verification | Content / new details bytes |
+| ----------------- | ---------------------: | -------------------------: | --------------------------: |
+| Google search     |                4.164 s |                   14.666 s |               1,470 / 4,473 |
+| Wikipedia article |                4.938 s |                   25.738 s |               1,005 / 4,497 |
+| Birth-date lookup |                1.422 s |                   15.636 s |               1,058 / 3,627 |
+
+Total compact content was 3,533 bytes versus 12,597 bytes of **new diagnostics**,
+not the old visible format. No matched timing baseline or returned-content
+token measurement was made. The cycle includes caller/outer-agent gaps and ends
+at verification; observer operations took 415-432 ms. Setup, restoration,
+between-case analysis and reporting are separate. The shared observer was
+broader than necessary and exposed the birth date during the article-opening
+check, before the planned third call. Thus that zero-action continuation tests
+goal-conditioned retrieval, not obtaining new information more efficiently.
+
+Reporting scored 83, 115 and 113 candidates and recorded 63,679 Jev input / 6,232
+output tokens across three calls. The 12 browser-decision records totalled 66,108
+input / 4,482 output tokens; two helper records totalled 1,020 input / 17 output.
+Smaller returned text is not proof of less overall model work or cost. Provider
+attempts/retries, failed-call usage and complete billing remain unknown, and the
+pilot does not establish a speedup or general reliability.
+
+The browser connection was initially unavailable. With explicit user approval,
+only the stale named Harness daemon was stopped, the isolated Chrome/profile
+was restored on unchanged loopback CDP port 63729, and Harness was reprovisioned.
+Ordinary Chrome was left alone. Both exact pilot targets were closed with
+acknowledgment and the post-restoration baseline was restored. The restored
+isolated browser and Harness remain running for tool use; process identities and
+receipts are in `artifacts/compact-output/real-use-pilot/REPORT.md`. That directory
+also retains results, verification, metrics, cleanup and source-copy/privacy
+checks. No production or selector change, dependency operation or publication
+occurred. Boilerplate selection, near-duplicate evidence and reporting candidate
+expansion remain optimization work, not fixes completed by this pilot.
+
 Historical rewrite tested implementation: `b3b42036685eba64f3e7bc8ccc296e16b9910fe9`.
 The initial rewrite is `3f984e54`; the corrected implementation was checked again,
 not accepted solely on the earlier candidate's results. These runs preceded
