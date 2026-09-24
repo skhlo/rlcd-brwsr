@@ -505,6 +505,7 @@ def _list_tabs() -> dict[str, Any]:
     output = _tab_listing_output(omitted_tabs=0)
     try:
         daemon_name = resolve_native_environment()
+        credentials = _credential_values()
         require_existing_local_daemon(daemon_name)
         from browser_harness.helpers import cdp
 
@@ -520,25 +521,22 @@ def _list_tabs() -> dict[str, Any]:
             and item.get("type") == "page"
             and _eligible_discovery_url(item.get("url"))
         ]
-        invalid_ids = sum(not isinstance(item.get("targetId"), str) for item in eligible)
-        candidates = sorted(
-            (item for item in eligible if isinstance(item.get("targetId"), str)),
-            key=lambda item: item["targetId"],
-        )
+        candidates: list[dict[str, Any]] = []
+        omitted_tabs = 0
+        for item in eligible:
+            try:
+                _validate_target_id(item.get("targetId"))
+            except (TypeError, ValueError):
+                omitted_tabs += 1
+            else:
+                candidates.append(item)
+        candidates.sort(key=lambda item: item["targetId"].encode("utf-8"))
+
         tabs: list[dict[str, Any]] = []
-        omitted_tabs = invalid_ids
         for item in candidates:
             target_id = item["targetId"]
             safe_target_id = _redact_text(target_id, credentials)
-            try:
-                target_bytes = len(target_id.encode("utf-8"))
-            except UnicodeEncodeError:
-                target_bytes = _TARGET_MAX_BYTES + 1
-            if (
-                not target_id
-                or safe_target_id != target_id
-                or target_bytes > _TARGET_MAX_BYTES
-            ):
+            if safe_target_id != target_id:
                 omitted_tabs += 1
                 continue
 
@@ -583,6 +581,7 @@ def _list_tabs() -> dict[str, Any]:
         TypeError,
         ValueError,
     ) as error:
+        credentials = _credential_values()
         safe_type = _redact_text(type(error).__name__, credentials)
         safe_message = _redact_text(str(error), credentials)
         return {

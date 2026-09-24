@@ -214,14 +214,7 @@ class BorrowedTab:
                     enabled=False,
                 )
                 self.focus_disable_acknowledged = True
-            except (
-                StopRequested,
-                OSError,
-                RuntimeError,
-                TimeoutError,
-                TypeError,
-                ValueError,
-            ) as error:
+            except Exception as error:
                 self.release_errors.append(error)
 
         if not self.detach_acknowledged:
@@ -233,14 +226,7 @@ class BorrowedTab:
                 self.session_id = None
                 if self.browser is not None:
                     self.browser.session = None
-            except (
-                StopRequested,
-                OSError,
-                RuntimeError,
-                TimeoutError,
-                TypeError,
-                ValueError,
-            ) as error:
+            except Exception as error:
                 self.release_errors.append(error)
 
     @property

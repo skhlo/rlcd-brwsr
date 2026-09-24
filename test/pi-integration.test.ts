@@ -92,6 +92,7 @@ const fakePythonPath = join(repositoryRoot, "test", "python");
 const deferredFakePythonPath = join(fakePythonPath, "deferred_sitecustomize");
 const syntheticTypesafeKey = "synthetic-typesafe-key-MOON-62";
 const syntheticHelperKey = "synthetic-deepseek-key-STAR-73";
+const syntheticNativeTypesafeKey = "synthetic-native-typesafe-key-NOVA-19";
 const syntheticNativeHelperKey = "synthetic-native-env-key-COMET-84";
 const testRuntimeConfig: unknown = JSON.parse(
   readFileSync(join(repositoryRoot, "config", "runtime.json"), "utf8"),
@@ -676,6 +677,114 @@ test("discovery needs no model keys and deterministically distinguishes same-URL
   );
 });
 
+test("discovery accepts structurally valid URL display metadata after redaction", async () => {
+  for (const [scenario, expectedUrl] of [
+    ["list_redacted_host", "https://[REDACTED]/"],
+    ["list_redacted_path", "https://example.test/path/[REDACTED]"],
+  ] as const) {
+    await withScenario(
+      scenario,
+      { toolName: "rlcd_brwsr_list_tabs" },
+      ({ result }) => {
+        const details = detailsOf(result);
+        assert.equal(details.status, "ok");
+        const tabs = arrayField(details, "tabs") as Array<
+          Record<string, unknown>
+        >;
+        assert.equal(tabs.length, 1);
+        assert.equal(tabs[0]?.url, expectedUrl);
+        assert.doesNotMatch(
+          result.content[0]?.text ?? "",
+          new RegExp(syntheticHelperKey),
+        );
+      },
+    );
+  }
+});
+
+test("discovery omits blank IDs without invalidating valid entries", async () => {
+  await withScenario(
+    "list_blank_id",
+    {
+      toolName: "rlcd_brwsr_list_tabs",
+      typesafeKey: null,
+      helperKey: null,
+      nativeEnvironment: "",
+    },
+    ({ result }) => {
+      const details = detailsOf(result);
+      assert.equal(details.status, "ok");
+      const tabs = arrayField(details, "tabs") as Array<
+        Record<string, unknown>
+      >;
+      assert.deepEqual(
+        tabs.map((tab) => tab.targetId),
+        ["VALID-PAGE-ID"],
+      );
+      assert.equal(recordField(details, "output").omittedTabs, 1);
+    },
+  );
+});
+
+test("discovery orders opaque IDs by UTF-8 bytes across Python and TypeScript", async () => {
+  await withScenario(
+    "list_unicode_ids",
+    {
+      toolName: "rlcd_brwsr_list_tabs",
+      typesafeKey: null,
+      helperKey: null,
+      nativeEnvironment: "",
+    },
+    ({ result }) => {
+      const details = detailsOf(result);
+      assert.equal(details.status, "ok");
+      const tabs = arrayField(details, "tabs") as Array<
+        Record<string, unknown>
+      >;
+      assert.deepEqual(
+        tabs.map((tab) => tab.targetId),
+        ["\ue000", "\u{10000}"],
+      );
+    },
+  );
+});
+
+test("discovery redacts keys loaded only by the native workspace, including load failures", async () => {
+  const nativeEnvironment = [
+    `TYPESAFE_API_KEY=${syntheticNativeTypesafeKey}`,
+    `TEXT_MODEL_API_KEY=${syntheticNativeHelperKey}`,
+    "",
+  ].join("\n");
+  const options: ScenarioOptions = {
+    toolName: "rlcd_brwsr_list_tabs",
+    typesafeKey: null,
+    helperKey: null,
+    nativeEnvironment,
+    deferExternalFakesUntilNativeEnvironment: true,
+  };
+
+  await withScenario("list_native_redaction", options, ({ result }) => {
+    const details = detailsOf(result);
+    assert.equal(details.status, "ok");
+    const tabs = arrayField(details, "tabs") as Array<Record<string, unknown>>;
+    assert.equal(tabs.length, 1);
+    assert.equal(tabs[0]?.title, "Native [REDACTED]");
+    assert.equal(tabs[0]?.url, "https://example.test/[REDACTED]");
+    const text = result.content[0]?.text ?? "";
+    assert.doesNotMatch(text, new RegExp(syntheticNativeTypesafeKey));
+    assert.doesNotMatch(text, new RegExp(syntheticNativeHelperKey));
+  });
+
+  await withScenario("list_native_resolution_error", options, ({ result }) => {
+    const details = detailsOf(result);
+    assert.equal(details.status, "error");
+    const text = result.content[0]?.text ?? "";
+    assert.doesNotMatch(text, new RegExp(syntheticNativeTypesafeKey));
+    assert.doesNotMatch(text, new RegExp(syntheticNativeHelperKey));
+    assert.match(text, /native load failed for \[REDACTED\] and \[REDACTED\]/);
+  });
+});
+
 test("discovery keeps empty, error, clipping, and omitted-tab outcomes distinct", async () => {
   await withScenario(
     "list_empty",
@@ -1152,6 +1261,29 @@ test("borrowed cleanup acknowledgements stay independent", async () => {
       assert.doesNotMatch(browserLog, /close:/);
     },
   );
+
+  await withScenario(
+    "borrowed_cleanup_attribute_error",
+    {
+      omitDefaultUrl: true,
+      params: { targetId: "rlcd-borrowed-target" },
+    },
+    async ({ result, markers }) => {
+      const details = detailsOf(result);
+      assert.equal(details.status, "error");
+      assert.match(
+        String(recordField(details, "diagnostic").message),
+        /provider failed before a decision/,
+      );
+      const cleanup = recordField(details, "cleanup");
+      assert.equal(cleanup.focusEmulation, "unconfirmed");
+      assert.equal(cleanup.attachment, "detach_acknowledged");
+      const browserLog = await readIfPresent(markers.browser);
+      assert.match(browserLog, /focus:rlcd-borrowed-session:false/);
+      assert.match(browserLog, /detach:rlcd-borrowed-session/);
+      assert.doesNotMatch(browserLog, /close:/);
+    },
+  );
 });
 
 test("a post-navigation provider race reports unknown effects instead of pre-start rejection", async () => {
@@ -1510,6 +1642,52 @@ test(
     }
   },
 );
+
+test("borrowed outcome interpretation rejects array-valued cleanup claims", () => {
+  const scalar = detailsOf(
+    interpretRlcdChildOutcome(
+      childOutcome(
+        terminalDetails({
+          borrowed: true,
+          taskTab: "not_owned",
+          focusEmulation: "disable_acknowledged",
+          attachment: "detach_acknowledged",
+        }),
+      ),
+      true,
+    ),
+  );
+  assert.equal(
+    recordField(scalar, "cleanup").focusEmulation,
+    "disable_acknowledged",
+  );
+  assert.equal(
+    recordField(scalar, "cleanup").attachment,
+    "detach_acknowledged",
+  );
+
+  const malformedTerminal = terminalDetails({
+    borrowed: true,
+    taskTab: "not_owned",
+  });
+  const malformedCleanup = recordField(malformedTerminal, "cleanup");
+  malformedCleanup.focusEmulation = ["disable_acknowledged"];
+  malformedCleanup.attachment = ["detach_acknowledged"];
+  const rejected = detailsOf(
+    interpretRlcdChildOutcome(
+      childOutcome(malformedTerminal, { firstStop: "cancelled" }),
+      true,
+    ),
+  );
+  assert.equal(rejected.status, "stopped");
+  assert.equal(rejected.stopReason, "cancelled");
+  assert.equal(rejected.execution, "unknown");
+  const cleanup = recordField(rejected, "cleanup");
+  assert.equal(cleanup.taskTab, "unknown");
+  assert.equal(cleanup.focusEmulation, "unknown");
+  assert.equal(cleanup.attachment, "unknown");
+  assert.equal(cleanup.bridgeProcess, "reaped");
+});
 
 test("outcome interpretation preserves trusted evidence and late-stop precedence", () => {
   const completed = detailsOf(

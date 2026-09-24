@@ -216,18 +216,20 @@ function isTerminalEnvelope(
     typeof cleanup.taskTab === "string" &&
     (expectedBorrowed
       ? cleanup.taskTab === "not_owned" &&
+        typeof cleanup.focusEmulation === "string" &&
         [
           "not_applied",
           "disable_acknowledged",
           "unconfirmed",
           "unknown",
-        ].includes(String(cleanup.focusEmulation)) &&
+        ].includes(cleanup.focusEmulation) &&
+        typeof cleanup.attachment === "string" &&
         [
           "not_acquired",
           "detach_acknowledged",
           "unconfirmed",
           "unknown",
-        ].includes(String(cleanup.attachment))
+        ].includes(cleanup.attachment)
       : [
           "not_created",
           "unknown",
@@ -307,11 +309,14 @@ function isTabListingEnvelope(
       utf8Bytes(tab.title) > LIST_TITLE_UTF8_BYTES ||
       typeof tab.url !== "string" ||
       utf8Bytes(tab.url) > LIST_URL_UTF8_BYTES ||
-      !eligibleListedUrl(tab.url) ||
       !Array.isArray(tab.clippedFields) ||
       tab.clippedFields.some((field) => field !== "title" && field !== "url") ||
       new Set(tab.clippedFields).size !== tab.clippedFields.length ||
-      (previousTargetId !== null && previousTargetId >= tab.targetId)
+      (previousTargetId !== null &&
+        Buffer.compare(
+          Buffer.from(previousTargetId, "utf8"),
+          Buffer.from(tab.targetId, "utf8"),
+        ) >= 0)
     ) {
       return false;
     }
@@ -328,18 +333,6 @@ const GOAL_LEADING_WHITESPACE =
   /^[\u0009-\u000d\u001c-\u0020\u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]+/u;
 const GOAL_TRAILING_WHITESPACE =
   /[\u0009-\u000d\u001c-\u0020\u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]+$/u;
-
-function eligibleListedUrl(value: string): boolean {
-  if (value === "about:blank") return true;
-  try {
-    const parsed = new URL(value);
-    return (
-      ["http:", "https:"].includes(parsed.protocol) && Boolean(parsed.hostname)
-    );
-  } catch {
-    return false;
-  }
-}
 
 function normalizedHttpUrl(value: unknown): string | null {
   if (typeof value !== "string" || Array.from(value).length > MAX_URL_CHARS) {

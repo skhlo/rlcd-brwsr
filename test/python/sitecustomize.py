@@ -413,6 +413,63 @@ def _target_infos():
                 "url": "chrome://settings/",
             },
         ]
+    if _SCENARIO in {"list_redacted_host", "list_redacted_path"}:
+        helper_key = os.environ.get("TEXT_MODEL_API_KEY", "")
+        url = (
+            f"https://{helper_key}/"
+            if _SCENARIO == "list_redacted_host"
+            else f"https://example.test/path/{helper_key}"
+        )
+        return [
+            {
+                "targetId": "REDACTED-URL",
+                "type": "page",
+                "title": "Redacted URL metadata",
+                "url": url,
+            }
+        ]
+    if _SCENARIO == "list_blank_id":
+        return [
+            {
+                "targetId": "   ",
+                "type": "page",
+                "title": "Blank ID",
+                "url": "https://example.test/blank-id",
+            },
+            {
+                "targetId": "VALID-PAGE-ID",
+                "type": "page",
+                "title": "Valid ID",
+                "url": "https://example.test/valid-id",
+            },
+        ]
+    if _SCENARIO == "list_unicode_ids":
+        return [
+            {
+                "targetId": "\U00010000",
+                "type": "page",
+                "title": "Supplementary ID",
+                "url": "https://example.test/supplementary",
+            },
+            {
+                "targetId": "\ue000",
+                "type": "page",
+                "title": "Private-use ID",
+                "url": "https://example.test/private-use",
+            },
+        ]
+    if _SCENARIO == "list_native_redaction":
+        return [
+            {
+                "targetId": "NATIVE-REDACTION",
+                "type": "page",
+                "title": f"Native {os.environ.get('TYPESAFE_API_KEY', '')}",
+                "url": (
+                    "https://example.test/"
+                    + os.environ.get("TEXT_MODEL_API_KEY", "")
+                ),
+            }
+        ]
     if _SCENARIO == "list_omission":
         items = [
             {
@@ -510,6 +567,8 @@ def _cdp(method, session_id=None, **params):
         )
         if not enabled and _SCENARIO == "borrowed_focus_release_failure":
             raise RuntimeError("synthetic focus release failure")
+        if not enabled and _SCENARIO == "borrowed_cleanup_attribute_error":
+            raise AttributeError("synthetic focus release attribute error")
         return {}
     if method.startswith("Emulation."):
         return {}
@@ -617,7 +676,7 @@ def _post_json(url, key, body):
         raise RuntimeError("runner did not select the pinned Jev model")
     if key != os.environ.get("TYPESAFE_API_KEY"):
         raise RuntimeError("native Jev call did not receive its child environment key")
-    if _SCENARIO == "model_error":
+    if _SCENARIO in {"model_error", "borrowed_cleanup_attribute_error"}:
         raise RuntimeError("provider failed before a decision")
     if _SCENARIO in {"slow_model", "slow_close_false"}:
         time.sleep(30)
