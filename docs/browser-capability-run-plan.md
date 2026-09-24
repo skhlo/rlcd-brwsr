@@ -1,13 +1,13 @@
 # Browser capability evaluation run
 
-**Status: attempted; comparison incomplete and execution stopped.** The owner
-approved the initial model-free run and a separate 12-case reference correction.
-Both records are retained locally under `artifacts/browser-capability-run/`.
-CLI driver/setup failures prevented a complete comparison, and the owner
-cancelled unexpected macOS keychain prompts. No further browser trial is
-currently authorized. The protocol below is retained for review; it is not a
-claim that all cases passed. Live inference, production changes and publication
-remain excluded.
+**Status: evaluation recorded, with limitations.** The initial matrix and two
+separately authorized reference follow-ups produced the
+[combined results](browser-capability-run-results.md). Driver failures,
+permission interruption, startup correction and deferred subchecks remain part
+of that record; this was not one clean pass. The allowances are consumed, and
+no further browser trial is currently authorized. The protocol below is retained
+for comparison with what actually ran. Live inference, production changes and
+publication remain excluded.
 
 ## Decision the run should enable
 
@@ -154,11 +154,13 @@ never personal profiles, real logins or credential storage.
 Before spawning, fail closed unless the emitted command uses a profile beneath
 the owned run directory, retains the mock-keychain setting, keeps the real OS
 home and forwards no provider credentials. The evaluation launcher now enforces
-this and its offline executable-capture/negative-control checks pass. This
-verifies startup configuration, **not yet prompt-free live behavior**; Chrome
-was not relaunched after the user's cancellation. Never reset a keychain,
-change its default or approve/retry an OS prompt as part of recovery. A new live
-launch check needs explicit approval.
+this and its offline executable-capture/negative-control checks pass. A separately
+authorized ten-second startup check on Chrome `153.0.8010.53` verified the
+effective mock-keychain arguments, healthy startup and normal exit; the user
+confirmed that no prompt appeared. That is one observed startup, not a guarantee
+for every future browser/version. Never reset a keychain, change its default or
+approve/retry an OS prompt as recovery. New execution still needs an explicit
+scope and allowance.
 
 Fixture servers bind to loopback. Any user-facing test UI uses an explicitly
 owned Tailscale Serve route/URL; preserve unrelated routes. If that requires an
@@ -224,8 +226,8 @@ the original one-pixel probe does not stand in for that task.
 
 ## Approval checkpoint
 
-The initial and reference-correction execution records are historical, not a
-standing allowance. Before resuming, review the incomplete cases, confirm the
-native-app startup guard and approve a new finite scope. No live inference was
-performed, and no production capability has been adopted on the basis of these
-partial results.
+The initial, reference-correction, startup-check and remaining-CLI records are
+historical, not a standing allowance. Before further work, review the
+[results and omissions](browser-capability-run-results.md), choose one justified
+adaptation and approve its finite scope. No live inference was performed, and
+no production capability has been adopted from this evaluation.

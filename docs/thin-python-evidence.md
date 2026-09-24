@@ -193,6 +193,15 @@ check, or general-web test. Forced exits can still strand focus emulation or an
 attachment. Local receipt:
 `artifacts/tab-targeting/implementation/correction/HANDOFF.md`.
 
+## Capability-selection fixtures
+
+A later [capability evaluation](browser-capability-run-results.md) compared the
+registered RLCD tool with real Harness and Chrome DevTools CLI reference paths
+on disposable local fixtures, using synthetic application-model replies. Its
+corrected, combined results inform capability selection, not live-Jev quality
+or a fix for #17. The report preserves driver failures, the macOS startup
+correction, separate execution allowances and untested subchecks.
+
 ## Known limits
 
 The accepted baseline retains these limits:

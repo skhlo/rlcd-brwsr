@@ -63,8 +63,10 @@ The generated CLI surface is narrower than the MCP tool surface. In 1.7.0:
 - `navigate_page` takes `--url`, rather than the positional URL shown in one
   CLI-guide example. Generated options own the actual signature. [C-options]
 - Ordinary commands can implicitly start the CLI daemon. That differs from
-  RLCD's existing-daemon-only contract. Its selected-page fallback also differs
-  from RLCD's failure on a missing exact target. [C-cli] [C-context]
+  RLCD's existing-daemon-only contract. Selected-page state also differs from
+  RLCD's exact-target admission: during the evaluation, `list_pages` did not
+  recover after the selected fixture was disposed. The driver needed to select
+  a live owned sentinel before cleanup. [C-cli] [C-context]
 - The CLI's client timeout is not a per-task cancellation/cleanup protocol;
   daemon `stop` manages the shared executor. It should not replace RLCD's
   bounded Python supervision. [C-client] [C-daemon]
@@ -73,8 +75,9 @@ The generated CLI surface is narrower than the MCP tool surface. In 1.7.0:
 
 The [evaluation run plan](browser-capability-run-plan.md) maps every inventory
 item to a controlled case, comparison lanes and approval/budget gates. The
-initial run and a reference correction were attempted, but the comparison is
-incomplete and execution is stopped; the plan records the remaining limits.
+[combined evaluation results](browser-capability-run-results.md) record the
+initial run, authorized corrections, practical differences and untested
+subchecks. They do not constitute live-Jev or full-scope acceptance.
 
 This is a shortlist for choosing capabilities, **not implementation approval**:
 
