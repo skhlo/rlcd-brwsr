@@ -1,6 +1,6 @@
 # Browser geometry research
 
-_Research-only source review, retrieved 2026-09-24. No browser operations or application-model inference were performed._
+_Source review and separately authorized model-free fixture probe, 2026-09-24. No application-model inference was performed; production and installed sources were unchanged._
 
 ## Short answer
 
@@ -45,16 +45,23 @@ The source does establish two relevant mechanics. Jev's [`fingerprint()`](https:
 
 **Assessment, not established cause:** the missing model-facing geometry is a plausible observer limitation because the goal contains spatial predicates that the model request does not represent. It remains possible that judgment, action ranking, timing, or another factor caused the run. Documentation alone does not increase confidence in a fix and does not show that Jev would use coordinates correctly.
 
-## Smallest promising next probe
+## Model-free probe follow-up
 
-Under separate implementation/browser authorization, use one deterministic local article fixture and no live model:
+The user subsequently authorized a disposable local article fixture. Two bounded attempts ran in new background targets and isolated browser contexts, without changing existing pages. The first fixture used absolute positioning and unintentionally exposed a scroll action only in the overflowing state; the candidate-identity guard rejected that comparison. A fixture-only change to fixed positioning kept the available actions identical on the second attempt.
 
-1. Extend the existing exact-session snapshot temporarily to retain CSS viewport metrics and `Range.getClientRects()` for the text records it already collects; do not add a second extractor or tab-selection path.
-2. Create two states: the opening paragraph clipped by one pixel and the same paragraph wholly inside the visual viewport. Document a sticky overlay as an unmeasured counterexample.
-3. Stub the provider transport and inspect the serialized `choose()` request to prove that semantic text, normalized geometry, and the distinction between the two states survive observation and payload construction.
+At an 800 × 600 CSS-pixel viewport and DPR 1:
 
-That probe would establish observability and plumbing only. A later, separately authorized bounded model experiment and independent visible verification would still be required to test whether the added evidence changes #17 behavior. Any change to the pinned upstream observation/request boundary is an architectural decision under ADR-0003, not an implementation implied by this research.
+- The opening paragraph's text rectangles ended at **601 px** in one state and **599 px** in the other. Independent Range measurements, the instrumented snapshot and `Page.getLayoutMetrics` agreed. No fixture text or rectangle was truncated.
+- The actual unmodified `choose()` produced **byte-identical serialized requests** for both states. A negative-control assertion requiring distinguishable requests rejected that pair.
+- A probe-only snapshot variant retained bounded text rectangles and viewport metrics. A copy of `choose()` changed only its page-field projection to include that geometry. The corresponding requests distinguished the states, and their geometric containment predicates were respectively `false` and `true`.
+- Removing the added geometry made both enriched requests equal to the native request. Text, goal, semantic action candidates and synthetic choices were otherwise unchanged.
+
+The Python request-capture child used synthetic configuration, stubbed transport and a socket blocker; it did not load Browser Harness or call a provider. Its synthetic choice was not executed or treated as a task outcome. Installed Jev source hashes matched before and after. Both attempts' owned targets and contexts were removed, and a later parent read confirmed their absence and preservation of all four baseline targets. Exact-target screenshots were also inspected.
+
+**Established:** the native request can lose a real geometric distinction, and retaining geometry through the existing observation/projection path can preserve it. **Not established:** whether Jev interprets it correctly, whether it caused #17, or whether the original task now stops correctly. This probe tested paragraph containment, not the entire original positioning goal. Rectangles inside the viewport still do not prove unobscured readability.
+
+Local receipts, not distributed with the repository: `artifacts/browser-geometry-probe/REPORT.md`, `probe-results.json`, `parent-verification.json`, source patches and screenshots. No production change was made. A separately authorized bounded model experiment and original-task verification remain necessary before claiming a fix; changing the pinned upstream observation/request boundary still requires a design decision under ADR-0003.
 
 ## Limitations
 
-This review inspected repository pins, hash-matched installed source, commit-pinned Harness/Jev source, current first-party CDP documentation, and web-platform specifications. It did not run Browser Harness, inspect the host browser's negotiated protocol version, navigate or inspect a tab, call an application model, reproduce #17, or test any proposed payload. Current CDP “tip-of-tree” stability labels describe the live protocol documentation retrieved above, not a Chrome binary pinned by this repository.
+The documentation phase inspected repository pins, hash-matched installed source, commit-pinned Harness/Jev source, current first-party CDP documentation and web-platform specifications. The later probe exercised a top-level, unzoomed, DPR 1 synthetic document through exact-session CDP and isolated request construction, not the registered Pi tool or a live fast loop. It did not test frames, zoom, ancestor clipping, sticky overlays, occlusion, readability or model behavior. Current CDP “tip-of-tree” stability labels describe the retrieved protocol documentation, not a Chrome binary pinned by this repository. #17 remains unresolved.
