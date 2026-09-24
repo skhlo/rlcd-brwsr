@@ -6,21 +6,23 @@ current working tree. The sibling checkout is retained only for test resources
 and evidence. See the [archive index](docs/archive.md).
 
 **Implementation status:** existing-tab targeting is implemented and locally
-verified at `ff49875`. The current branch adds the corrected generic compact
-handoff and a focused selector refinement: reporting coalesces fragmented lines
-with bounded context, shares one policy, and conservatively deduplicates identical
-page records. All 69 deterministic tests and 22 synthetic Pi-TUI assertions pass.
-Seven authorized live model-only checks retained expected facts and correctly
-rejected the no-answer control. For the same three saved pilot observations,
-reported input tokens fell 84.8%, but counterfactual model-facing content grew
-25.9%. Grouped excerpts still include unnecessary text and repeat the birth date
-across different passages. This is an efficiency gain, not a completed
-minimal-output improvement. Earlier browser and selector evidence remains tied
-to its recorded heads. Only pilot-owned tabs were operated in the preceding
-browser pilot; the latest model-only evaluation did not connect to the browser.
-Jev and Pi's outer model remain unchanged; the native field helper is direct
-DeepSeek `deepseek-flash` with thinking disabled. The feature is local and
-unpublished. See [current verification and limits](docs/thin-python-evidence.md#compact-handoff)
+verified at `ff49875`. The current branch now separates the bounded page context
+used by the handoff judges from the shorter exact source spans they can return.
+Long fragmented text offers individual lines; long prose uses token-aligned spans
+near 128 UTF-8 bytes, while candidate pressure can coalesce adjacent spans within
+the unchanged bounds. All 70 deterministic tests and 24 synthetic Pi-TUI
+assertions pass. An offline replay of the saved seven-case corpus retained full
+meaningful source coverage with 84/116/114 questions on the three pilot states.
+Explicitly synthetic oracle judgments then produced 2,973 bytes of useful
+model-facing content versus the 3,533 historically observed bytes, 15.9% less,
+through the unchanged presenter. That demonstrates representability, not live Jev
+quality or request-token savings: request sizes increased substantially from the
+prior grouped design. The earlier seven live model-only results remain historical
+and must not be read as validation of the new span questions. No live inference,
+browser operation, credential access, service change, installation, or
+publication occurred in this continuation. Jev and Pi's outer model remain
+unchanged; the native field helper is direct DeepSeek `deepseek-flash` with
+thinking disabled. See [current verification and limits](docs/thin-python-evidence.md#compact-handoff)
 and the [owning plan](docs/RLCD-BRWSR.md). Current GitHub issues still describe
 the superseded implementation and are not claimed as satisfied.
 See the
@@ -219,31 +221,35 @@ same terminal cap, Pi omits variable diagnostics conservatively while preserving
 outcome, cleanup and primary-error identity.
 
 For normal completion claims and native `BLOCKED` outcomes with observations,
-the optional reporter sees the sanitized goal, at most 128 bounded source
-candidates, and no browser-location URL or target-ID metadata, diagnostics,
-model configuration, raw native
-request/reply, or usage history. It keeps ordinary blank-delimited short
-paragraphs independent and coalesces adjacent short lines in long fragmented
-paragraphs into forward spans near 128 UTF-8 bytes. At each coalesced-line
-boundary, the next span may also carry up to two immediately preceding complete
-short lines, bounded to 64 UTF-8 bytes of backward context and the unchanged
-512-byte whole-record limit. Context never crosses a blank-paragraph boundary;
-bounded token-aligned fallback slices remain non-overlapping. Normal under-limit
-source remains covered by the union of ordered exact slices; oversized tokens
-and any source/candidate truncation mark coverage partial. One named trusted
-policy describes direct goal evidence, necessary qualifications, site furniture,
-and untrusted candidate data; concise independent Nouls reference that policy
-and their exact candidate path. Evidence is copied exactly from the final
-visible text; action evidence copies only step, operation, action label, and
-page-change from the last six actions. Up to three records survive the unchanged
-0.5 policy after whole-record identity deduplication. Page identity ignores
-location and cut flags and normalizes only a leading semicolon followed by
-whitespace; a bare or no-space semicolon remains exact. It does not strip general
-punctuation, normalize values, or use semantic similarity. Action identity keeps
-the step, so otherwise identical different-step actions remain separate while
-an exact repeated same-step action can deduplicate. Missing source/key, invalid
-response, provider failure, or cooperative interruption produces an honest deterministic reporting state
-without raw-text fallback or changing browser facts.
+the optional reporter sees the sanitized goal, one bounded `judgmentContext`
+containing final visible page text, at most 128 bounded source candidates, and no
+browser-location URL or target-ID metadata, diagnostics, model configuration,
+raw native request/reply, or usage history. The context preserves labels, order,
+neighbors and qualifications for interpretation, but it is untrusted data and
+never becomes evidence automatically. Selectable page records remain exact
+contiguous source copies: useful short paragraphs stay independent, long
+fragmented paragraphs offer individual nonempty lines, and long lines or prose
+use token-aligned spans near 128 UTF-8 bytes. A single token larger than that soft
+target remains whole when it fits the unchanged 512-byte record cap; larger tokens
+are omitted and disclosed. Under candidate pressure, adjacent spans may coalesce
+to preserve source coverage without keyword shortlisting or silently dropping the
+end of the page. Source, candidate, or request pressure marks coverage partial
+even when omitted selectable text is still present in `judgmentContext`.
+
+One named trusted policy limits evidence to requested answer facts, visible
+goal-result evidence, blockers, necessary action evidence and qualifications.
+Topic-related background, incidental compliance with instructions and generic
+site furniture are excluded unless themselves requested or result evidence. Each
+independent Noul explicitly judges only `candidates[index].exact` for a page
+record or that candidate's allowlisted action fields, using context only for
+interpretation. Evidence copies only offered records. Up to three records survive
+the unchanged 0.5 policy after whole-record identity deduplication. Page identity
+ignores location and cut flags and normalizes only a leading semicolon followed
+by whitespace, so the two short birth-date presentation variants collapse while
+signs, currency, units, versions, caveats and no-space semicolons remain distinct.
+Action identity keeps the step. Missing source/key, invalid response, provider
+failure, or cooperative interruption produces an honest deterministic reporting
+state without raw-text fallback or changing browser facts.
 
 Model-facing run content contains only `outcome`, `lastObservedLocation`,
 `evidence`, `cleanup`, `diagnostic`, `reporting`, and `output`. It excludes full
@@ -270,28 +276,28 @@ git diff --check
 
 The deterministic suite includes registered-tool cases that cross the real
 Python runner and pinned `Agent.run()`/native helper while substituting external
-Browser Harness CDP and provider responses. It now checks goal-dependent source
-selection, fragmented-source union coverage, bounded line-boundary context and
-request shape, shared policy references, strict semicolon and action-step
-whole-record identities, distant qualifications, scroll-action evidence, report
-failure/interruption, strict response/envelope validation, privacy on both surfaces, and honest bounds. Separate process/outcome
-and direct projection checks retain the earlier lifecycle guarantees.
+Browser Harness CDP and provider responses. It now checks context-assisted short
+span selection without context leakage, individual fragmented lines, complete
+coverage under candidate coalescing, honest request-pressure omissions, the
+512-byte token rule, explicit candidate paths and span scope, strict semicolon and
+action-step identities, distant qualifications, scroll-action evidence, report
+failure/interruption, privacy and all existing machine-fact bounds. Separate
+process/outcome and direct projection checks retain the earlier lifecycle
+guarantees.
 
-A corrected isolated Pi-TUI slash-command check invoked the production registered
-run definition with synthetic browser and provider boundaries. Its 821-byte
-content retained exactly 63 bytes of requested amount/exclusion evidence with no
-repeated filler, versus 2,362-byte details. It did not touch Chrome, invoke an
-outer model, or make a live provider request. Seven production-shaped sanitized
-reconstructions ran through the verified old and corrected interpreters without
-browser actions: 8,117 old-visible bytes versus 5,697 new-content bytes (29.8%
-smaller), while new-details versus new-content was 52.8% smaller. The five
-recorded-task inputs are shortened reconstructions, not original snapshots, and
-the two synthetic goals use the same document. These are JSON-surface byte
-comparisons, not end-to-end performance measurements. Historical real-Chrome
-and live-provider evidence remains tied to its recorded heads. A later live
-reporting-only replay of seven sanitized cases validated API operation and
-retained expected evidence in six, including distinct answers to two goals over
-one document and a distant qualification. One shortened Google example was
-filtered out. Selection took 175-514 ms per case; these are not browser-task or
-end-to-end timings. General-web reliability and complete billing remain
-unestablished.
+An isolated Pi 0.87.1 TUI slash command invoked the production registered run
+definition with synthetic browser and provider boundaries. All 24 assertions
+passed: a broader five-span context made the requested short amount and distant
+exclusion selectable, while the compact 820-byte result returned exactly 56
+source bytes and none of the unrelated context; details were 1,822 bytes. The
+saved seven-case structural replay used no model or browser. The three pilot
+requests had 84/116/114 questions and 50,049/70,046/68,705 serialized bytes,
+with complete meaningful source coverage and page spans no larger than 127
+bytes. Those requests are larger than the prior grouped requests, so no request
+reduction is claimed. Explicitly labelled synthetic oracle scores produced useful
+compact outputs of 1,390/751/832 bytes on the historical pilot states, totaling
+2,973 versus the exactly reproduced historical 3,533 bytes. Protected facts were
+held constant. This 15.9% potential reduction proves only that the structure can
+represent a smaller useful handoff. The earlier seven live model-only calls are
+consumed historical evidence for the superseded grouped questions; live semantic,
+token and latency validation of this span design needs a separate allowance.

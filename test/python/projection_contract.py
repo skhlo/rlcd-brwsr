@@ -120,6 +120,21 @@ def assert_candidate_bounds_do_not_split_oversized_tokens() -> None:
     assert all(oversized_identifier not in candidate["exact"] for candidate in candidates)
     assert all("IDENTIFIER" not in candidate["exact"] for candidate in candidates)
 
+    larger_unsplittable_token = "界" * 100
+    token_candidates, token_omitted = handoff_report._page_candidates(
+        f"Prefix words {larger_unsplittable_token} suffix words"
+    )
+    assert token_omitted is False
+    assert any(
+        candidate["exact"] == larger_unsplittable_token
+        for candidate in token_candidates
+    )
+    assert all(
+        larger_unsplittable_token not in candidate["exact"]
+        or candidate["exact"] == larger_unsplittable_token
+        for candidate in token_candidates
+    )
+
     pinned_length_text = "word " * 1200
     assert len(pinned_length_text) == 6000
     bounded_candidates, upstream_omitted = handoff_report._page_candidates(
@@ -127,6 +142,67 @@ def assert_candidate_bounds_do_not_split_oversized_tokens() -> None:
     )
     assert bounded_candidates
     assert upstream_omitted is True
+
+
+def assert_candidate_and_request_pressure_preserve_coverage_or_disclose_omission() -> None:
+    pressure_text = "\n".join(
+        f"Field {index:03d}: value {index:03d}." for index in range(180)
+    )
+    candidates, source_omitted = handoff_report._page_candidates(pressure_text)
+    assert source_omitted is False
+    assert len(candidates) <= handoff_report.REPORT_CANDIDATE_LIMIT
+    assert "Field 179: value 179." in candidates[-1]["exact"]
+    cursor = 0
+    for candidate in candidates:
+        exact = candidate["exact"]
+        start = pressure_text.index(exact, cursor)
+        assert pressure_text[cursor:start].strip() == ""
+        cursor = start + len(exact)
+    assert pressure_text[cursor:].strip() == ""
+
+    request_pressure_text = "\n".join(
+        f"Line {index:03d}: " + "x" * 34 for index in range(120)
+    )
+    captured: dict[str, Any] = {}
+    previous = os.environ.get("TYPESAFE_API_KEY")
+    os.environ["TYPESAFE_API_KEY"] = "synthetic-projection-report-key"
+    try:
+        def reject_all(
+            _url: str, _key: str, body: dict[str, Any]
+        ) -> dict[str, Any]:
+            captured.update(body)
+            return {
+                "model": "synthetic-report-model",
+                "answers": {
+                    question_id: {"type": "noul", "noul": 0.0}
+                    for question_id in body["questions"]
+                },
+                "usage": {"input_tokens": 0, "output_tokens": 0},
+            }
+
+        result, _ = handoff_report.select_handoff(
+            goal="Return the requested fact " + "g" * 30_000,
+            page_text=request_pressure_text,
+            history=[],
+            model="jev-1.13.0",
+            post_json=reject_all,
+        )
+    finally:
+        if previous is None:
+            os.environ.pop("TYPESAFE_API_KEY", None)
+        else:
+            os.environ["TYPESAFE_API_KEY"] = previous
+
+    state = captured["state"]
+    offered = state["candidates"]
+    assert state["judgmentContext"] == request_pressure_text
+    assert len(offered) < 120
+    assert all("Line 119:" not in str(candidate.get("exact", "")) for candidate in offered)
+    assert "Line 119:" in state["judgmentContext"]
+    assert handoff_report._serialized_size(captured) <= 98_304
+    assert result["sourceCoverage"] == "partial"
+    assert result["sourceOmitted"] is True
+    assert result["candidateCount"] == len(offered)
 
 
 def assert_source_omissions_cover_rejected_actions_and_empty_candidates() -> None:
@@ -424,11 +500,12 @@ def main() -> int:
     assert_owned_producers_omit_availability()
     assert_oversized_state_is_bounded_without_agent_mutation()
     assert_candidate_bounds_do_not_split_oversized_tokens()
+    assert_candidate_and_request_pressure_preserve_coverage_or_disclose_omission()
     assert_source_omissions_cover_rejected_actions_and_empty_candidates()
     assert_action_identity_keeps_distinct_steps()
     assert_short_groups_support_two_goals_without_filler()
     assert_reporting_pressure_preserves_legacy_diagnostics()
-    print("projection contract: 7 checks passed")
+    print("projection contract: 8 checks passed")
     return 0
 
 

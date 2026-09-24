@@ -317,6 +317,23 @@ def _page():
             "page_key": "report-goal-document",
             "guards": {},
         }
+    if _SCENARIO == "report_span_context":
+        return {
+            "url": _STATE["url"],
+            "title": "Generic account summary",
+            "text": (
+                "Account summary "
+                + "x" * 110
+                + "\nRequested monthly total:\n120 credits per month.\n"
+                + "Unrequested biographical background.\n\n"
+                + "Estimate excludes service charges."
+            ),
+            "scroll": {"y": 0},
+            "actions": [{"id": "wait", "kind": "wait", "label": "Wait"}],
+            "marker": "report-span-context",
+            "page_key": "report-span-context",
+            "guards": {},
+        }
     if _SCENARIO == "report_fragmented":
         return {
             "url": _STATE["url"],
@@ -340,9 +357,9 @@ def _page():
             "title": "Generic duplicate records",
             "text": "\n\n".join(
                 [
-                    "Recorded date: November 9, 1914",
-                    ";  Recorded date: November 9, 1914",
-                    "Recorded date: November 9, 1914",
+                    "November 9, 1914",
+                    ";  November 9, 1914",
+                    "November 9, 1914",
                     "Signed balance: +12 USD",
                     "Signed balance: -12 USD",
                     "Price: $12 per month",
@@ -837,7 +854,14 @@ def _report_response(body):
         operation = str(candidate.get("operation", "")).lower()
         action_label = str(candidate.get("actionLabel", "")).lower()
         score = 0.05
-        if _SCENARIO == "report_duplicates":
+        if _SCENARIO == "report_span_context":
+            context = str(body["state"]["judgmentContext"])
+            if (
+                exact == "120 credits per month."
+                and "Requested monthly total:\n120 credits per month." in context
+            ) or exact == "estimate excludes service charges.":
+                score = 0.96
+        elif _SCENARIO == "report_duplicates":
             score = 0.9
         elif "field 047" in goal and "field 047:" in exact:
             score = 0.96

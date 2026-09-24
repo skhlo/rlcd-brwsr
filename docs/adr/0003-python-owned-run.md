@@ -1,24 +1,24 @@
 # Let upstream Python own the run
 
 Status: accepted and implemented; the tab-targeting amendment is locally
-verified at corrected candidate `ff49875`. The current compact-handoff amendment
-separates goal-aware model-facing content from bounded diagnostic `details` and
-has 69-test deterministic plus isolated command-driven Pi-TUI evidence with
-synthetic browser/provider boundaries. Its selector correction adds bounded
-line-boundary context and strict whole-record identity without changing owners.
-The corrected selector's seven authorized live model-only checks retained
-expected facts and rejected the no-answer control. Same-source reporting tokens
-fell, but grouped excerpts made counterfactual output larger and retained
-unnecessary context and semantic repetition. This is not complete acceptance of
-minimal-output quality. The preceding three-task normal-session public-page
-pilot and earlier six-of-seven selector replay remain historical evidence at
-their recorded heads. Existing user tabs were left alone. The
+verified at corrected candidate `ff49875`. The compact-handoff amendment
+separates goal-aware model-facing content from bounded diagnostic `details`; its
+latest span-judge amendment also separates the full bounded context used for
+judgment from shorter exact evidence spans. All 70 deterministic tests and 24
+isolated command-driven Pi-TUI assertions pass with synthetic external
+boundaries. A saved-input replay retained complete meaningful source coverage,
+and explicitly synthetic oracle judgments represented useful pilot handoffs in
+2,973 bytes versus the exactly reproduced historical 3,533 bytes. This is not
+live Jev evidence. The prior grouped selector's seven authorized live calls
+remain historical: they reduced reporting tokens but increased counterfactual
+content, and they do not validate the new 84/116/114-question shape. Existing
+user tabs and services were left alone; no credential or provider was used. The
 helper remains direct DeepSeek `deepseek-flash` with native thinking disabled;
 Jev and Pi's outer model are unchanged. See the
 [current verification record](../thin-python-evidence.md#compact-handoff), which
-preserves older tab-targeting, rewrite and live Ling evidence at their recorded
-heads. Publication and general-web reliability remain unestablished. Supersedes
-ADR-0002's command-level orchestration,
+preserves older browser, selector, rewrite and live Ling evidence at their
+recorded heads. Publication, new-shape live semantics and general-web reliability
+remain unestablished. Supersedes ADR-0002's command-level orchestration,
 Pi-native helper relay and parent shadow-state design, not its dependency pins or
 native Browser Harness ownership.
 
@@ -147,6 +147,51 @@ otherwise identical different-step actions remain separate while an exact
 repeated same-step action can deduplicate. Source overlap can legitimately remain
 when records contain different information. This is not substring, word-set or
 semantic deduplication, and it adds no architectural owner or lifecycle promise.
+
+### Span-judge separation amendment
+
+The selector-refinement grouping above remains decision history. This amendment
+supersedes its grouping and boundary-context behavior while retaining the same
+reporting owner, `select_handoff` interface, transport, model, one batched request,
+independent Nouls, 0.5 threshold, three-record cap, strict response schema and all
+lifecycle/error safeguards.
+
+Request state now has one named `judgmentContext` string containing the sanitized,
+bounded final visible page text in original order. It preserves labels, neighboring
+lines and qualifications for interpretation but is untrusted data, never an
+instruction source, returned evidence or automatic compact content. The only
+other source content is the offered candidates: page records expose exact spans;
+action records retain the existing step, operation, label and page-change
+allowlist. Browser location, target, diagnostics, configuration and usage remain
+excluded.
+
+Selectable page spans are intentionally shorter. Useful short blank-delimited
+paragraphs remain independent; long fragmented paragraphs offer individual
+nonempty lines. Long lines and prose use token-aligned spans near 128 UTF-8 bytes,
+with the unchanged 512-byte hard cap. One larger unsplittable token remains whole
+when it fits that cap; a larger token is omitted and disclosed rather than cut.
+Under candidate pressure only, adjacent source spans may coalesce up to the hard
+cap to preserve coverage without lexical shortlisting or late-source loss. Any
+source, span, candidate or request-fit omission marks coverage partial even if
+that text is still visible in `judgmentContext`.
+
+The shared policy and every candidate-path Noul explicitly limit judgment to the
+offered page `exact` field or allowlisted action record, using context only for
+interpretation. Useful evidence means requested answer facts, visible goal-result
+evidence, blockers, necessary actions and qualifications. Topic-related
+biography/background, incidental compliance such as staying on a page, and
+generic site furniture are not answers unless themselves requested or result
+evidence. Questions remain independent and cannot assume another answer. The
+existing semicolon-followed-whitespace identity now collapses the two short
+birth-date variants; signs, currencies, units, versions, caveats, no-space
+semicolons and different action steps remain distinct.
+
+Tests no longer require a reduced grouping count or a label and value in one
+returned record. Those assertions belonged to the superseded representation:
+`judgmentContext` now retains the relationship while fine exact spans alone are
+eligible for output. Replacement guards require full meaningful source coverage,
+explicit span scope, no context leakage and exact offered evidence. This changes
+no browser, supervisor, presenter or machine-fact owner.
 
 Python first bounds the pre-report browser projection, then fits optional
 reporting evidence, metadata and `jev_handoff` usage in the remaining space.

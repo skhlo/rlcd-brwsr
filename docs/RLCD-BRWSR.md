@@ -1,27 +1,26 @@
 # RLCD-brwsr plan
 
-Status: the corrected generic compact handoff and focused local selector
-refinement are **implemented and locally verified** on the current feature branch,
-building on existing-tab targeting at `ff49875`. Run-tool model content remains
-goal-aware and compact while bounded diagnostic `details` remains available to
-Pi. Deterministic registered-tool tests (69/69) and an isolated command-driven
-Pi-TUI check passed with synthetic browser/provider boundaries. A same-input
-synthetic replay reduced the three saved pilot request shapes while preserving
-nonwhitespace source coverage, including bounded boundary context for split
-label/value records. Seven subsequent live model-only checks retained the
-expected facts and correctly rejected a no-answer control. On the same three
-saved pilot observations, reported input tokens fell 84.8%, while offline
-production presentation of the new evidence grew 25.9%. Unnecessary context and
-semantic repetition remain, so minimal-output quality is not resolved. The
-preceding three-task normal-session public-page pilot passed exact-target
-verification on pilot-owned tabs; that browser evidence and the older selector
-replays remain tied to their recorded heads. No browser operation occurred in
-the latest model-only evaluation.
-The native helper remains direct DeepSeek
-`deepseek-flash` with thinking disabled; Jev and Pi's outer model are unchanged.
-See the [current verification record](thin-python-evidence.md#compact-handoff)
-and retained local artifacts under `artifacts/compact-output/implementation/`.
-Earlier tab-targeting, rewrite and live Ling evidence remains tied to its
+Status: the generic compact handoff now separates the bounded page context used
+for judgment from the shorter exact source spans that can be returned. It is
+**implemented and locally verified** on the current feature branch, building on
+existing-tab targeting at `ff49875`. Run-tool model content remains goal-aware
+and compact while bounded diagnostic `details` remains available to Pi. All 70
+deterministic tests and 24 isolated command-driven Pi-TUI assertions passed with
+synthetic external boundaries. An offline seven-case replay preserved complete
+meaningful source coverage. On the three saved pilot states, explicitly labelled
+synthetic oracle judgments produced 2,973 bytes of useful content versus the
+exactly reproduced historical 3,533 bytes, 15.9% less, with protected machine
+facts held constant. This proves structural representability only. The new
+84/116/114-question requests were 50,049/70,046/68,705 bytes, substantially
+larger than the prior grouped requests, and the earlier seven live calls tested
+only that superseded grouped shape. No live semantic, token or latency claim is
+made for the span design. No live inference, browser operation, credential
+access, service change, installation or publication occurred in this
+continuation. The native helper remains direct DeepSeek `deepseek-flash` with
+thinking disabled; Jev and Pi's outer model are unchanged. See the
+[current verification record](thin-python-evidence.md#compact-handoff) and
+retained local artifacts under `artifacts/compact-output/span-judges/`. Earlier
+browser, selector, rewrite and live-provider evidence remains tied to its
 recorded heads. The DeepSeek and compact changes are local and unpublished.
 
 The larger experimental Pi-native-helper implementation remains historical at
@@ -264,37 +263,42 @@ For normal native completion or `BLOCKED` with observations, one optional
 post-cleanup reporting request uses the existing pinned Jev transport and model.
 Python sanitizes the original goal, full upstream-visible text before the old
 4 KiB projection clipping, and an explicit allowlist from the last six actions.
-Ordinary blank-delimited short paragraphs remain independent. Within long
-single-newline paragraphs, adjacent short lines become forward exact spans near
-128 UTF-8 bytes. At a coalesced-line boundary, the next span may carry up to two
-immediately preceding complete short lines, bounded to 64 UTF-8 bytes of
-backward context and the unchanged 512-byte whole-record limit. Context does not
-cross a blank-paragraph boundary or split a line or token. Longer material keeps
-the bounded non-overlapping token-aligned fallback. Normal under-limit inputs
-preserve every nonwhitespace source character through the union of ordered exact
-slices. Oversized tokens, rejected in-window actions and any
-source/input/candidate truncation mark source coverage partial. The documented
-source remains the final visible observation plus the last six actions, not
-whole history. The reporter creates at most 128 candidates, keeps each candidate
-within 512 UTF-8 bytes, fits the full request within 98,304 bytes, and reserves
-the same last-six action allowance.
+One `judgmentContext` field contains the bounded final visible text with its
+original labels, order, neighbors and qualifications. It is untrusted data used
+only to interpret offered page spans; it never becomes evidence automatically.
+Browser location, target, diagnostics, configuration and usage remain excluded.
+
+Selectable evidence is separate. Useful short blank-delimited paragraphs remain
+independent. Long fragmented paragraphs offer individual nonempty lines instead
+of context-bearing groups. Long lines and prose use token-aligned spans near the
+128-byte soft target; an unsplittable token larger than that remains whole if it
+fits the unchanged 512-byte record cap, while a larger token is omitted and
+disclosed. Under candidate pressure, adjacent source spans may coalesce up to the
+hard bound so late source is not discarded through shortlisting. Normal inputs
+preserve every nonwhitespace source character through ordered exact spans.
+Oversized tokens, rejected in-window actions, source truncation, candidate
+truncation and request fitting mark source coverage partial even if omitted
+selectable text remains present in `judgmentContext`. The source remains the
+final visible observation plus the last six actions, not whole history. The
+reporter still creates at most 128 candidates and fits one request within 98,304
+bytes.
 
 The pinned observer limits visible text to 6,000 characters, so the 24,576-byte
-source allowance covers its UTF-8 worst case. One named trusted policy in request
-state defines direct requested facts, goal-specific state or milestones,
-blockers, necessary action evidence and qualifications; it also limits generic
-navigation/site furniture to actual goal evidence and labels all page/action
-content untrusted data. Each concise independent Noul references that policy,
-`goal`, and its actual `candidates[index]` path because question IDs are not sent
-to the model. Every answer/model/usage field is validated. Code copies at most
-three qualifying exact source records after conservative identity deduplication:
-page locations and cut flags are ignored, and only a leading semicolon followed
-by whitespace is normalized. A bare or no-space semicolon remains exact.
-Distinct punctuation, values, signs, currency, units, versions, exclusions and
-action step identities remain distinct; exact repeated same-step actions can
-deduplicate. The unchanged 0.5 threshold is evaluation policy, not a reliability
-claim; source overlap may legitimately survive when whole records contain
-different information, and this is not semantic deduplication.
+context/source allowance covers its UTF-8 worst case. One named trusted policy
+limits usefulness to requested answer facts, visible goal-result evidence,
+blockers, necessary action evidence and qualifications. Topic-related biography
+or background, incidental compliance with instructions and generic site
+furniture are not answers unless themselves requested or result evidence. Each
+independent Noul references `goal`, the shared policy and its actual
+`candidates[index]` path, and explicitly judges only that page candidate's
+`exact` field or the allowlisted action record. Every answer/model/usage field is
+validated. Code copies at most three qualifying offered records after
+conservative identity deduplication. Page location and cut flags are ignored,
+and only a leading semicolon followed by whitespace is normalized. This
+collapses the two short birth-date presentation variants while retaining bare or
+no-space semicolons, punctuation, signs, currencies, units, versions, caveats,
+exclusions and action-step identities. The unchanged 0.5 threshold remains an
+evaluation policy, not a reliability claim.
 
 Python bounds the legacy browser diagnostic projection before adding reporting,
 so optional evidence, metadata and `jev_handoff` usage cannot evict page text,
@@ -398,19 +402,41 @@ cannot be forcibly cancelled by a Promise race.
 
 The current suite retains all click/fill/DONE/BLOCKED/error, preflight/input,
 byte/privacy, supervision, cleanup and borrowed/discovery assertions. Compact
-regressions additionally cover two goals over the same generic document,
-fragmented source coalescing with union coverage of ordered exact slices,
-bounded two-line boundary context and allowlisted request state, one shared
-policy with exact candidate references, conservative whole-record identities
-including strict no-space semicolons and action steps, non-adjacent
-qualifications without repeated filler, scroll-action evidence,
-missing/invalid/interrupted reporting, short Bearer privacy, combined source
-omissions, nullable usage, scalar enum rejection, reporting-pressure priority,
-strict evidence/envelope validation, both returned surfaces, candidate/request
-caps, and honest content/details omissions. Near-cap
-omission-label controls remain accepted. One direct projection check proves an
-oversized token is omitted rather than split. No live credentials or model calls
-were used for these deterministic and synthetic-TUI checks.
+regressions additionally cover context-assisted short selection without context
+leakage, individual fragmented lines with their relationship retained only in
+context, complete source coverage under candidate pressure, honest request-fit
+omissions while text remains in context, token-aligned soft spans and the
+512-byte unsplittable-token rule, one shared policy with explicit span paths,
+conservative date/semicolon/action-step identities, non-adjacent qualifications
+without filler, scroll-action evidence, reporting failures, response validation,
+both output surfaces and protected-fact priority. The former grouping-count and
+same-output-record label assertions were replaced because those relationships now
+belong to `judgmentContext`; returned records intentionally stay fine-grained.
+Near-cap omission-label controls remain accepted. No live credentials or model
+calls were used for these deterministic and synthetic-TUI checks.
+
+The span-judge continuation passed 70/70 deterministic tests and one isolated
+Pi 0.87.1 TUI slash-command acceptance with 24/24 assertions. The TUI request
+contained five candidates and one independent Noul per candidate; its broader
+context supplied the separate label, value and qualification. Compact content
+was 820 bytes versus 1,822-byte details and returned exactly 56 bytes of requested
+amount/exclusion evidence with no unrelated context. It was command-driven, not
+an outer-model-issued turn, and used synthetic browser/provider boundaries.
+
+The saved seven-case OFFLINE structural replay recorded request bytes, question
+counts and exact source coverage without model or browser access. The three pilot
+states used 84/116/114 questions and 50,049/70,046/68,705 bytes; all seven cases
+had complete meaningful source coverage and all pilot page spans were at most
+127 bytes. Explicitly synthetic oracle scores then selected short useful evidence
+through the unchanged production presenter. It first reproduced each historical
+compact object and byte count exactly, held outcome/location/cleanup/diagnostic
+constant, and produced 1,390/751/832 bytes instead of 1,470/1,005/1,058: 2,973
+versus 3,533 total, 15.9% less. Boilerplate, duplicate and qualification checks
+were recorded separately from fragment recall. These are representability and
+surface calculations, not predictions or evidence of Jev quality, request-token
+savings, latency, billing or reliability. The prior grouped-shape live calls are
+historical and consumed; a new finite allowance is required for live validation
+of these questions.
 
 The click/default-close, text/retention, time-budget and TUI-cancellation cases
 were repeated successfully at corrected implementation `b3b42036`, using real

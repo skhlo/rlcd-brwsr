@@ -301,6 +301,58 @@ Evidence and scripts are retained under
 `REPORT.md`, response/attempt receipts, token comparison and the counterfactual
 content comparison.
 
+### Span-judge continuation: context separated from output spans
+
+The reporting owner now sends one bounded `judgmentContext` alongside shorter
+selectable records. Long fragmented paragraphs offer individual lines; long
+lines and prose use token-aligned spans near 128 bytes, preserving one larger
+unsplittable token when it fits 512 bytes. Adjacent spans coalesce only under
+candidate pressure. Source, candidate and request-fit omissions remain explicit,
+even when text still exists in the context. One shared policy and each
+candidate-path Noul state that only the offered exact page span or allowlisted
+action record is judged; context is untrusted interpretation data and cannot
+enter returned evidence automatically.
+
+A public registered-tool regression was observed red before implementation: the
+synthetic provider required `judgmentContext`, so the old reporter returned an
+error rather than the requested short amount and qualification. The corrected
+case passes and proves the unrelated context appears only in the request context,
+not evidence or compact content. Replacement guards also cover individual
+fragmented lines, complete candidate-pressure coverage, honest request-pressure
+omission, a 300-byte unsplittable Unicode token, strict date/semicolon identity,
+distant qualifications, action steps, bounds, errors and protected facts. The
+full deterministic suite passes 70/70; the direct projection seam reports 8/8.
+The former reduced-group-count and same-record label/value assertions were
+removed because context now owns those relationships while returned spans remain
+fine-grained.
+
+The seven saved cases were replayed OFFLINE through production request generation
+with zero-score callbacks. All retained complete meaningful source coverage. The
+three pilot states produced 84/116/114 questions, 50,049/70,046/68,705 serialized
+request bytes and page spans no larger than 127 bytes. These are larger requests
+than the prior grouped 9/18/16 shape; no request-token reduction is claimed.
+Explicitly labelled synthetic oracle judgments, not reused scores, separately
+passed simple recall, boilerplate, duplicate, qualification and exact-copy checks
+on the pilot states. The unchanged production presenter first reproduced each
+historical compact object and byte count exactly, held protected outcome,
+location, cleanup and diagnostic fields constant, then produced 1,390/751/832
+bytes instead of 1,470/1,005/1,058. The total was 2,973 versus 3,533 bytes, a
+15.9% potential reduction. This demonstrates structural representability only,
+not live Jev precision, tokens, latency, billing or reliability.
+
+An actual isolated Pi 0.87.1 TUI slash command invoked the production registered
+tool with synthetic browser/provider boundaries. All 24 assertions passed. The
+five-candidate request used the broader label/value context and returned exactly
+56 bytes of requested amount/exclusion evidence in 820-byte compact content,
+versus 1,822-byte details, with zero unrelated-context occurrences in evidence.
+It was command-driven, not an outer-model turn. No live call, browser/daemon
+connection, credential access, service change or installation occurred. The
+task-owned Paseo terminal and isolated work directory were removed; the existing
+Harness remained untouched. Artifacts are retained under
+`artifacts/compact-output/span-judges/`. The earlier seven live calls are consumed
+historical evidence for the superseded grouped questions; validating this new
+shape live requires a separate finite allowance.
+
 Historical rewrite tested implementation: `b3b42036685eba64f3e7bc8ccc296e16b9910fe9`.
 The initial rewrite is `3f984e54`; the corrected implementation was checked again,
 not accepted solely on the earlier candidate's results. These runs preceded

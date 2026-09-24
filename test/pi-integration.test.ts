@@ -119,9 +119,9 @@ const fragmentedReportLines = [
 ];
 const fragmentedReportText = fragmentedReportLines.join("\n");
 const duplicateReportRecords = [
-  "Recorded date: November 9, 1914",
-  ";  Recorded date: November 9, 1914",
-  "Recorded date: November 9, 1914",
+  "November 9, 1914",
+  ";  November 9, 1914",
+  "November 9, 1914",
   "Signed balance: +12 USD",
   "Signed balance: -12 USD",
   "Price: $12 per month",
@@ -1711,7 +1711,86 @@ test("goal-aware reporting selects identifier or estimate facts from the same ge
   }
 });
 
-test("reporting coalesces fragmented source under one shared candidate policy", async () => {
+test("reporting judges short exact spans with bounded page context without returning that context", async () => {
+  const goal = "Report the requested monthly total and any exclusions";
+  await withScenario(
+    "report_span_context",
+    { params: { goal } },
+    async ({ result, markers }) => {
+      const details = detailsOf(result);
+      const reporting = recordField(details, "reporting");
+      assert.equal(reporting.status, "selected");
+      assert.equal(reporting.sourceCoverage, "complete");
+
+      const request: unknown = JSON.parse(
+        await readFile(markers.report, "utf8"),
+      );
+      assert.ok(isRecord(request));
+      const state = recordField(request, "state");
+      const context = String(state.judgmentContext);
+      assert.match(
+        context,
+        /Requested monthly total:\n120 credits per month\./,
+      );
+      assert.match(context, /Unrequested biographical background\./);
+      assert.equal(state.goal, goal);
+
+      const offered = arrayField(state, "candidates") as Array<
+        Record<string, unknown>
+      >;
+      const offeredPageExact = offered
+        .filter((candidate) => candidate.kind === "page")
+        .map((candidate) => String(candidate.exact));
+      assert.ok(offeredPageExact.includes("120 credits per month."));
+      assert.ok(
+        offeredPageExact.includes("Estimate excludes service charges."),
+      );
+
+      const detailedEvidence = arrayField(reporting, "evidence") as Array<
+        Record<string, unknown>
+      >;
+      const detailedExact = detailedEvidence.map((item) => String(item.exact));
+      assert.deepEqual(detailedExact, [
+        "120 credits per month.",
+        "Estimate excludes service charges.",
+      ]);
+      assert.ok(
+        detailedEvidence.every(
+          (item) =>
+            item.kind !== "page" ||
+            (offeredPageExact.includes(String(item.exact)) &&
+              Buffer.byteLength(String(item.exact), "utf8") <= 512),
+        ),
+      );
+
+      const compact = compactOf(result);
+      assert.deepEqual(
+        arrayField(compact, "evidence").map((item) =>
+          String((item as Record<string, unknown>).exact),
+        ),
+        detailedExact,
+      );
+      assert.doesNotMatch(JSON.stringify(compact), /biographical background/);
+      assert.equal(Object.hasOwn(details, "judgmentContext"), false);
+      assert.equal(Object.hasOwn(reporting, "judgmentContext"), false);
+      assert.equal(Object.hasOwn(compact, "judgmentContext"), false);
+
+      const questions = recordField(request, "questions");
+      assert.equal(Object.keys(questions).length, offered.length);
+      for (const [index, questionValue] of Object.values(questions).entries()) {
+        assert.ok(isRecord(questionValue));
+        const question = questionValue;
+        const rendered = JSON.stringify(question);
+        assert.match(rendered, new RegExp(`candidates\\[${index}\\]`));
+        assert.match(rendered, /ONLY/);
+        assert.match(rendered, /judgmentContext/);
+        assert.match(rendered, /independent/);
+      }
+    },
+  );
+});
+
+test("reporting keeps fragmented relationships in context while offering fine exact spans", async () => {
   await withScenario(
     "report_fragmented",
     { params: { goal: "Return Field 047" } },
@@ -1734,22 +1813,29 @@ test("reporting coalesces fragmented source under one shared candidate policy", 
       assert.deepEqual(Object.keys(state).sort(), [
         "candidates",
         "goal",
+        "judgmentContext",
         "trustedSelectionPolicy",
       ]);
       assert.equal(state.goal, "Return Field 047");
+      assert.equal(state.judgmentContext, fragmentedReportText);
       const policy = recordField(state, "trustedSelectionPolicy");
       assert.deepEqual(Object.keys(policy).sort(), [
+        "answerUsefulness",
         "dataHandling",
+        "independence",
         "qualifications",
-        "relevance",
         "siteFurniture",
+        "spanScope",
       ]);
-      assert.equal((reportText.match(/"relevance":/g) ?? []).length, 1);
+      assert.equal((reportText.match(/"answerUsefulness":/g) ?? []).length, 1);
 
       const candidates = arrayField(state, "candidates") as Array<
         Record<string, unknown>
       >;
-      assert.ok(candidates.length <= fragmentedReportLines.length / 3);
+      assert.deepEqual(
+        candidates.map((candidate) => candidate.exact),
+        fragmentedReportLines,
+      );
       assert.equal(reporting.candidateCount, candidates.length);
       assert.ok(
         candidates.every(
@@ -1763,14 +1849,16 @@ test("reporting coalesces fragmented source under one shared candidate policy", 
           ...candidates.map((candidate) =>
             Buffer.byteLength(String(candidate.exact), "utf8"),
           ),
-        ) <= 192,
+        ) <= 128,
       );
 
       assert.ok(
-        candidates.some((candidate) =>
-          String(candidate.exact).includes("Total:\n$12"),
+        candidates.every(
+          (candidate) => !String(candidate.exact).includes("Total:\n$12"),
         ),
       );
+      assert.ok(candidates.some((candidate) => candidate.exact === "Total:"));
+      assert.ok(candidates.some((candidate) => candidate.exact === "$12"));
       let previousStart = 0;
       let coveredEnd = 0;
       for (const candidate of candidates) {
@@ -1823,7 +1911,7 @@ test("reporting coalesces fragmented source under one shared candidate policy", 
           "the shared policy must not be copied into each question",
         );
       }
-      assert.ok(Buffer.byteLength(reportText, "utf8") < 16_000);
+      assert.ok(Buffer.byteLength(reportText, "utf8") < 50_000);
       assert.equal(Object.hasOwn(state, "url"), false);
       assert.equal(Object.hasOwn(state, "targetId"), false);
       assert.equal(Object.hasOwn(state, "diagnostic"), false);
@@ -1877,7 +1965,7 @@ test("reporting deduplicates only conservative whole-record identities", async (
         String((item as Record<string, unknown>).exact),
       );
       assert.deepEqual(exact, [
-        "Recorded date: November 9, 1914",
+        "November 9, 1914",
         "Signed balance: +12 USD",
         "Signed balance: -12 USD",
       ]);
@@ -3114,7 +3202,7 @@ test(
       assert.equal(result.signal, null);
       assert.match(
         Buffer.concat(stdout).toString("utf8"),
-        /projection contract: 7 checks passed/,
+        /projection contract: 8 checks passed/,
       );
     } finally {
       if (!closed) child.kill("SIGTERM");
