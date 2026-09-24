@@ -33,7 +33,10 @@ def _terminal(native_count: int) -> dict[str, Any]:
         cleanup="closed",
         target_id="rlcd-owned-target",
         state=state,
-        diagnostic=None,
+        diagnostic={
+            "type": "FixtureDiagnostic",
+            "message": "Original browser diagnostic; not a reporting error.",
+        },
     )
     raw["reporting"] = {
         "status": "selected",

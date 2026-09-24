@@ -366,7 +366,16 @@ function nearLimitOmissionTerminal(
       textHelper: { configuredModel: "", baseUrl: "", reasoning: "" },
     };
   }
-  if (!includeReporting) delete details.reporting;
+  if (!includeReporting) {
+    delete details.reporting;
+    details.targetId = "opaque-pressure-target";
+    details.execution = "unknown";
+    recordField(details, "cleanup").taskTab = "unconfirmed";
+    details.diagnostic = {
+      type: "FixtureDiagnostic",
+      message: "Original browser diagnostic; not a reporting error.",
+    };
+  }
   const output = recordField(details, "output");
   const labels = Array.from(
     { length: 32 },
@@ -2196,6 +2205,15 @@ test("production projection fits optional reporting usage within the parent reco
     assert.equal(details.status, "completion_claim");
     assert.equal(details.execution, "completed");
     assert.equal(recordField(details, "cleanup").taskTab, "closed");
+    assert.equal(details.targetId, "rlcd-owned-target");
+    assert.deepEqual(details.diagnostic, {
+      type: "FixtureDiagnostic",
+      message: "Original browser diagnostic; not a reporting error.",
+    });
+    assert.equal(
+      recordField(compactOf(result), "lastObservedLocation").targetId,
+      details.targetId,
+    );
     const records = arrayField(recordField(details, "usage"), "records");
     const nativeRecords = records.filter(
       (record) =>
@@ -2270,7 +2288,24 @@ test("near-cap absent reporting summarizes compact omission metadata without los
   ];
   const result = interpretRlcdChildOutcome(childOutcome(terminal));
   const details = detailsOf(result);
-  assert.equal(details.stopReason, "synthetic_error");
+  for (const field of [
+    "status",
+    "stopReason",
+    "execution",
+    "completionClaim",
+    "targetId",
+    "diagnostic",
+  ]) {
+    assert.deepEqual(details[field], terminal[field], `preserve ${field}`);
+  }
+  assert.deepEqual(recordField(details, "cleanup"), {
+    ...recordField(terminal, "cleanup"),
+    bridgeProcess: "reaped",
+  });
+  assert.equal(
+    recordField(compactOf(result), "lastObservedLocation").targetId,
+    terminal.targetId,
+  );
   assert.equal(Object.hasOwn(details, "reporting"), false);
   assert.deepEqual(
     arrayField(recordField(details, "output"), "omissions"),
