@@ -2,6 +2,11 @@
 
 _Source review and separately authorized model-free fixture probe, 2026-09-24. No application-model inference was performed; production and installed sources were unchanged._
 
+This note investigates geometry only. The broader selection work is the
+[browser capability inventory](browser-capability-inventory.md), covering
+Browser Harness and the Chrome DevTools CLI. The one-pixel fixture below is a
+diagnostic distinction, not a user requirement or a decision to add geometry.
+
 ## Short answer
 
 Yes. The pinned stack already has enough primitives to observe viewport-relative text geometry. Jev even computes most of it during every observation. The immediate gap is not a missing browser backend: Jev discards text rectangles after deciding that text intersects the viewport, drops action rectangles when building its semantic model input, and sends no viewport metrics or screenshot to `jev-1.13.0`.
