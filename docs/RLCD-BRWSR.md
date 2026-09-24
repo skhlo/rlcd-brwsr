@@ -1,20 +1,18 @@
 # RLCD-brwsr plan
 
-Status: existing-tab targeting is **implemented and locally verified** at
-`ff49875`. The corrected candidate passed 54 automated tests and a 13-assertion
-command-driven Pi-TUI/real-Chrome acceptance pass with synthetic providers and
-disposable local tabs. Targeted Standards/Spec rechecks found no unresolved or
-introduced findings. These checks invoked the production registered definitions,
-not an outer-LLM-issued tool turn, and used no live inference or public site.
-The native helper remains direct DeepSeek `deepseek-flash` with thinking
-disabled; Jev and Pi's outer model remain unchanged. See the
-[current verification record](thin-python-evidence.md#existing-tab-targeting)
-and retained handoff under `artifacts/tab-targeting/implementation/correction/`.
-Earlier rewrite and live Ling evidence remains tied to its recorded heads.
-The user confirmed dropping `maxActions` and accepted available native usage
-with explicitly incomplete Pi totals. This model change excluded live calls.
-Historical live checks used Ling and covered bounded helper/local-fixture cases,
-not public-site trials. The DeepSeek change is local and unpublished.
+Status: the generic compact handoff is **implemented and locally verified** on
+the current feature branch, building on existing-tab targeting at `ff49875`.
+Run-tool model content is now goal-aware and compact while bounded diagnostic
+`details` remains available to Pi. Deterministic registered-tool tests and an
+isolated command-driven Pi-TUI check passed with synthetic browser/provider
+boundaries. Sanitized offline reconstructions compare the five recorded tasks
+without browser actions. No user tab or live provider was used; live Jev
+relevance quality remains pending. The native helper remains direct DeepSeek
+`deepseek-flash` with thinking disabled; Jev and Pi's outer model are unchanged.
+See the [current verification record](thin-python-evidence.md#compact-handoff)
+and retained local artifacts under `artifacts/compact-output/implementation/`.
+Earlier tab-targeting, rewrite and live Ling evidence remains tied to its
+recorded heads. The DeepSeek and compact changes are local and unpublished.
 
 The larger experimental Pi-native-helper implementation remains historical at
 `dde01a46dba112dbf9d002aeb2ebe2626363c034`. Its delivery gate was cancelled,
@@ -118,7 +116,9 @@ Pi tool
   -> Python constructs Agent and consumes Agent.run()
   -> upstream owns observation, Jev selection, native helper HTTP and browser input
   -> Python projects available state, makes the normal cleanup/retention decision
-  <- one bounded terminal JSON result
+  -> optional post-cleanup Jev relevance selection copies bounded source evidence
+  <- one bounded terminal JSON result retained as Pi details
+  -> Pi presents a separate compact JSON result to the outer model
 ```
 
 The small TypeScript launcher owns only input validation, process I/O bounds,
@@ -239,18 +239,45 @@ LLM, recordings or automatic rollout is added.
 
 ## Results and deliberately narrower guarantees
 
-Python returns a small projection: completion claim or stop/error, last actually
-observed page when available, bounded recorded history, configured model names,
-upstream-retained usage, known target, cleanup outcome and a sanitized diagnostic.
-`config/runtime.json` owns a 32 KiB serialized-request cap and one 16 KiB
-terminal/model-visible JSON cap, including JSON escaping and terminal framing.
-The result reports omitted fields/records. Content and details use the same final
-projection. Local executable tests cover overflow, malformed Unicode, non-finite
-numbers and complete-key redaction before clipping.
+Python returns a bounded diagnostic projection: completion claim or stop/error,
+last actually observed page when available, bounded recorded history, configured
+model names, upstream-retained usage, known target, cleanup outcome, sanitized
+primary diagnostic, and reporting metadata/evidence. `config/runtime.json` owns
+a 32 KiB serialized-request cap and one 16 KiB terminal/full-details JSON cap,
+including JSON escaping and terminal framing. The result reports omitted
+fields/records.
+
+For normal native completion or `BLOCKED` with observations, one optional
+post-cleanup reporting request uses the existing pinned Jev transport and model.
+Python sanitizes the original goal, full upstream-visible text before the old
+4 KiB projection clipping, and an explicit allowlist from the last six actions.
+It creates at most 128 generic candidates, keeps every candidate within 512 UTF-8
+bytes without splitting a token, and fits the full request within 98,304 bytes.
+The pinned observer limits visible text to 6,000 characters, so the 24,576-byte
+source allowance covers its UTF-8 worst case. Per-candidate Nouls judge direct
+relevance and necessary units, periods, estimates, exclusions, caveats and
+ambiguity. Every answer/model/usage field is validated; code resolves
+substantial overlaps and copies at most three qualifying source records.
+The initial 0.5 threshold is evaluation policy, not a reliability claim.
+
+Pi `details` keeps the bounded diagnostic projection, relevance scores, counts
+and available `jev_handoff` usage. Model-facing content is a different compact
+object with only `outcome`, `lastObservedLocation`, selected source `evidence`,
+`cleanup`, primary `diagnostic`, bounded `reporting` status and `output`
+disclosures. It contains no full page text, complete history, models,
+configuration, per-call usage or relevance dump. Discovery remains unchanged.
+Both surfaces retain the existing 16 KiB hard limit. Structural fitting drops
+whole evidence records and discloses omissions; it never cuts an extracted value
+or shortens an opaque ID.
 
 - `DONE` is a completion claim, never independent proof of the goal.
-- Redact complete raw values before clipping or preview. Keep both Jev/helper
-  key privacy checks; no OAuth relay exists in this target design.
+- Redact complete raw key and Bearer values before reporting, clipping or
+  preview. Keep both Jev/helper key privacy checks; no OAuth relay exists in
+  this target design.
+- Missing reporting source/key, provider or validation failure, and cooperative
+  report interruption preserve browser outcome, cleanup and primary diagnostic.
+  They never fall back to raw page text or invented evidence. Reporting shares
+  the parent deadline and adds no grace or second stop owner.
 - A handled error or cooperative stop may provide available Agent state. A hard
   kill, failed construction or invalid/missing result may provide none. After a
   request is accepted for dispatch, an exception escaping final projection falls
@@ -327,16 +354,14 @@ execution. A timed-out filesystem removal reports its exact workspace as
 pending or unconfirmed, and late rejection is handled. Callback JavaScript
 cannot be forcibly cancelled by a Promise race.
 
-Together, 54 tests cover click/fill/DONE/BLOCKED/error, missing and malformed
-helper values, preflight/input failure, byte bounds, Unicode/non-finite
-normalization, native `.env` ordering and key privacy, first-stop precedence,
-post-dispatch projection interruption, conservative output fitting, cooperative
-cleanup, non-clean terminal rejection, a reaped TERM-ignoring child, and the
-borrowed/discovery cases above. Correction regressions also cover deferred native
-workspace loading for discovery redaction, opaque UTF-8 ID order, blank-ID
-omission, sanitized URL display metadata, scalar cleanup claims and independent
-cleanup after an ordinary exception. No live credentials or model calls were
-used for this candidate.
+The current suite retains all click/fill/DONE/BLOCKED/error, preflight/input,
+byte/privacy, supervision, cleanup and borrowed/discovery assertions. Compact
+regressions additionally cover the same document under different goals,
+non-adjacent qualifications, scroll-action evidence, missing/invalid/interrupted
+reporting, strict evidence/envelope validation, both returned surfaces and model
+input redaction, candidate/request caps, and honest content/details omissions.
+One direct projection check proves an oversized token is omitted rather than
+split. No live credentials or model calls were used for this candidate.
 
 The click/default-close, text/retention, time-budget and TUI-cancellation cases
 were repeated successfully at corrected implementation `b3b42036`, using real
@@ -364,9 +389,17 @@ inspection verified the retained target, then exact cleanup restored the
 baseline. No manual retry or extra browser-tool invocation occurred. It is not
 live evidence for the current direct DeepSeek selection.
 
-Public-site acceptance of this tab-targeting candidate remains pending and needs
-its own applicable allowance. Preserve earlier ledgers; native step limits do not constitute a
-billing budget. Report unknown attempts/charges conservatively.
+The compact output was also checked through an actual isolated Pi TUI slash
+command using the production registered definition and real runner with fully
+synthetic browser/provider boundaries. Exact model-facing content was compared
+with full details. This was command-driven, not an outer-model-issued turn, and
+it did not connect to Chrome. Five-task replay files are explicitly sanitized
+reconstructions of independent observations, not original Agent snapshots.
+Deterministic selection proves plumbing, not Jev relevance quality.
+
+Live semantic acceptance and public-site acceptance remain pending and need a
+separate finite allowance. Preserve earlier ledgers; native step limits do not
+constitute a billing budget. Report unknown attempts/charges conservatively.
 
 Do not add a broader test or runtime framework to satisfy every hypothetical
 failure. A discovered limitation may require a narrower disclosed contract,

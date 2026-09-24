@@ -62,6 +62,7 @@ interface ScenarioOptions {
   textModel?: string;
   signal?: AbortSignal;
   abortWhenModelStarts?: AbortController;
+  abortWhenReportStarts?: AbortController;
   abortAfterTermAcknowledgement?: AbortController;
   params?: Partial<RlcdInput>;
   omitDefaultUrl?: boolean;
@@ -76,6 +77,7 @@ interface ScenarioMarkers {
   browser: string;
   field: string;
   model: string;
+  report: string;
   pid: string;
   termAcknowledgement: string;
 }
@@ -114,13 +116,61 @@ function detailsOf(result: ToolResult): Record<string, unknown> {
   assert.ok(isRecord(result.details), "tool details must be an object");
   assert.equal(result.content.length, 1);
   assert.equal(result.content[0]?.type, "text");
-  assert.deepEqual(JSON.parse(result.content[0]?.text ?? ""), result.details);
+  const content: unknown = JSON.parse(result.content[0]?.text ?? "");
+  assert.ok(isRecord(content), "model-facing content must be an object");
+  if (Object.hasOwn(result.details, "tabs")) {
+    assert.deepEqual(
+      content,
+      result.details,
+      "discovery remains compact and unchanged",
+    );
+  } else {
+    assert.deepEqual(Object.keys(content), [
+      "outcome",
+      "lastObservedLocation",
+      "evidence",
+      "cleanup",
+      "diagnostic",
+      "reporting",
+      "output",
+    ]);
+    assert.equal(Object.hasOwn(content, "history"), false);
+    assert.equal(Object.hasOwn(content, "models"), false);
+    assert.equal(Object.hasOwn(content, "usage"), false);
+    assert.equal(Object.hasOwn(content, "lastObservation"), false);
+    assert.notDeepEqual(content, result.details);
+    const outcome = recordField(content, "outcome");
+    assert.equal(outcome.status, result.details.status);
+    assert.equal(outcome.stopReason, result.details.stopReason);
+    assert.equal(outcome.execution, result.details.execution);
+    assert.deepEqual(outcome.completionClaim, result.details.completionClaim);
+    assert.deepEqual(content.cleanup, result.details.cleanup);
+    assert.deepEqual(content.diagnostic, result.details.diagnostic);
+    assert.ok(
+      Buffer.byteLength(result.content[0]?.text ?? "", "utf8") <=
+        terminalByteLimit,
+    );
+    assert.ok(
+      Buffer.byteLength(JSON.stringify(result.details), "utf8") <=
+        terminalByteLimit,
+    );
+  }
   assert.equal(
     result.usage,
     undefined,
     "native usage must not enter Pi totals",
   );
   return result.details;
+}
+
+function compactOf(result: ToolResult): Record<string, unknown> {
+  const value: unknown = JSON.parse(result.content[0]?.text ?? "");
+  assert.ok(isRecord(value));
+  return value;
+}
+
+function serializedSurfaces(result: ToolResult): string {
+  return `${result.content[0]?.text ?? ""}\n${JSON.stringify(result.details)}`;
 }
 
 function recordField(
@@ -216,6 +266,19 @@ function terminalDetails(
       sharedDaemon: "retained",
     },
     diagnostic: null,
+    reporting: {
+      status: "missing",
+      sourceCoverage: "unavailable",
+      sourceOmitted: false,
+      selectionOmitted: false,
+      candidateCount: 0,
+      qualifyingCandidateCount: null,
+      selectedCount: 0,
+      deduplicatedCandidateCount: 0,
+      omittedQualifyingCandidateCount: 0,
+      evidence: [],
+      diagnostic: null,
+    },
     output: {
       byteLimit: terminalByteLimit,
       clipped: false,
@@ -246,13 +309,32 @@ function childOutcome(
 
 function nearLimitTerminal(): Record<string, unknown> {
   const details = terminalDetails();
-  const observation = recordField(details, "lastObservation");
-  const emptySize = Buffer.byteLength(JSON.stringify(details), "utf8");
-  observation.text = "P".repeat(terminalByteLimit - emptySize);
-  assert.equal(
-    Buffer.byteLength(JSON.stringify(details), "utf8"),
-    terminalByteLimit,
-  );
+  const records = arrayField(recordField(details, "usage"), "records");
+  const size = () => Buffer.byteLength(JSON.stringify(details), "utf8");
+  let index = 0;
+  while (size() < terminalByteLimit) {
+    const fixedRecord = {
+      source: "jev_decision",
+      model: `fixture-${index}`,
+      usage: { padding: "" },
+    };
+    records.push(fixedRecord);
+    const available = terminalByteLimit - size();
+    if (available < 0) {
+      records.pop();
+      const previous = records.at(-1) as {
+        usage: { padding: string };
+      };
+      previous.usage.padding += "P".repeat(terminalByteLimit - size());
+      break;
+    }
+    const padding = Math.min(2_020, available);
+    fixedRecord.usage.padding = "P".repeat(padding);
+    index += 1;
+    if (padding < 2_020) break;
+  }
+  assert.equal(size(), terminalByteLimit);
+  assert.ok(records.length <= 24);
   return details;
 }
 
@@ -335,6 +417,7 @@ async function runScenario(
     browser: join(directory, "browser.log"),
     field: join(directory, "field.log"),
     model: join(directory, "model.log"),
+    report: join(directory, "report.json"),
     pid: join(directory, "pid.txt"),
     termAcknowledgement: join(directory, "term-acknowledged.txt"),
   };
@@ -354,6 +437,7 @@ async function runScenario(
     RLCD_TEST_BROWSER_MARKER: markers.browser,
     RLCD_TEST_FIELD_MARKER: markers.field,
     RLCD_TEST_MODEL_MARKER: markers.model,
+    RLCD_TEST_REPORT_MARKER: markers.report,
     RLCD_TEST_PID_MARKER: markers.pid,
     RLCD_TEST_TERM_ACK_MARKER: markers.termAcknowledgement,
     RLCD_TEST_SHARED_STATE_MARKER: options.sharedBrowserState,
@@ -390,10 +474,14 @@ async function runScenario(
 
   try {
     const abortController =
-      options.abortWhenModelStarts ?? options.abortAfterTermAcknowledgement;
+      options.abortWhenModelStarts ??
+      options.abortWhenReportStarts ??
+      options.abortAfterTermAcknowledgement;
     const abortMarker = options.abortWhenModelStarts
       ? markers.model
-      : markers.termAcknowledgement;
+      : options.abortWhenReportStarts
+        ? markers.report
+        : markers.termAcknowledgement;
     let toolSettled = false;
     const toolWork = registeredTool(
       rlcdBrwsrExtension,
@@ -645,6 +733,29 @@ test("the extension loads inertly and registers discovery plus the extended sequ
     "url",
   ]);
   assert.doesNotMatch(runTool.description, /maxActions|action budget/i);
+});
+
+test("reporting bounds cover the pinned 6000-character visible-text source", () => {
+  const snapshot = readFileSync(
+    join(
+      repositoryRoot,
+      ".venv",
+      "lib",
+      "python3.12",
+      "site-packages",
+      "jev_ultrafast",
+      "snapshot.js",
+    ),
+    "utf8",
+  );
+  assert.match(snapshot, /words\.join\('\\n'\)\.slice\(0,6000\)/);
+  const reporter = readFileSync(
+    join(repositoryRoot, "bridge", "handoff_report.py"),
+    "utf8",
+  );
+  assert.match(reporter, /REPORT_SOURCE_MAX_UTF8_BYTES = 24_576/);
+  assert.match(reporter, /REPORT_CANDIDATE_LIMIT = 128/);
+  assert.match(reporter, /REPORT_REQUEST_MAX_UTF8_BYTES = 98_304/);
 });
 
 test("discovery needs no model keys and deterministically distinguishes same-URL tabs", async () => {
@@ -1367,6 +1478,186 @@ test("native DONE, BLOCKED, and exceptions remain distinct outcomes", async () =
   });
 });
 
+test("goal-aware reporting selects different exact evidence from the same document", async () => {
+  for (const [goal, included, excluded] of [
+    ["Report the capacity", "Capacity: 40 units.", "Price: 18 credits"],
+    ["Report the price", "Price: 18 credits per month.", "Capacity: 40 units"],
+  ] as const) {
+    await withScenario(
+      "report_goal_document",
+      { params: { goal } },
+      async ({ result, markers }) => {
+        const details = detailsOf(result);
+        assert.equal(details.status, "completion_claim");
+        const reporting = recordField(details, "reporting");
+        assert.equal(reporting.status, "selected");
+        const evidence = arrayField(reporting, "evidence") as Array<
+          Record<string, unknown>
+        >;
+        assert.ok(
+          evidence.some((item) => String(item.exact).includes(included)),
+        );
+        assert.ok(
+          evidence.every((item) => !String(item.exact).includes(excluded)),
+        );
+        assert.ok(evidence.every((item) => typeof item.relevance === "number"));
+
+        const compact = compactOf(result);
+        const compactEvidence = arrayField(compact, "evidence") as Array<
+          Record<string, unknown>
+        >;
+        assert.ok(
+          compactEvidence.some((item) => String(item.exact).includes(included)),
+        );
+        assert.ok(
+          compactEvidence.every((item) => !Object.hasOwn(item, "relevance")),
+        );
+        const reportRequest = JSON.parse(
+          await readFile(markers.report, "utf8"),
+        ) as Record<string, unknown>;
+        assert.deepEqual(Object.keys(reportRequest).sort(), [
+          "model",
+          "questions",
+          "state",
+        ]);
+        const reportState = recordField(reportRequest, "state");
+        assert.equal(reportState.goal, goal);
+        assert.equal(Object.hasOwn(reportState, "url"), false);
+        assert.equal(Object.hasOwn(reportState, "history"), false);
+      },
+    );
+  }
+});
+
+test("reporting retains distant qualifications or discloses their omission", async () => {
+  await withScenario(
+    "report_qualification",
+    { params: { goal: "Report the estimated total and any exclusions" } },
+    ({ result }) => {
+      const details = detailsOf(result);
+      const reporting = recordField(details, "reporting");
+      assert.equal(reporting.status, "selected");
+      const exact = arrayField(reporting, "evidence")
+        .map((item) => String((item as Record<string, unknown>).exact ?? ""))
+        .join("\n");
+      assert.match(exact, /Estimated total: 120 credits/);
+      assert.ok(
+        /Estimate excludes service charges/.test(exact) ||
+          reporting.selectionOmitted === true,
+      );
+    },
+  );
+});
+
+test("scrolling goals receive copied action evidence instead of unrelated page prose", async () => {
+  await withScenario(
+    "report_scroll",
+    { params: { goal: "Scroll down once" } },
+    async ({ result, markers }) => {
+      const details = detailsOf(result);
+      const reporting = recordField(details, "reporting");
+      assert.equal(reporting.status, "selected");
+      const evidence = arrayField(reporting, "evidence") as Array<
+        Record<string, unknown>
+      >;
+      const action = evidence.find((item) => item.kind === "action");
+      assert.ok(action);
+      assert.deepEqual(
+        Object.keys(action).sort(),
+        [
+          "actionLabel",
+          "kind",
+          "operation",
+          "pageChanged",
+          "relevance",
+          "source",
+          "step",
+        ].sort(),
+      );
+      assert.equal(action.operation, "SCROLL_DOWN");
+      assert.equal(action.actionLabel, "Scroll down");
+      assert.match(await readIfPresent(markers.browser), /scroll:down/);
+      const compactEvidence = arrayField(
+        compactOf(result),
+        "evidence",
+      ) as Array<Record<string, unknown>>;
+      assert.ok(compactEvidence.some((item) => item.kind === "action"));
+      assert.ok(compactEvidence.every((item) => item.kind !== "page"));
+    },
+  );
+});
+
+test("reporting failures and interruption preserve browser outcome and primary diagnostic", async () => {
+  for (const [scenario, expectedStatus] of [
+    ["report_invalid", "error"],
+    ["report_provider_error", "error"],
+    ["report_cancelled", "cancelled"],
+    ["report_missing_key", "missing"],
+  ] as const) {
+    const cancellation =
+      scenario === "report_cancelled" ? new AbortController() : undefined;
+    await withScenario(
+      scenario,
+      {
+        params: { goal: "Report the capacity", maxSeconds: 5 },
+        ...(cancellation
+          ? {
+              signal: cancellation.signal,
+              abortWhenReportStarts: cancellation,
+            }
+          : {}),
+      },
+      ({ result }) => {
+        const details = detailsOf(result);
+        assert.equal(details.status, "completion_claim");
+        assert.equal(details.stopReason, "done");
+        assert.equal(details.execution, "completed");
+        assert.equal(details.diagnostic, null);
+        const reporting = recordField(details, "reporting");
+        assert.equal(reporting.status, expectedStatus);
+        assert.deepEqual(reporting.evidence, []);
+        const compact = compactOf(result);
+        assert.deepEqual(recordField(compact, "outcome"), {
+          status: "completion_claim",
+          stopReason: "done",
+          execution: "completed",
+          completionClaim: {
+            claimed: true,
+            requiresIndependentVerification: true,
+          },
+        });
+        const reportingDiagnostic = reporting.diagnostic;
+        if (isRecord(reportingDiagnostic)) {
+          assert.doesNotMatch(
+            String(reportingDiagnostic.message),
+            /no action executed/i,
+          );
+        }
+      },
+    );
+  }
+});
+
+test("reporting input and both returned surfaces redact complete keys and Bearer values", async () => {
+  await withScenario(
+    "report_redaction",
+    { params: { goal: "Return CLEAR-19" } },
+    async ({ result, markers }) => {
+      const details = detailsOf(result);
+      assert.equal(recordField(details, "reporting").status, "selected");
+      for (const value of [
+        serializedSurfaces(result),
+        await readFile(markers.report, "utf8"),
+      ]) {
+        assert.doesNotMatch(value, new RegExp(syntheticTypesafeKey));
+        assert.doesNotMatch(value, new RegExp(syntheticHelperKey));
+        assert.doesNotMatch(value, /Authorization:\s*Bearer\s+synthetic/i);
+        assert.match(value, /\[REDACTED\]/);
+      }
+    },
+  );
+});
+
 test("missing and invalid native helper replies never fabricate field input", async () => {
   for (const [scenario, helperKey] of [
     ["fill", null],
@@ -1687,6 +1978,32 @@ test("borrowed outcome interpretation rejects array-valued cleanup claims", () =
   assert.equal(cleanup.focusEmulation, "unknown");
   assert.equal(cleanup.attachment, "unknown");
   assert.equal(cleanup.bridgeProcess, "reaped");
+});
+
+test("outcome interpretation rejects malformed handoff evidence", () => {
+  const malformed = terminalDetails();
+  const reporting = recordField(malformed, "reporting");
+  reporting.status = "selected";
+  reporting.sourceCoverage = "complete";
+  reporting.candidateCount = 1;
+  reporting.qualifyingCandidateCount = 1;
+  reporting.selectedCount = 1;
+  reporting.evidence = [
+    {
+      kind: "page",
+      source: "lastObservation.text",
+      exact: "invented",
+      cutBefore: false,
+      cutAfter: false,
+      relevance: Number.NaN,
+    },
+  ];
+  const rejected = detailsOf(
+    interpretRlcdChildOutcome(childOutcome(malformed)),
+  );
+  assert.equal(rejected.status, "error");
+  assert.equal(rejected.stopReason, "invalid_terminal");
+  assert.deepEqual(recordField(rejected, "reporting").evidence, []);
 });
 
 test("outcome interpretation preserves trusted evidence and late-stop precedence", () => {
@@ -2107,10 +2424,13 @@ test(
 
 test("terminal JSON stays bounded and safe for Unicode, numbers, and oversized native state", async () => {
   for (const scenario of ["surrogate_usage", "terminal_overflow"]) {
-    await withScenario(scenario, {}, ({ result }) => {
+    await withScenario(scenario, {}, async ({ result, markers }) => {
       const details = detailsOf(result);
-      const text = result.content[0]?.text ?? "";
-      assert.ok(Buffer.byteLength(text, "utf8") <= terminalByteLimit);
+      const text = serializedSurfaces(result);
+      assert.ok(
+        Buffer.byteLength(result.content[0]?.text ?? "", "utf8") <=
+          terminalByteLimit,
+      );
       assert.doesNotMatch(text, /[\uD800-\uDFFF]/u);
       assert.doesNotMatch(text, /NaN|Infinity/);
       if (scenario === "terminal_overflow") {
@@ -2118,6 +2438,15 @@ test("terminal JSON stays bounded and safe for Unicode, numbers, and oversized n
         assert.ok(
           arrayField(recordField(details, "output"), "omissions").length > 0,
         );
+        const compactOutput = recordField(compactOf(result), "output");
+        assert.equal(compactOutput.detailsClipped, true);
+        assert.equal(compactOutput.clipped, true);
+        assert.ok(arrayField(compactOutput, "omissions").length > 0);
+        const reporting = recordField(details, "reporting");
+        assert.equal(reporting.sourceOmitted, true);
+        assert.ok(Number(reporting.candidateCount) <= 128);
+        const reportRequest = await readFile(markers.report, "utf8");
+        assert.ok(Buffer.byteLength(reportRequest, "utf8") <= 98_304);
       } else {
         assert.doesNotMatch(text, new RegExp(syntheticTypesafeKey));
         assert.doesNotMatch(text, new RegExp(syntheticHelperKey));
@@ -2204,7 +2533,7 @@ test(
       assert.equal(result.signal, null);
       assert.match(
         Buffer.concat(stdout).toString("utf8"),
-        /projection contract: 2 checks passed/,
+        /projection contract: 3 checks passed/,
       );
     } finally {
       if (!closed) child.kill("SIGTERM");
@@ -2225,7 +2554,7 @@ test(
 
 test("both native keys are redacted before clipping and never enter argv or stdin", async () => {
   await withScenario("secret_error", {}, async ({ result, markers }) => {
-    const text = result.content[0]?.text ?? "";
+    const text = serializedSurfaces(result);
     assert.doesNotMatch(text, new RegExp(syntheticTypesafeKey));
     assert.doesNotMatch(text, new RegExp(syntheticHelperKey));
     assert.match(text, /\[REDACTED\]/);

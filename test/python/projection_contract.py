@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 
+import handoff_report
 import rlcd_brwsr_bridge as bridge
 
 
@@ -102,10 +103,34 @@ def assert_oversized_state_is_bounded_without_agent_mutation() -> None:
     assert "history records" in omissions
 
 
+def assert_candidate_bounds_do_not_split_oversized_tokens() -> None:
+    oversized_identifier = "IDENTIFIER" * 80
+    text = f"Prefix fact. {oversized_identifier} Suffix fact."
+    candidates, omitted = handoff_report._page_candidates(text)
+    assert omitted is True
+    assert candidates
+    assert all(
+        len(candidate["exact"].encode("utf-8"))
+        <= handoff_report.REPORT_CANDIDATE_MAX_UTF8_BYTES
+        for candidate in candidates
+    )
+    assert all(oversized_identifier not in candidate["exact"] for candidate in candidates)
+    assert all("IDENTIFIER" not in candidate["exact"] for candidate in candidates)
+
+    pinned_length_text = "word " * 1200
+    assert len(pinned_length_text) == 6000
+    bounded_candidates, upstream_omitted = handoff_report._page_candidates(
+        pinned_length_text
+    )
+    assert bounded_candidates
+    assert upstream_omitted is True
+
+
 def main() -> int:
     assert_owned_producers_omit_availability()
     assert_oversized_state_is_bounded_without_agent_mutation()
-    print("projection contract: 2 checks passed")
+    assert_candidate_bounds_do_not_split_oversized_tokens()
+    print("projection contract: 3 checks passed")
     return 0
 
 

@@ -13,6 +13,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from borrowed_tab import BorrowedTab, StopRequested
+from handoff_report import missing_report, select_handoff
 from runtime_support import (
     JEV_MODEL,
     REQUEST_MAX_UTF8_BYTES,
@@ -331,6 +332,7 @@ def _raw_projection(
             "sharedDaemon": "retained",
         },
         "diagnostic": diagnostic,
+        "reporting": missing_report(),
         "output": {
             "byteLimit": TERMINAL_MAX_UTF8_BYTES,
             "clipped": False,
@@ -366,6 +368,28 @@ def _bound_projection(result: dict[str, Any]) -> dict[str, Any]:
             "diagnostic.message",
             omissions,
         )
+
+    reporting = result.get("reporting")
+    reporting_evidence: list[Any] = []
+    reporting_diagnostic: dict[str, Any] | None = None
+    if isinstance(reporting, dict):
+        evidence_value = reporting.get("evidence")
+        if isinstance(evidence_value, list):
+            reporting_evidence = evidence_value
+        diagnostic_value = reporting.get("diagnostic")
+        if isinstance(diagnostic_value, dict):
+            reporting_diagnostic = diagnostic_value
+            _clip_field(
+                reporting_diagnostic,
+                "message",
+                512,
+                "reporting.diagnostic.message",
+                omissions,
+            )
+        if reporting.get("sourceOmitted") is True:
+            _append_omission(omissions, "reporting source candidates")
+        if reporting.get("selectionOmitted") is True:
+            _append_omission(omissions, "reporting qualifying evidence")
 
     history = result.get("history")
     if isinstance(history, list):
@@ -410,18 +434,46 @@ def _bound_projection(result: dict[str, Any]) -> dict[str, Any]:
         elif isinstance(records, list) and records:
             records.pop(0)
             _append_omission(omissions, "usage records")
-        elif isinstance(diagnostic, dict) and diagnostic.get("message"):
-            diagnostic["message"] = "diagnostic omitted to fit terminal result"
+        elif reporting_evidence:
+            lowest = min(
+                range(len(reporting_evidence)),
+                key=lambda index: reporting_evidence[index].get("relevance", 0)
+                if isinstance(reporting_evidence[index], dict)
+                else 0,
+            )
+            reporting_evidence.pop(lowest)
+            if isinstance(reporting, dict):
+                reporting["selectedCount"] = len(reporting_evidence)
+                reporting["selectionOmitted"] = True
+                reporting["omittedQualifyingCandidateCount"] = int(
+                    reporting.get("omittedQualifyingCandidateCount", 0)
+                ) + 1
+            _append_omission(omissions, "reporting evidence records")
+        elif reporting_diagnostic is not None:
+            reporting["diagnostic"] = None
+            reporting_diagnostic = None
+            _append_omission(omissions, "reporting diagnostic")
+        elif (
+            isinstance(diagnostic, dict)
+            and diagnostic.get("message")
+            != "diagnostic detail omitted to fit terminal result"
+        ):
+            diagnostic["message"] = "diagnostic detail omitted to fit terminal result"
             _append_omission(omissions, "diagnostic detail")
+        elif isinstance(observation, dict) and (
+            observation.get("url") or observation.get("title")
+        ):
+            observation["url"] = ""
+            observation["title"] = ""
+            _append_omission(omissions, "lastObservation location fields")
         else:
-            result["lastObservation"] = None
             result["history"] = []
             result["usage"]["records"] = []
-            result["targetId"] = None
-            result["diagnostic"] = {
-                "type": "OutputLimit",
-                "message": "result fields were omitted to fit the terminal byte limit",
-            }
+            if isinstance(reporting, dict):
+                reporting["evidence"] = []
+                reporting["selectedCount"] = 0
+                reporting["selectionOmitted"] = True
+                reporting["diagnostic"] = None
             _append_omission(omissions, "remaining variable fields")
             if len(_json_bytes(result)) + 1 > TERMINAL_MAX_UTF8_BYTES:
                 omissions[:] = ["variable fields omitted"]
@@ -742,7 +794,7 @@ def _run(request: dict[str, Any]) -> dict[str, Any]:
             else:
                 cleanup = "unknown"
 
-    return _raw_projection(
+    result = _raw_projection(
         status=status,
         stop_reason=stop_reason,
         execution=execution,
@@ -753,6 +805,42 @@ def _run(request: dict[str, Any]) -> dict[str, Any]:
         focus_emulation=focus_emulation,
         attachment=attachment,
     )
+    if status in {"completion_claim", "blocked"} and state is not None:
+        try:
+            page = state.get("page")
+            page_text = page.get("text") if isinstance(page, dict) else None
+            if isinstance(page_text, str):
+                credentials = _credential_values()
+                safe_goal = _redact_text(request["goal"], credentials)
+                safe_page_text = _redact_text(page_text, credentials)
+                safe_history = _sanitize(state.get("history", []), credentials)
+                from jev_ultrafast import model as model_module
+
+                reporting, usage = select_handoff(
+                    goal=safe_goal,
+                    page_text=safe_page_text,
+                    history=safe_history,
+                    model=JEV_MODEL,
+                    post_json=model_module.post_json,
+                )
+                result["reporting"] = reporting
+                if usage is not None:
+                    result["usage"]["records"].append(usage)
+        except StopRequested:
+            reporting = missing_report(
+                "StopRequested",
+                "Handoff reporting was cancelled after browser cleanup.",
+            )
+            reporting["status"] = "cancelled"
+            result["reporting"] = reporting
+        except Exception:
+            reporting = missing_report(
+                "ReportingInternalError",
+                "Handoff reporting could not be prepared after browser cleanup.",
+            )
+            reporting["status"] = "error"
+            result["reporting"] = reporting
+    return result
 
 
 def _early_result(

@@ -1,7 +1,66 @@
 # Python-owned runner - verification history
 
-[Existing-tab targeting](#existing-tab-targeting) is the latest local verification.
-The preceding rewrite evidence below retains its original tested heads and scope.
+[Compact handoff](#compact-handoff) is the latest local verification.
+The preceding rewrite and tab-targeting evidence below retains its original
+tested heads and scope.
+
+## Compact handoff
+
+The current feature branch replaces run-tool content/details identity with two
+bounded surfaces. Python keeps the full diagnostic projection in Pi `details`.
+TypeScript builds separate model-facing JSON containing only outcome, exact
+last-observed location, selected source evidence, cleanup, the primary
+diagnostic, reporting state and omission disclosure. Discovery remains
+unchanged. Installed Pi 0.85.1 documentation and runtime source confirm that
+provider tool-result messages use `content`; `details` remains structured tool
+state/rendering metadata.
+
+One post-cleanup reporting module optionally uses the pinned Jev transport for
+normal completion claims or native `BLOCKED` with observations. It sanitizes
+complete native key/Bearer values, bounds the 6,000-character upstream visible
+text at 24,576 UTF-8 bytes, builds at most 128 candidates of at most 512 bytes,
+adds only allowlisted fields from the last six actions, and bounds serialized
+reporting input at 98,304 bytes. Batched per-candidate Nouls include units,
+periods, estimates, exclusions, caveats and ambiguity. Code strictly validates
+answer IDs/types/ranges plus model and usage, resolves substantial duplicates,
+and copies at most three source records. The 0.5 threshold is an evaluation
+policy. Missing source/key, provider/validation error or cooperative report
+interruption produces no raw-text fallback and does not change browser facts.
+
+Current deterministic evidence:
+
+- All 61 Node tests pass. New registered-tool cases cover different goals over
+  one document, distant necessary qualifications, scroll-action evidence,
+  missing/invalid/provider/interrupted reporting, strict evidence/terminal
+  validation, report-input and both-surface privacy, source/request/content/detail
+  bounds and omission honesty. Existing browser ownership, all corrected
+  tab-targeting guards, cleanup, terminal trust and supervision assertions remain.
+- TypeScript, Prettier, no-write compilation of ten Python files, shell syntax,
+  lock stability and Git whitespace checks pass. Dependencies, pins, manifests
+  and lockfiles are unchanged.
+- Guard proof: temporarily adding full history to compact content made the
+  registered-tool contract test fail on the extra `history` group. Restoring the
+  compact shape made it pass; both logs are retained.
+- An actual Pi 0.87.1 TUI slash command invoked the production registered run
+  definition and real runner with synthetic browser/provider boundaries. All
+  16 assertions passed. Exact content was 1,678 bytes versus 3,219-byte details,
+  a 47.9% reduction, while retaining the requested total and distant exclusion.
+  The isolated Pi had no model and no persisted session. The command was not an
+  outer-model-issued turn and never connected to Chrome.
+- Seven sanitized offline replay reconstructions completed with no browser or
+  provider call: five derive from the independent five-tab observations and two
+  are generic value/qualification cases. Compact reductions ranged from 38.5%
+  to 43.7% for the five recorded-task reconstructions. The scrolling case chose
+  copied `SCROLL_DOWN` action evidence. These are reconstructions, not original
+  Agent snapshots, and deterministic selection proves plumbing rather than Jev
+  quality.
+
+Raw evidence, exact outputs, replay inputs/results, guard logs, check logs and
+resource receipts remain under `artifacts/compact-output/implementation/`.
+No live provider request, public-site task, user-tab operation, browser service
+change, dependency operation or publication occurred. A finite sanitized live
+relevance plan is retained for separate parent adjudication. Live semantic
+acceptance, complete billing and general-web quality remain pending.
 
 Historical rewrite tested implementation: `b3b42036685eba64f3e7bc8ccc296e16b9910fe9`.
 The initial rewrite is `3f984e54`; the corrected implementation was checked again,

@@ -185,6 +185,7 @@ function isTerminalEnvelope(
       "targetId",
       "cleanup",
       "diagnostic",
+      "reporting",
       "output",
     ]) &&
     typeof value.status === "string" &&
@@ -196,12 +197,13 @@ function isTerminalEnvelope(
     utf8Bytes(value.stopReason) <= 1_024 &&
     typeof value.execution === "string" &&
     ["not_started", "unknown", "completed"].includes(value.execution) &&
-    (value.lastObservation === null || isRecord(value.lastObservation)) &&
-    Array.isArray(value.history) &&
-    isRecord(value.models) &&
-    isRecord(value.usage) &&
+    validLastObservation(value.lastObservation) &&
+    validHistory(value.history) &&
+    validModels(value.models) &&
+    validUsage(value.usage) &&
     (value.targetId === null || typeof value.targetId === "string") &&
-    (value.diagnostic === null || isRecord(value.diagnostic)) &&
+    validDiagnostic(value.diagnostic, 1_024) &&
+    validReporting(value.reporting) &&
     isRecord(claim) &&
     hasExactKeys(claim, ["claimed", "requiresIndependentVerification"]) &&
     claim.claimed === (value.status === "completion_claim") &&
@@ -253,6 +255,248 @@ function isTerminalEnvelope(
     Array.isArray(output.omissions) &&
     output.omissions.length <= 32 &&
     output.omissions.every((item) => typeof item === "string")
+  );
+}
+
+function validDiagnostic(value: unknown, messageLimit: number): boolean {
+  return (
+    value === null ||
+    (isRecord(value) &&
+      hasExactKeys(value, ["type", "message"]) &&
+      typeof value.type === "string" &&
+      utf8Bytes(value.type) <= 128 &&
+      typeof value.message === "string" &&
+      utf8Bytes(value.message) <= messageLimit)
+  );
+}
+
+function validLastObservation(value: unknown): boolean {
+  return (
+    value === null ||
+    (isRecord(value) &&
+      hasExactKeys(value, ["url", "title", "text"]) &&
+      typeof value.url === "string" &&
+      utf8Bytes(value.url) <= 2_048 &&
+      typeof value.title === "string" &&
+      utf8Bytes(value.title) <= 512 &&
+      typeof value.text === "string" &&
+      utf8Bytes(value.text) <= 4_096)
+  );
+}
+
+function nullableString(value: unknown, limit: number): boolean {
+  return (
+    value === null || (typeof value === "string" && utf8Bytes(value) <= limit)
+  );
+}
+
+function validHistory(value: unknown): boolean {
+  if (!Array.isArray(value) || value.length > 24) return false;
+  return value.every(
+    (entry) =>
+      isRecord(entry) &&
+      hasExactKeys(entry, [
+        "step",
+        "kind",
+        "action",
+        "operation",
+        "pageChanged",
+        "url",
+        "elapsedMs",
+      ]) &&
+      (entry.step === null || Number.isSafeInteger(entry.step)) &&
+      nullableString(entry.kind, 128) &&
+      nullableString(entry.action, 512) &&
+      nullableString(entry.operation, 128) &&
+      (entry.pageChanged === null || typeof entry.pageChanged === "boolean") &&
+      nullableString(entry.url, 1_024) &&
+      (entry.elapsedMs === null ||
+        (typeof entry.elapsedMs === "number" &&
+          Number.isFinite(entry.elapsedMs) &&
+          (!Number.isInteger(entry.elapsedMs) ||
+            Number.isSafeInteger(entry.elapsedMs)))),
+  );
+}
+
+function validModels(value: unknown): boolean {
+  if (!isRecord(value) || !hasExactKeys(value, ["jev", "textHelper"])) {
+    return false;
+  }
+  const jev = value.jev;
+  const helper = value.textHelper;
+  return (
+    isRecord(jev) &&
+    hasExactKeys(jev, ["configuredModel"]) &&
+    typeof jev.configuredModel === "string" &&
+    isRecord(helper) &&
+    hasExactKeys(helper, ["configuredModel", "baseUrl", "reasoning"]) &&
+    typeof helper.configuredModel === "string" &&
+    typeof helper.baseUrl === "string" &&
+    typeof helper.reasoning === "string"
+  );
+}
+
+function validUsage(value: unknown): boolean {
+  if (!isRecord(value) || !hasExactKeys(value, ["records", "limitations"])) {
+    return false;
+  }
+  if (!Array.isArray(value.records) || value.records.length > 24) return false;
+  for (const record of value.records) {
+    if (
+      !isRecord(record) ||
+      !hasExactKeys(record, ["source", "model", "usage"]) ||
+      !["jev_decision", "text_helper", "jev_handoff"].includes(
+        String(record.source),
+      ) ||
+      typeof record.model !== "string" ||
+      utf8Bytes(record.model) > 512 ||
+      !isRecord(record.usage)
+    ) {
+      return false;
+    }
+  }
+  const limitations = value.limitations;
+  return (
+    isRecord(limitations) &&
+    hasExactKeys(limitations, [
+      "source",
+      "providerAttempts",
+      "providerRetries",
+      "failedCallUsage",
+      "piTopLevelUsage",
+    ]) &&
+    limitations.source === "upstream_recorded_only" &&
+    limitations.providerAttempts === "unknown" &&
+    limitations.providerRetries === "unknown" &&
+    limitations.failedCallUsage === "unknown" &&
+    limitations.piTopLevelUsage === "omitted"
+  );
+}
+
+function validEvidence(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  if (
+    value.kind === "page" &&
+    hasExactKeys(value, [
+      "kind",
+      "source",
+      "exact",
+      "cutBefore",
+      "cutAfter",
+      "relevance",
+    ])
+  ) {
+    return (
+      value.source === "lastObservation.text" &&
+      typeof value.exact === "string" &&
+      value.exact.length > 0 &&
+      utf8Bytes(value.exact) <= 512 &&
+      typeof value.cutBefore === "boolean" &&
+      typeof value.cutAfter === "boolean" &&
+      typeof value.relevance === "number" &&
+      Number.isFinite(value.relevance) &&
+      value.relevance >= 0 &&
+      value.relevance <= 1
+    );
+  }
+  if (
+    value.kind === "action" &&
+    hasExactKeys(value, [
+      "kind",
+      "source",
+      "step",
+      "operation",
+      "actionLabel",
+      "pageChanged",
+      "relevance",
+    ])
+  ) {
+    return (
+      value.source === "history" &&
+      (value.step === null || Number.isSafeInteger(value.step)) &&
+      typeof value.operation === "string" &&
+      value.operation.length > 0 &&
+      utf8Bytes(value.operation) <= 128 &&
+      typeof value.actionLabel === "string" &&
+      value.actionLabel.length > 0 &&
+      utf8Bytes(value.actionLabel) <= 512 &&
+      (value.pageChanged === null || typeof value.pageChanged === "boolean") &&
+      typeof value.relevance === "number" &&
+      Number.isFinite(value.relevance) &&
+      value.relevance >= 0 &&
+      value.relevance <= 1
+    );
+  }
+  return false;
+}
+
+function validReporting(value: unknown): boolean {
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, [
+      "status",
+      "sourceCoverage",
+      "sourceOmitted",
+      "selectionOmitted",
+      "candidateCount",
+      "qualifyingCandidateCount",
+      "selectedCount",
+      "deduplicatedCandidateCount",
+      "omittedQualifyingCandidateCount",
+      "evidence",
+      "diagnostic",
+    ]) ||
+    !["selected", "no_match", "missing", "error", "cancelled"].includes(
+      String(value.status),
+    ) ||
+    !["complete", "partial", "unavailable"].includes(
+      String(value.sourceCoverage),
+    ) ||
+    typeof value.sourceOmitted !== "boolean" ||
+    typeof value.selectionOmitted !== "boolean" ||
+    !Number.isSafeInteger(value.candidateCount) ||
+    Number(value.candidateCount) < 0 ||
+    Number(value.candidateCount) > 128 ||
+    !(
+      value.qualifyingCandidateCount === null ||
+      (Number.isSafeInteger(value.qualifyingCandidateCount) &&
+        Number(value.qualifyingCandidateCount) >= 0 &&
+        Number(value.qualifyingCandidateCount) <= 128)
+    ) ||
+    !Number.isSafeInteger(value.selectedCount) ||
+    !Number.isSafeInteger(value.deduplicatedCandidateCount) ||
+    !Number.isSafeInteger(value.omittedQualifyingCandidateCount) ||
+    !Array.isArray(value.evidence) ||
+    value.evidence.length > 3 ||
+    value.evidence.length !== value.selectedCount ||
+    !value.evidence.every(validEvidence) ||
+    !validDiagnostic(value.diagnostic, 512)
+  ) {
+    return false;
+  }
+  const selected = Number(value.selectedCount);
+  const omitted = Number(value.omittedQualifyingCandidateCount);
+  const qualifying = value.qualifyingCandidateCount;
+  const hasNonnegativeCounts =
+    selected >= 0 &&
+    Number(value.deduplicatedCandidateCount) >= 0 &&
+    omitted >= 0;
+  if (!hasNonnegativeCounts) return false;
+  if (value.status === "selected") {
+    return (
+      typeof qualifying === "number" &&
+      qualifying === selected + omitted &&
+      (selected > 0 || value.selectionOmitted === true)
+    );
+  }
+  if (value.status === "no_match") {
+    return qualifying === 0 && selected === 0 && omitted === 0;
+  }
+  return (
+    qualifying === null &&
+    selected === 0 &&
+    omitted === 0 &&
+    value.evidence.length === 0
   );
 }
 
@@ -475,6 +719,19 @@ function baseResult(
       sharedDaemon: "retained",
     },
     diagnostic: { type: "SupervisorError", message },
+    reporting: {
+      status: "missing",
+      sourceCoverage: "unavailable",
+      sourceOmitted: false,
+      selectionOmitted: false,
+      candidateCount: 0,
+      qualifyingCandidateCount: null,
+      selectedCount: 0,
+      deduplicatedCandidateCount: 0,
+      omittedQualifyingCandidateCount: 0,
+      evidence: [],
+      diagnostic: null,
+    },
     output: {
       byteLimit: runtimeConfig.terminalMaxUtf8Bytes,
       clipped: false,
@@ -483,12 +740,151 @@ function baseResult(
   };
 }
 
+function compactEvidence(
+  evidence: Record<string, unknown>,
+): Record<string, unknown> {
+  if (evidence.kind === "page") {
+    return {
+      kind: "page",
+      source: evidence.source,
+      exact: evidence.exact,
+      cutBefore: evidence.cutBefore,
+      cutAfter: evidence.cutAfter,
+    };
+  }
+  return {
+    kind: "action",
+    source: evidence.source,
+    step: evidence.step,
+    operation: evidence.operation,
+    actionLabel: evidence.actionLabel,
+    pageChanged: evidence.pageChanged,
+  };
+}
+
+function compactRunResult(details: Record<string, unknown>): string {
+  const observation = isRecord(details.lastObservation)
+    ? details.lastObservation
+    : null;
+  const cleanup = recordCopy(details.cleanup);
+  const claim = recordCopy(details.completionClaim);
+  const detailOutput = recordCopy(details.output);
+  const detailReporting = recordCopy(details.reporting);
+  const detailEvidence = Array.isArray(detailReporting.evidence)
+    ? detailReporting.evidence.filter(isRecord)
+    : [];
+  const scoredEvidence = detailEvidence.map((evidence) => ({
+    compact: compactEvidence(evidence),
+    relevance: typeof evidence.relevance === "number" ? evidence.relevance : 0,
+  }));
+  const detailOmissions = Array.isArray(detailOutput.omissions)
+    ? detailOutput.omissions.filter(
+        (value): value is string => typeof value === "string",
+      )
+    : [];
+  const omissions = detailOmissions.map((label) => `details.${label}`);
+  const appendOmission = (label: string) => {
+    if (!omissions.includes(label) && omissions.length < 32) {
+      omissions.push(label);
+    }
+  };
+  if (detailReporting.sourceOmitted === true) {
+    appendOmission("details.reporting source candidates");
+  }
+  if (detailReporting.selectionOmitted === true) {
+    appendOmission("details.reporting qualifying evidence");
+  }
+
+  const compact: Record<string, unknown> = {
+    outcome: {
+      status: details.status,
+      stopReason: details.stopReason,
+      execution: details.execution,
+      completionClaim: claim,
+    },
+    lastObservedLocation: {
+      targetId: details.targetId,
+      url: observation?.url ?? null,
+      title: observation?.title ?? null,
+    },
+    evidence: scoredEvidence.map((item) => item.compact),
+    cleanup,
+    diagnostic: details.diagnostic,
+    reporting: {
+      status: detailReporting.status,
+      sourceOmitted: detailReporting.sourceOmitted,
+      selectionOmitted: detailReporting.selectionOmitted,
+      diagnostic: detailReporting.diagnostic,
+    },
+    output: {
+      byteLimit: runtimeConfig.terminalMaxUtf8Bytes,
+      detailsClipped: detailOutput.clipped === true,
+      clipped: detailOutput.clipped === true || omissions.length > 0,
+      omissions,
+    },
+  };
+
+  let text = JSON.stringify(compact);
+  while (utf8Bytes(text) > runtimeConfig.terminalMaxUtf8Bytes) {
+    const compactEvidenceRecords = compact.evidence;
+    if (
+      Array.isArray(compactEvidenceRecords) &&
+      compactEvidenceRecords.length
+    ) {
+      const lowest = scoredEvidence.reduce(
+        (selected, item, index) =>
+          item.relevance < scoredEvidence[selected]!.relevance
+            ? index
+            : selected,
+        0,
+      );
+      compactEvidenceRecords.splice(lowest, 1);
+      scoredEvidence.splice(lowest, 1);
+      const reporting = recordCopy(compact.reporting);
+      reporting.selectionOmitted = true;
+      compact.reporting = reporting;
+      appendOmission("compact.evidence record");
+    } else {
+      const location = recordCopy(compact.lastObservedLocation);
+      if (location.title !== null) {
+        location.title = null;
+        appendOmission("compact.lastObservedLocation.title");
+      } else if (location.url !== null) {
+        location.url = null;
+        appendOmission("compact.lastObservedLocation.url");
+      } else {
+        const reporting = recordCopy(compact.reporting);
+        if (reporting.diagnostic !== null) {
+          reporting.diagnostic = null;
+          compact.reporting = reporting;
+          appendOmission("compact.reporting.diagnostic");
+        } else {
+          throw new Error(
+            "protected compact result exceeds terminal byte limit",
+          );
+        }
+      }
+      compact.lastObservedLocation = location;
+    }
+    const output = recordCopy(compact.output);
+    output.clipped = true;
+    output.omissions = omissions;
+    compact.output = output;
+    text = JSON.stringify(compact);
+  }
+  return text;
+}
+
+function recordCopy(value: unknown): Record<string, unknown> {
+  return isRecord(value) ? { ...value } : {};
+}
+
 function asToolResult(
   details: Record<string, unknown>,
   overflowFallback?: Record<string, unknown>,
 ): ToolResult {
-  let text = JSON.stringify(details);
-  if (utf8Bytes(text) > runtimeConfig.terminalMaxUtf8Bytes) {
+  let detailText = JSON.stringify(details);
+  if (utf8Bytes(detailText) > runtimeConfig.terminalMaxUtf8Bytes) {
     details =
       overflowFallback ??
       baseResult(
@@ -503,9 +899,15 @@ function asToolResult(
       output.clipped = true;
       output.omissions = ["child terminal result"];
     }
-    text = JSON.stringify(details);
+    detailText = JSON.stringify(details);
   }
-  return { content: [{ type: "text", text }], details };
+  if (utf8Bytes(detailText) > runtimeConfig.terminalMaxUtf8Bytes) {
+    throw new Error("bounded details fallback exceeds terminal byte limit");
+  }
+  return {
+    content: [{ type: "text", text: compactRunResult(details) }],
+    details,
+  };
 }
 
 function tabListingError(type: string, message: string): ToolResult {
@@ -968,7 +1370,7 @@ export function createRlcdBrwsrExtension(
     pi.registerTool({
       name: "rlcd_brwsr_run",
       label: "RLCD Browser",
-      description: `Run one bounded Jev Ultrafast browser task for the initial benign, unauthenticated, non-booking scope. Supply an HTTP(S) url to create a new task tab, an exact targetId to continue an eligible borrowed tab without startup navigation, or both to navigate that borrowed tab before the goal. Borrowed tabs are never wrapper-owned or automatically closed; retainTab is invalid with targetId. The parent requests stop after maxSeconds (default ${DEFAULT_MAX_SECONDS}, maximum ${MAX_SECONDS}) but cannot guarantee no action crosses that deadline. Browser Harness must already have the named daemon running; after browser-setting changes, stop and reprovision it because current checks do not attest an existing daemon's endpoint or profile. Completion claims require independent verification. Terminal JSON, including escaping, is capped at ${runtimeConfig.terminalMaxUtf8Bytes} UTF-8 bytes; omissions are disclosed. Native usage records are incomplete and are omitted from Pi totals.`,
+      description: `Run one bounded Jev Ultrafast browser task for the initial benign, unauthenticated, non-booking scope. Supply an HTTP(S) url to create a new task tab, an exact targetId to continue an eligible borrowed tab without startup navigation, or both to navigate that borrowed tab before the goal. Borrowed tabs are never wrapper-owned or automatically closed; retainTab is invalid with targetId. The parent requests stop after maxSeconds (default ${DEFAULT_MAX_SECONDS}, maximum ${MAX_SECONDS}) but cannot guarantee no action crosses that deadline. Browser Harness must already have the named daemon running; after browser-setting changes, stop and reprovision it because current checks do not attest an existing daemon's endpoint or profile. Completion claims require independent verification. After handled cleanup, one optional Jev relevance request may select up to three exact goal-relevant page/action evidence records. Model-facing content is compact; full bounded diagnostics remain in tool details. Both are capped at ${runtimeConfig.terminalMaxUtf8Bytes} UTF-8 bytes and disclose omissions. Native usage records are incomplete and are omitted from Pi totals.`,
       promptSnippet:
         "Delegate one already-authorized benign, unauthenticated, non-booking browser task to the bounded fast loop",
       promptGuidelines: [

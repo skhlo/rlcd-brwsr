@@ -6,15 +6,16 @@ current working tree. The sibling checkout is retained only for test resources
 and evidence. See the [archive index](docs/archive.md).
 
 **Implementation status:** existing-tab targeting is implemented and locally
-verified at `ff49875`. All 54 automated tests and a 13-assertion command-driven
-Pi-TUI/real-Chrome acceptance pass succeeded after the consolidated review fixes.
-The actual-surface check used disposable local fixtures and synthetic provider
-replies, not live inference, public sites or an outer-model-issued tool turn.
+verified at `ff49875`. The current branch adds the generic compact handoff:
+model-facing run content is now a small goal-aware result while `details` retains
+the bounded diagnostic projection. Deterministic tests and an isolated,
+command-driven Pi-TUI check use synthetic browser/provider boundaries. Live Jev
+relevance quality remains unevaluated; no user tab or live provider was used.
 Jev and Pi's outer model remain unchanged; the native field helper is direct
 DeepSeek `deepseek-flash` with thinking disabled. The feature is local and
-unpublished. See [current verification and limits](docs/thin-python-evidence.md#existing-tab-targeting)
-for evidence and earlier results at their original heads. Current GitHub issues
-still describe the superseded implementation and are not claimed as satisfied.
+unpublished. See [current verification and limits](docs/thin-python-evidence.md#compact-handoff)
+and the [owning plan](docs/RLCD-BRWSR.md). Current GitHub issues still describe
+the superseded implementation and are not claimed as satisfied.
 See the
 [owning plan](docs/RLCD-BRWSR.md),
 [ADR-0003](docs/adr/0003-python-owned-run.md), and the historical
@@ -23,9 +24,12 @@ See the
 RLCD-brwsr delegates one bounded browser task to the pinned Jev Ultrafast Agent.
 Python constructs the upstream `Agent` and consumes `Agent.run()`; upstream owns
 observation, decisions, native field-text generation, and Browser Harness input.
-Pi validates the request, supervises one Python process, and returns one bounded
-terminal JSON result. A Jev `DONE` response is a completion claim, not proof; the
-outer agent must independently verify the visible result.
+After handled cleanup, Python can make one optional batched Jev relevance request
+that selects exact sanitized page/action evidence for the original goal. Pi
+validates the request, supervises one Python process, keeps the full bounded JSON
+as diagnostic `details`, and sends only compact content to its outer model. A Jev
+`DONE` response is a completion claim, not proof; the outer agent must
+independently verify the visible result.
 
 ## Project-local setup
 
@@ -74,8 +78,10 @@ without deleting it; this repository change does not edit the launcher.
 `uv.lock` fixes Python 3.12, Jev Ultrafast commit
 `1231850a0bf1a0c0341fe408ef1668dbbfdfac46`, and Browser Harness 0.1.13.
 `config/runtime.json` fixes Jev to `jev-1.13.0`, the helper tuple above, a
-32 KiB serialized-request limit, and a 16 KiB terminal/model-visible JSON limit.
-Those two byte budgets have one configuration owner. The `/v1` base is required
+32 KiB serialized-request limit, and a 16 KiB terminal/full-details JSON limit.
+Compact model-facing content is also structurally fitted within that existing
+16 KiB hard cap; there is no separate stricter public byte promise. Those byte
+budgets have one configuration owner. The `/v1` base is required
 by the pinned helper's slash-sensitive direct-DeepSeek branch. `deepseek-flash`
 is DeepSeek's current V4.1 Flash alias, not immutable version identity.
 `TEXT_MODEL_REASONING=disabled` preserves the helper's native
@@ -194,18 +200,34 @@ execution effects uncertain before `Page.navigate`; provider/input races after
 admission are likewise not rewritten as pre-start rejection.
 
 Python projects only bounded current page fields, executed-history summaries,
-configured models, available upstream-recorded usage, known target, cleanup, and
-a sanitized diagnostic. Full snapshots, raw prompts/responses, child stderr, and
-invalid terminal fragments are not returned. Complete native key values are
-redacted before any clipping, including diagnostics and usage dictionary keys;
-invalid Unicode and non-finite numbers are normalized. The result discloses
-field/record omissions. If adding supervised process evidence would exceed the
-same terminal cap, Pi omits the child projection conservatively while preserving
-its first cancellation/deadline reason and observed process reap.
+configured models, available upstream-recorded usage, known target, cleanup, a
+sanitized primary diagnostic, and bounded reporting metadata. Full snapshots,
+raw prompts/responses, child stderr, and invalid terminal fragments are not
+returned. Complete native key and Bearer values are redacted before reporting
+and before any clipping; invalid Unicode and non-finite numbers are normalized.
+The result discloses field/record omissions. If adding supervised process
+evidence would exceed the same terminal cap, Pi omits variable diagnostics
+conservatively while preserving outcome, cleanup and primary-error identity.
 
-Available usage records are source-labelled but incomplete: failed calls,
-attempts, retries, and charges can be absent. The tool deliberately returns no
-Pi top-level `usage`, so Pi footer and session totals exclude these native calls.
+For normal completion claims and native `BLOCKED` outcomes with observations,
+the optional reporter sees the sanitized goal, at most 128 bounded source
+candidates, and no URL, target ID, diagnostics, model configuration, raw native
+request/reply, or usage history. Page evidence is copied exactly from the final
+visible text; action evidence copies only step, operation, action label, and
+page-change from the last six actions. Up to three records survive a 0.5
+selection policy after overlap resolution. This threshold is an evaluation
+policy, not a reliability claim. Missing source/key, invalid response, provider
+failure, or cooperative interruption produces an honest deterministic reporting
+state without raw-text fallback or changing browser facts.
+
+Model-facing run content contains only `outcome`, `lastObservedLocation`,
+`evidence`, `cleanup`, `diagnostic`, `reporting`, and `output`. It excludes full
+page text, complete history, model configuration, per-call usage and relevance
+scores. Pi `details` retains the full bounded projection and reporting scores,
+counts and usage. Discovery output is unchanged. Available usage records remain
+incomplete; a validated reporting call adds source `jev_handoff`, while failed
+or retried call usage stays unknown. The tool deliberately returns no Pi
+top-level `usage`, so Pi footer and session totals exclude all native calls.
 
 ## Local checks
 
@@ -218,13 +240,17 @@ git diff --check
 
 The deterministic suite includes registered-tool cases that cross the real
 Python runner and pinned `Agent.run()`/native helper while substituting external
-Browser Harness CDP and provider responses. One labelled lifecycle scenario
-wraps the real Agent to interrupt known-target recovery. Separate internal
-process/outcome tests and a direct Python projection contract cover supervision,
-precedence and oversized synthetic state without global event/timer patches or
-Agent-history mutation. Historical real-Chrome/TUI checks cover click, text
-retention, timeout and cancellation at their recorded heads; the later bounded
-live Ling check covers one helper payload and one local fixture through Pi's
-normal agent turn. The current direct DeepSeek selection received no live or
-actual-surface check. These checks do not establish general model quality,
-public-site reliability or complete billing.
+Browser Harness CDP and provider responses. It now checks goal-dependent source
+selection, distant qualifications, scroll-action evidence, report
+failure/interruption, strict response/envelope validation, privacy on both
+surfaces, and honest bounds. Separate process/outcome and direct projection
+checks retain the earlier lifecycle guarantees.
+
+A current isolated Pi-TUI slash-command check invoked the production registered
+run definition with synthetic browser and provider boundaries. It compared exact
+compact content with full details; it did not touch Chrome, invoke an outer model,
+or make a live provider request. Sanitized replay reconstructions cover the five
+recorded tasks plus generic value/qualification cases without browser actions.
+Historical real-Chrome and live-provider evidence remains tied to its recorded
+heads. None of this establishes live Jev relevance quality, general-web
+reliability, or complete billing.

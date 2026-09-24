@@ -1,16 +1,16 @@
 # Let upstream Python own the run
 
 Status: accepted and implemented; the tab-targeting amendment is locally
-verified at corrected candidate `ff49875`. Its 54 automated tests and
-13-assertion command-driven Pi-TUI/real-Chrome pass succeeded, with no unresolved
-or introduced finding in targeted Standards/Spec rechecks. Actual-surface
-verification used synthetic providers and local fixtures, not live inference,
-public sites or an outer-model-issued turn. The helper remains direct DeepSeek
-`deepseek-flash` with native thinking disabled; Jev and Pi's outer model are
-unchanged. See the [current verification record](../thin-python-evidence.md#existing-tab-targeting),
-which preserves older rewrite/live Ling evidence at its recorded heads.
-Publication and public-site acceptance of this amendment remain pending.
-Supersedes ADR-0002's command-level orchestration,
+verified at corrected candidate `ff49875`. The current compact-handoff amendment
+separates goal-aware model-facing content from bounded diagnostic `details` and
+has deterministic plus isolated command-driven Pi-TUI evidence with synthetic
+browser/provider boundaries. Live Jev relevance quality remains pending. The
+helper remains direct DeepSeek `deepseek-flash` with native thinking disabled;
+Jev and Pi's outer model are unchanged. See the
+[current verification record](../thin-python-evidence.md#compact-handoff), which
+preserves older tab-targeting, rewrite and live Ling evidence at their recorded
+heads. Publication and public-site acceptance remain pending. Supersedes
+ADR-0002's command-level orchestration,
 Pi-native helper relay and parent shadow-state design, not its dependency pins or
 native Browser Harness ownership.
 
@@ -37,7 +37,8 @@ and 120-decision limits. The parent wall deadline is coarse and is not a
 no-dispatch guarantee.
 
 `config/runtime.json` is the single owner for the 32 KiB serialized-request cap,
-16 KiB terminal/model-visible JSON cap, Jev model, and selected native helper:
+16 KiB terminal/full-details JSON cap, Jev model, and selected native helper.
+Compact model-facing content is structurally fitted within the same hard cap:
 direct DeepSeek `deepseek-flash` at `https://api.deepseek.com/v1`, with
 `TEXT_MODEL_REASONING=disabled`. The `/v1` path preserves the pinned helper's
 slash-sensitive direct-DeepSeek branch, and the non-`none` reasoning value keeps
@@ -78,12 +79,41 @@ and reprovision before preflight or another run, or the stale daemon can still
 reach a remote or otherwise wrong browser. This accepted limitation avoids a
 second configuration-to-daemon binding owner.
 
-Python consumes `Agent.run()` rather than calling `predict` and `act`. Its result
-contains only bounded existing page/history/model/usage state, target and cleanup
-outcomes, and a sanitized diagnostic. Complete native key strings are redacted
-before clipping, including usage keys. Full snapshots and raw prompts/responses
-are not projected. Native usage remains source-labelled and incomplete; Pi
-receives no top-level `usage`, so footer/session totals are knowingly incomplete.
+Python consumes `Agent.run()` rather than calling `predict` and `act`. Its full
+result contains only bounded existing page/history/model/usage state, target and
+cleanup outcomes, a sanitized primary diagnostic, and bounded reporting
+metadata. Complete native key and Bearer strings are redacted before reporting
+and clipping. Full snapshots and raw prompts/responses are not projected.
+Native usage remains source-labelled and incomplete; Pi receives no top-level
+`usage`, so footer/session totals are knowingly incomplete.
+
+After handled cleanup, one Python reporting module can issue one batched Noul
+request through the pinned `jev_ultrafast.model.post_json` transport for normal
+completion or native `BLOCKED` with available observations. It builds generic
+bounded candidates from sanitized final visible text and the last six recorded
+actions. Page candidates preserve exact source text and token boundaries; action
+candidates expose only step, operation, action label and page-change. The model
+judges relevance, including units, periods, estimates, exclusions, caveats and
+ambiguity. Code validates every answer/model/usage field, resolves substantial
+overlap, applies the evaluation-only 0.5 threshold, and copies at most three
+source records. The request has a 98,304-byte bound and at most 128 candidates;
+the pinned observer supplies at most 6,000 characters of visible text.
+
+The reporter never receives URL, target ID, diagnostic, configuration, usage
+history or raw native request/reply data. Missing source/key, provider or
+validation failure, and cooperative interruption return explicit reporting
+states with no raw-text fallback and never replace the browser outcome or
+primary diagnostic. A validated response adds one `jev_handoff` usage record;
+failed/retried usage remains unknown. Reporting shares the original parent wall
+deadline and adds no cleanup grace or second stop owner.
+
+Pi keeps this full bounded result in tool `details`. Run `content` is separately
+built from exactly `outcome`, `lastObservedLocation`, `evidence`, `cleanup`,
+`diagnostic`, `reporting`, and `output`. It excludes full page text, history,
+model configuration, per-call usage and relevance scores. Structural fitting
+drops whole evidence records, then optional location/report fields, while
+preserving outcome, cleanup, opaque IDs and primary-error identity. Both
+surfaces retain the existing 16 KiB hard cap. Discovery stays unchanged.
 
 Only one structurally valid terminal envelope followed by an observed zero exit
 without a signal can carry child execution and cleanup claims. A valid normal

@@ -61,6 +61,19 @@ def _terminal_envelope(text: str) -> dict[str, object]:
         "targetId": None,
         "cleanup": {"taskTab": "unknown", "sharedDaemon": "retained"},
         "diagnostic": None,
+        "reporting": {
+            "status": "missing",
+            "sourceCoverage": "unavailable",
+            "sourceOmitted": False,
+            "selectionOmitted": False,
+            "candidateCount": 0,
+            "qualifyingCandidateCount": None,
+            "selectedCount": 0,
+            "deduplicatedCandidateCount": 0,
+            "omittedQualifyingCandidateCount": 0,
+            "evidence": [],
+            "diagnostic": None,
+        },
         "output": {
             "byteLimit": _TERMINAL_LIMIT,
             "clipped": True,
@@ -281,6 +294,86 @@ class _ProjectionInterruptPage(dict):
 
 
 def _page():
+    if _SCENARIO in {
+        "report_goal_document",
+        "report_invalid",
+        "report_provider_error",
+        "report_cancelled",
+        "report_missing_key",
+    }:
+        return {
+            "url": _STATE["url"],
+            "title": "Generic plan comparison",
+            "text": (
+                "Capacity: 40 units.\n\n"
+                + "Background notes that do not answer the requested fact. " * 18
+                + "\n\nPrice: 18 credits per month."
+            ),
+            "scroll": {"y": 0},
+            "actions": [{"id": "wait", "kind": "wait", "label": "Wait"}],
+            "marker": "report-goal-document",
+            "page_key": "report-goal-document",
+            "guards": {},
+        }
+    if _SCENARIO == "report_qualification":
+        return {
+            "url": _STATE["url"],
+            "title": "Generic estimate",
+            "text": (
+                "Estimated total: 120 credits.\n\n"
+                + "General explanatory material. " * 24
+                + "\n\nEstimate excludes service charges."
+            ),
+            "scroll": {"y": 0},
+            "actions": [{"id": "wait", "kind": "wait", "label": "Wait"}],
+            "marker": "report-qualification",
+            "page_key": "report-qualification",
+            "guards": {},
+        }
+    if _SCENARIO == "report_redaction":
+        return {
+            "url": _STATE["url"],
+            "title": "Generic redaction",
+            "text": (
+                f"Provider key {os.environ.get('TYPESAFE_API_KEY', '')}. "
+                f"Authorization: Bearer {os.environ.get('TEXT_MODEL_API_KEY', '')}. "
+                "Approved marker CLEAR-19."
+            ),
+            "scroll": {"y": 0},
+            "actions": [{"id": "wait", "kind": "wait", "label": "Wait"}],
+            "marker": "report-redaction",
+            "page_key": "report-redaction",
+            "guards": {},
+        }
+    if _SCENARIO == "report_scroll":
+        if _STATE["destination"]:
+            return {
+                "url": _STATE["url"],
+                "title": "Generic feed",
+                "text": "Unrelated visible entries after the viewport moved.",
+                "scroll": {"y": 560},
+                "actions": [{"id": "wait", "kind": "wait", "label": "Wait"}],
+                "marker": "report-scroll-finished",
+                "page_key": "report-scroll-finished",
+                "guards": {},
+            }
+        return {
+            "url": _STATE["url"],
+            "title": "Generic feed",
+            "text": "Initial visible entries.",
+            "scroll": {"y": 0},
+            "actions": [
+                {
+                    "id": "scroll_down",
+                    "kind": "scroll",
+                    "label": "Scroll down",
+                    "delta": 560,
+                }
+            ],
+            "marker": "report-scroll-start",
+            "page_key": "report-scroll-start",
+            "guards": {},
+        }
     if _SCENARIO in {
         "fill",
         "helper_invalid_empty",
@@ -577,6 +670,10 @@ def _cdp(method, session_id=None, **params):
             _STATE["destination"] = True
             _persist_state()
             _append("RLCD_TEST_BROWSER_MARKER", "click:continue")
+        if params.get("type") == "mouseWheel":
+            _STATE["destination"] = True
+            _persist_state()
+            _append("RLCD_TEST_BROWSER_MARKER", "scroll:down")
         return {}
     if method == "Input.dispatchKeyEvent":
         return {}
@@ -663,6 +760,55 @@ def _helper_response(key, body):
     }
 
 
+def _report_response(body):
+    marker = os.environ.get("RLCD_TEST_REPORT_MARKER")
+    if marker:
+        Path(marker).write_text(
+            json.dumps(body, ensure_ascii=False, sort_keys=True), encoding="utf-8"
+        )
+    questions = body["questions"]
+    candidates = body["state"]["candidates"]
+    goal = str(body["state"]["goal"]).lower()
+    if _SCENARIO == "report_provider_error":
+        raise RuntimeError("upstream phrase: no action executed")
+    if _SCENARIO == "report_cancelled":
+        time.sleep(30)
+    if _SCENARIO == "report_invalid":
+        return {
+            "model": "deterministic-reporting-fake",
+            "answers": {"unexpected": {"type": "noul", "noul": 0.9}},
+            "usage": {"input_tokens": 13, "output_tokens": 5},
+        }
+
+    answers = {}
+    for index, question_id in enumerate(questions):
+        candidate = candidates[index]
+        exact = str(candidate.get("exact", "")).lower()
+        operation = str(candidate.get("operation", "")).lower()
+        action_label = str(candidate.get("actionLabel", "")).lower()
+        score = 0.05
+        if "capacity" in goal and "capacity:" in exact:
+            score = 0.96
+        elif "price" in goal and "price:" in exact:
+            score = 0.95
+        elif "estimated total" in goal and (
+            "estimated total:" in exact or "estimate excludes" in exact
+        ):
+            score = 0.94
+        elif "scroll" in goal and (
+            "scroll" in operation or "scroll" in action_label
+        ):
+            score = 0.98
+        elif "clear-19" in goal and "clear-19" in exact:
+            score = 0.97
+        answers[question_id] = {"type": "noul", "noul": score}
+    return {
+        "model": "deterministic-reporting-fake",
+        "answers": answers,
+        "usage": {"input_tokens": 13, "output_tokens": 5},
+    }
+
+
 def _post_json(url, key, body):
     _append("RLCD_TEST_MODEL_MARKER", f"request:{url}")
     if "questions" not in body:
@@ -694,6 +840,8 @@ def _post_json(url, key, body):
         os._exit(29)
 
     questions = body["questions"]
+    if questions and all(str(name).startswith("keep_c") for name in questions):
+        return _report_response(body)
     operations = questions["operation"]["criteria"]
     if _SCENARIO in {
         "fill",
@@ -702,7 +850,13 @@ def _post_json(url, key, body):
         "secret_error",
     }:
         operation = "DONE" if _STATE["typed"] else "TYPE_TEXT"
-    elif _SCENARIO == "done" or _STATE["destination"]:
+    elif _SCENARIO == "report_scroll" and not _STATE["destination"]:
+        operation = "SCROLL_DOWN"
+    elif (
+        _SCENARIO == "done"
+        or _STATE["destination"]
+        or _SCENARIO.startswith("report_")
+    ):
         operation = "DONE"
     elif _SCENARIO == "blocked":
         operation = "BLOCKED"
@@ -729,11 +883,14 @@ def _post_json(url, key, body):
     if _SCENARIO == "terminal_overflow":
         usage = {f"large-key-{index}": "V" * 5_000 for index in range(40)}
 
-    return {
+    result = {
         "model": reported_model,
         "answers": answers,
         "usage": usage,
     }
+    if _SCENARIO == "report_missing_key":
+        os.environ.pop("TYPESAFE_API_KEY", None)
+    return result
 
 
 model.post_json = _post_json
