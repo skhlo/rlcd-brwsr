@@ -11,16 +11,15 @@ used by the handoff judges from the shorter exact source spans they can return.
 Long fragmented text offers individual lines; long prose uses token-aligned spans
 near 128 UTF-8 bytes, while candidate pressure can coalesce adjacent spans within
 the unchanged bounds. All 70 deterministic tests and 24 synthetic Pi-TUI
-assertions pass. An offline replay of the saved seven-case corpus retained full
-meaningful source coverage with 84/116/114 questions on the three pilot states.
-Explicitly synthetic oracle judgments then produced 2,973 bytes of useful
-model-facing content versus the 3,533 historically observed bytes, 15.9% less,
-through the unchanged presenter. That demonstrates representability, not live Jev
-quality or request-token savings: request sizes increased substantially from the
-prior grouped design. The earlier seven live model-only results remain historical
-and must not be read as validation of the new span questions. No live inference,
-browser operation, credential access, service change, installation, or
-publication occurred in this continuation. Jev and Pi's outer model remain
+assertions pass. A separately authorized seven-case live replay passed three
+of six positive excerpt checks plus the no-answer control. The birth date now
+appears once and the estimate retains its exclusion, but navigation evidence
+remains weak and the Korean example was missed. Reconstructed pilot handoffs
+were 7.9% smaller, but that is not a successful compression result when expected
+evidence is lost. Reporting-token usage returned near the original pilot level.
+Structural separation is verified; general relevance/minimality acceptance is
+not passed. No browser action, service change, installation or publication
+occurred during this continuation/evaluation. Jev and Pi's outer model remain
 unchanged; the native field helper is direct DeepSeek `deepseek-flash` with
 thinking disabled. See [current verification and limits](docs/thin-python-evidence.md#compact-handoff)
 and the [owning plan](docs/RLCD-BRWSR.md). Current GitHub issues still describe
@@ -298,6 +297,8 @@ reduction is claimed. Explicitly labelled synthetic oracle scores produced usefu
 compact outputs of 1,390/751/832 bytes on the historical pilot states, totaling
 2,973 versus the exactly reproduced historical 3,533 bytes. Protected facts were
 held constant. This 15.9% potential reduction proves only that the structure can
-represent a smaller useful handoff. The earlier seven live model-only calls are
-consumed historical evidence for the superseded grouped questions; live semantic,
-token and latency validation of this span design needs a separate allowance.
+represent a smaller useful handoff. A later seven-case live check did not match
+that oracle: four configured checks passed, three expected excerpt checks failed,
+and counterfactual pilot content totalled 3,255 bytes. All evidence remained exact
+source copies, but the smaller output does not establish sufficient relevance.
+That allowance is consumed; further live trials need new authorization.

@@ -303,7 +303,8 @@ content comparison.
 
 ### Span-judge continuation: context separated from output spans
 
-The reporting owner now sends one bounded `judgmentContext` alongside shorter
+At `3d9f0f694f8f838949cb43de0f1382e165b4cf61`, the reporting owner sends one bounded
+`judgmentContext` alongside shorter
 selectable records. Long fragmented paragraphs offer individual lines; long
 lines and prose use token-aligned spans near 128 bytes, preserving one larger
 unsplittable token when it fits 512 bytes. Adjacent spans coalesce only under
@@ -349,9 +350,57 @@ It was command-driven, not an outer-model turn. No live call, browser/daemon
 connection, credential access, service change or installation occurred. The
 task-owned Paseo terminal and isolated work directory were removed; the existing
 Harness remained untouched. Artifacts are retained under
-`artifacts/compact-output/span-judges/`. The earlier seven live calls are consumed
-historical evidence for the superseded grouped questions; validating this new
-shape live requires a separate finite allowance.
+`artifacts/compact-output/span-judges/`. The parent reran all 70 tests, types,
+formatting and protected-runtime/pin checks successfully. Standards review found
+no hard violation and two deferred style suggestions. Both Spec observations
+were inherited: a parent AST comparison showed the provider validator,
+action-projection normalization and identity functions unchanged from the base.
+No new blocking defect was identified; this does not disprove inherited concerns.
+See `span-judges/REVIEW.md` for the full disposition.
+
+#### Live span-judge evaluation: smaller excerpts, mixed relevance
+
+The owner separately authorized the same seven sanitized cases once, with at
+most 21 native client POST attempts and no manual retries or browser actions.
+Seven logical calls completed in seven observed client POST attempts, all HTTP 200. No corpus, prompt or threshold was changed after seeing the results.
+
+Three of six positive excerpt checks passed, plus the negative control:
+**four of seven configured checks**, not seven successful browser tasks.
+The date appeared once as the exact offered `; November 9, 1914` span. The
+identifier case and estimate/monthly-period/distant-exclusion case retained their
+expected facts without configured filler. Google selected `Weather result`, an
+unnecessary value-less `Precipitation:` label and a search action, but missed the
+expected Busan/query text in page evidence. Wikipedia selected `External links`,
+`inventor` and a search action rather than the expected name. The Korean case
+returned no evidence despite the requested text being available. The absent-price
+negative control correctly returned no match. Every selected record was an exact
+source copy; no-match still is not proof of absence.
+
+The unchanged production presenter first reproduced the historical compact
+outputs exactly. Holding their outcome/location/cleanup/diagnostic facts fixed
+and replacing only reporting/usage with the live selections produced
+1,445/976/834 bytes, totalling **3,255 versus 3,533 bytes (7.9% smaller)**.
+This is an offline counterfactual, not new browser returns. Historical Google and
+Wikipedia URLs/titles still carry their query/article identity; failures here
+are selected-excerpt checks, not failed browser outcomes. Smaller output with
+missing expected evidence is not successful general compression. The earlier
+2,973-byte synthetic oracle was a potential representation, not a prediction.
+
+For the same three source/goal pairs, reporting usage was 62,622 input / 6,292
+output tokens, versus 63,679 / 6,232 originally and 9,697 / 872 in the grouped
+replay. Most grouped-shape token savings were surrendered. Across all seven
+cases, responses reported 68,907 input / 6,708 output tokens. Reporting times
+were 201-972 ms, median 313 ms; the loop took 2,918 ms after imports/native
+configuration loading. No paired latency, end-to-end speed or billing benefit
+is established, and complete attempts/retries/billing remain unknown.
+
+All seven cases are consumed. Context/span separation is structurally verified,
+but judgment/ranking quality remains unresolved; no further tuning or additional
+inference followed. No browser/daemon connection, tab action, credential-store
+edit, installation or publication occurred. The normal native loader supplied
+existing TypeSafe authentication, with values excluded from argv/logs/artifacts.
+Receipts, comparisons and scripts are retained under
+`artifacts/compact-output/span-judges/live-evaluation/`.
 
 Historical rewrite tested implementation: `b3b42036685eba64f3e7bc8ccc296e16b9910fe9`.
 The initial rewrite is `3f984e54`; the corrected implementation was checked again,

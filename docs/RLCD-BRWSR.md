@@ -12,11 +12,15 @@ synthetic oracle judgments produced 2,973 bytes of useful content versus the
 exactly reproduced historical 3,533 bytes, 15.9% less, with protected machine
 facts held constant. This proves structural representability only. The new
 84/116/114-question requests were 50,049/70,046/68,705 bytes, substantially
-larger than the prior grouped requests, and the earlier seven live calls tested
-only that superseded grouped shape. No live semantic, token or latency claim is
-made for the span design. No live inference, browser operation, credential
-access, service change, installation or publication occurred in this
-continuation. The native helper remains direct DeepSeek `deepseek-flash` with
+larger than the prior grouped requests. A subsequent authorized seven-case live
+span replay passed three positive excerpt checks and the no-answer control;
+Google/Wikipedia excerpt checks and the Korean case missed expected text.
+The birth date was returned once and the estimate retained its exclusion, but
+relevance/minimality acceptance remains mixed, not passed. Counterfactual pilot
+content was 3,255 bytes, 7.9% below the original, while reporting tokens returned
+near the original level. Smaller output with lost expected evidence is not a
+successful general compression result. No browser action, service change,
+installation or publication occurred during the continuation/evaluation. The native helper remains direct DeepSeek `deepseek-flash` with
 thinking disabled; Jev and Pi's outer model are unchanged. See the
 [current verification record](thin-python-evidence.md#compact-handoff) and
 retained local artifacts under `artifacts/compact-output/span-judges/`. Earlier
@@ -434,9 +438,14 @@ constant, and produced 1,390/751/832 bytes instead of 1,470/1,005/1,058: 2,973
 versus 3,533 total, 15.9% less. Boilerplate, duplicate and qualification checks
 were recorded separately from fragment recall. These are representability and
 surface calculations, not predictions or evidence of Jev quality, request-token
-savings, latency, billing or reliability. The prior grouped-shape live calls are
-historical and consumed; a new finite allowance is required for live validation
-of these questions.
+savings, latency, billing or reliability. The subsequent seven-call live span
+replay passed only four configured content/status checks: three positive cases
+and the negative control. It preserved the date once and the estimate's
+qualification, but navigation selections remained weak and Korean evidence was
+missed. The actual selected evidence yielded 3,255 counterfactual content bytes;
+that reduction with missing expected evidence is not semantic acceptance. See the verification
+record for usage, timing, method and limitations. All seven calls are consumed;
+additional live trials need a new finite allowance.
 
 The click/default-close, text/retention, time-budget and TUI-cancellation cases
 were repeated successfully at corrected implementation `b3b42036`, using real

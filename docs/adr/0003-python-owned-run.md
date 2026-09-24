@@ -9,16 +9,20 @@ isolated command-driven Pi-TUI assertions pass with synthetic external
 boundaries. A saved-input replay retained complete meaningful source coverage,
 and explicitly synthetic oracle judgments represented useful pilot handoffs in
 2,973 bytes versus the exactly reproduced historical 3,533 bytes. This is not
-live Jev evidence. The prior grouped selector's seven authorized live calls
-remain historical: they reduced reporting tokens but increased counterfactual
-content, and they do not validate the new 84/116/114-question shape. Existing
-user tabs and services were left alone; no credential or provider was used. The
+live Jev evidence. A subsequent authorized seven-case span replay passed only
+three positive excerpt checks and the negative control. The date/estimate cases
+worked, but navigation excerpts stayed weak and the Korean case was missed.
+Counterfactual replies were smaller while missing expected evidence; reporting
+tokens returned near the original level. This is not general relevance/minimality
+acceptance. Earlier grouped results remain historical. Existing tabs/services
+were left alone; the native loader supplied credentials for authorized
+model-only requests without copying or editing the credential store. The
 helper remains direct DeepSeek `deepseek-flash` with native thinking disabled;
 Jev and Pi's outer model are unchanged. See the
 [current verification record](../thin-python-evidence.md#compact-handoff), which
 preserves older browser, selector, rewrite and live Ling evidence at their
-recorded heads. Publication, new-shape live semantics and general-web reliability
-remain unestablished. Supersedes ADR-0002's command-level orchestration,
+recorded heads. Publication, general semantic acceptance and general-web
+reliability remain unestablished. Supersedes ADR-0002's command-level orchestration,
 Pi-native helper relay and parent shadow-state design, not its dependency pins or
 native Browser Harness ownership.
 
