@@ -1,18 +1,15 @@
 # Let upstream Python own the run
 
-Status: accepted, implemented and locally verified at `b3b42036`. Twenty
-automated tests and four repeated synthetic-provider Pi-TUI/real-Chrome command
-checks passed there. A subsequent bounded live Ling probe and one local fixture
-through Pi's normal outer-model/tool path also passed on that historical
-production code. The current native helper selects direct DeepSeek
-`deepseek-flash` with native thinking disabled in the request. Its
-configuration-only switch itself had no live or actual-surface acceptance. The
-local tab-targeting amendment adds a 49-test deterministic suite and two bounded
-command-driven Pi-TUI/real-Chrome acceptance passes with synthetic provider
-replies. Those checks used no outer model, live inference or public site; Jev and Pi's outer
-model are unchanged. Public-site acceptance remains pending; see the historical
-[verification record](../thin-python-evidence.md) and the retained local
-implementation handoff.
+Status: accepted and implemented; the tab-targeting amendment is locally
+verified at corrected candidate `ff49875`. Its 54 automated tests and
+13-assertion command-driven Pi-TUI/real-Chrome pass succeeded, with no unresolved
+or introduced finding in targeted Standards/Spec rechecks. Actual-surface
+verification used synthetic providers and local fixtures, not live inference,
+public sites or an outer-model-issued turn. The helper remains direct DeepSeek
+`deepseek-flash` with native thinking disabled; Jev and Pi's outer model are
+unchanged. See the [current verification record](../thin-python-evidence.md#existing-tab-targeting),
+which preserves older rewrite/live Ling evidence at its recorded heads.
+Publication and public-site acceptance of this amendment remain pending.
 Supersedes ADR-0002's command-level orchestration,
 Pi-native helper relay and parent shadow-state design, not its dependency pins or
 native Browser Harness ownership.

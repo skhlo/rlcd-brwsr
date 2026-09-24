@@ -5,18 +5,15 @@ Old experiments are archived in Git and a verified backup, not mixed into the
 current working tree. The sibling checkout is retained only for test resources
 and evidence. See the [archive index](docs/archive.md).
 
-**Implementation status:** the thin Python-owned rewrite passed 20 local tests
-and four repeated Pi-TUI/real-Chrome checks with synthetic provider replies at
-`b3b42036`. A subsequent live helper probe and normal Pi agent-turn fixture used
-Ling at their recorded historical heads. The current helper selection is direct
-DeepSeek `deepseek-flash`, with native thinking disabled in the request. The
-configuration-only switch itself had no live or actual-surface check. The local
-tab-targeting candidate extends it with a 49-test deterministic suite and two
-bounded command-driven actual-Pi-TUI/real-Chrome acceptance passes using only
-local fixture tabs and synthetic provider replies. Those checks invoked the production registered
-definitions by name and used no outer model, live inference or public site. Jev
-and Pi's outer model remain unchanged. See
-[verification and limits](docs/thin-python-evidence.md). Current GitHub issues
+**Implementation status:** existing-tab targeting is implemented and locally
+verified at `ff49875`. All 54 automated tests and a 13-assertion command-driven
+Pi-TUI/real-Chrome acceptance pass succeeded after the consolidated review fixes.
+The actual-surface check used disposable local fixtures and synthetic provider
+replies, not live inference, public sites or an outer-model-issued tool turn.
+Jev and Pi's outer model remain unchanged; the native field helper is direct
+DeepSeek `deepseek-flash` with thinking disabled. The feature is local and
+unpublished. See [current verification and limits](docs/thin-python-evidence.md#existing-tab-targeting)
+for evidence and earlier results at their original heads. Current GitHub issues
 still describe the superseded implementation and are not claimed as satisfied.
 See the
 [owning plan](docs/RLCD-BRWSR.md),

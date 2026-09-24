@@ -1,6 +1,9 @@
-# Thin Python rewrite - local verification
+# Python-owned runner - verification history
 
-Tested implementation: `b3b42036685eba64f3e7bc8ccc296e16b9910fe9`.
+[Existing-tab targeting](#existing-tab-targeting) is the latest local verification.
+The preceding rewrite evidence below retains its original tested heads and scope.
+
+Historical rewrite tested implementation: `b3b42036685eba64f3e7bc8ccc296e16b9910fe9`.
 The initial rewrite is `3f984e54`; the corrected implementation was checked again,
 not accepted solely on the earlier candidate's results. These runs preceded
 checkout consolidation: their `artifacts/` paths resolve under the retained
@@ -118,4 +121,63 @@ lifecycle events and independent target/process observations. Raw responses,
 authorization headers and credential values were not retained.
 
 Earlier experiments and the cancelled, not-passed delivery gate remain historical
-and unchanged. No push, PR, merge or new delivery-gate run was performed.
+and unchanged. No push, PR, merge or new delivery-gate run was performed by that
+verification phase.
+
+## Existing-tab targeting
+
+Corrected runtime candidate: `ff49875efb8d07274967a5eb75e976737891759a`.
+The initial feature was `3bf2dd32a2f40f81530ddb0a5091f0686524204d`, based on
+`0206246a67964172e46cf91b1878e3ae907711ca`. These artifact paths resolve in the
+canonical checkout, not the retained sibling.
+
+The initial feature passed 49 tests and two 12-assertion command-driven
+Pi/Chrome checks. Consolidated review and bounded synthetic probes nevertheless
+reproduced six gaps: native-workspace discovery redaction, cleanup exception
+independence, opaque-ID ordering, blank-ID omission, scalar cleanup validation,
+and rejection of correctly sanitized URL metadata. Only synthetic keys were
+used; no actual credential disclosure was observed. Those initial happy-path
+checks were not treated as resolving the findings.
+
+After the owner approved one correction batch:
+
+- All six regressions went red before their fixes and green afterward. A
+  restored guard proof also failed when cleanup String coercion was temporarily
+  reintroduced, then passed after restoring strict string narrowing.
+- All 54 tests, TypeScript, Prettier, no-write Python compilation, shell syntax,
+  lock checks and Git diff checks passed. The parent repeated the full suite,
+  type check and formatter. Pins and lockfiles remained unchanged.
+- Targeted Standards recheck: 3 resolved, 0 unresolved, 0 introduced. Targeted
+  Spec recheck: 4 resolved, 0 unresolved, 0 introduced, including the parent-added
+  sanitized-metadata case. ID ordering overlaps both axes. The duplicated HTTP
+  predicate heuristic remains deferred.
+- Standalone, unconfigured Ruff still reports 16 findings: 14 inherited and two
+  broad ordinary-exception cleanup catches required by the approved ownership
+  contract. It is not a configured repository gate; no inline suppression or
+  narrower handling was used to hide the conflict.
+
+A new Pi 0.87.1 TUI slash-command pass exercised both production registrations
+and the real runner/native Agent/Harness/Chrome with synthetic external
+providers. Thirteen assertions passed. Independent CDP observations verified
+same-URL tab distinction, sequential continuation on one exact ID, explicit
+navigation of another ID, tested form/viewport preservation, detached sessions,
+created-tab default closure, and preservation of unrelated page IDs/titles/URLs.
+A task-owned-tab case injected a primary provider error and a focus-disable
+AttributeError: the primary error survived, focus release was unconfirmed,
+exact detach was acknowledged, and the observer found the target detached.
+
+This was not an outer-LLM-issued turn or live-provider/public-site acceptance.
+Focus-disable acknowledgement still does not prove restoration of original
+focus; forced exits can strand emulation/attachment; daemon identity binding,
+completion claims and usage retain their documented limits. No speed, general
+reliability or complete billing claim follows from these fixtures.
+
+Raw evidence is retained under `artifacts/tab-targeting/implementation/`:
+`REVIEW.md`, original axis reports and `review-probes/` record the findings;
+`correction/HANDOFF.md`, `correction/RESOURCE-LEDGER.md`, `correction/checks/`,
+`correction/acceptance/`, and `correction/recheck-{standards,spec}.md` record the
+fixes and verification. Task tabs, attachments, processes, terminals, fixture
+listener, temporary Serve route and acceptance work directory were cleaned.
+Shared Chrome/Harness, Maps and unrelated resources were preserved. No push,
+PR, merge, delivery gate, live inference or public-site task occurred in this
+feature/correction work.

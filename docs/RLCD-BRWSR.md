@@ -1,21 +1,16 @@
 # RLCD-brwsr plan
 
-Status: the thin Python-owned rewrite is **implemented and locally verified**.
-Corrected implementation `b3b42036` passed 20 automated tests and four repeated
-Pi-TUI/real-Chrome command checks with synthetic provider replies. Those command
-checks invoke the registered tool, not an outer-LLM-issued tool turn. A later
-bounded live helper probe and one local fixture through Pi's normal agent-turn
-path also passed, using real Jev and Ling on that unchanged historical
-implementation. The current helper selection is direct DeepSeek
-`deepseek-flash`, with native thinking disabled in the request; Jev and Pi's
-outer model remain unchanged. The configuration-only switch itself had no live
-or actual-surface check. The local tab-targeting candidate extends it with a
-49-test deterministic suite and two bounded command-driven
-actual-Pi-TUI/real-Chrome acceptance passes using only local fixture tabs and
-synthetic provider replies. Those passes invoked the production registered definitions by name and used no
-outer model, live inference or public site. See the historical
-[verification record](thin-python-evidence.md) and the retained local handoff
-under `artifacts/tab-targeting/implementation/`.
+Status: existing-tab targeting is **implemented and locally verified** at
+`ff49875`. The corrected candidate passed 54 automated tests and a 13-assertion
+command-driven Pi-TUI/real-Chrome acceptance pass with synthetic providers and
+disposable local tabs. Targeted Standards/Spec rechecks found no unresolved or
+introduced findings. These checks invoked the production registered definitions,
+not an outer-LLM-issued tool turn, and used no live inference or public site.
+The native helper remains direct DeepSeek `deepseek-flash` with thinking
+disabled; Jev and Pi's outer model remain unchanged. See the
+[current verification record](thin-python-evidence.md#existing-tab-targeting)
+and retained handoff under `artifacts/tab-targeting/implementation/correction/`.
+Earlier rewrite and live Ling evidence remains tied to its recorded heads.
 The user confirmed dropping `maxActions` and accepted available native usage
 with explicitly incomplete Pi totals. This model change excluded live calls.
 Historical live checks used Ling and covered bounded helper/local-fixture cases,
@@ -332,13 +327,16 @@ execution. A timed-out filesystem removal reports its exact workspace as
 pending or unconfirmed, and late rejection is handled. Callback JavaScript
 cannot be forcibly cancelled by a Promise race.
 
-Together, 49 tests cover click/fill/DONE/BLOCKED/error, missing and malformed
+Together, 54 tests cover click/fill/DONE/BLOCKED/error, missing and malformed
 helper values, preflight/input failure, byte bounds, Unicode/non-finite
 normalization, native `.env` ordering and key privacy, first-stop precedence,
 post-dispatch projection interruption, conservative output fitting, cooperative
 cleanup, non-clean terminal rejection, a reaped TERM-ignoring child, and the
-borrowed/discovery cases above. No live credentials or model calls were used for
-this candidate.
+borrowed/discovery cases above. Correction regressions also cover deferred native
+workspace loading for discovery redaction, opaque UTF-8 ID order, blank-ID
+omission, sanitized URL display metadata, scalar cleanup claims and independent
+cleanup after an ordinary exception. No live credentials or model calls were
+used for this candidate.
 
 The click/default-close, text/retention, time-budget and TUI-cancellation cases
 were repeated successfully at corrected implementation `b3b42036`, using real
@@ -347,18 +345,17 @@ checked exact targets, retained field values, actual runner exits and restored
 browser baselines. This verifies command-invoked execution of the registered
 tool in Pi's TUI, not the whole outer-model agent-turn/tool-scheduling path.
 
-The tab-targeting actual-surface acceptance ran twice successfully as a slash
-command in Pi 0.87.1 with the production registrations loaded explicitly; the
-second pass repeated the final production code after a cleanup exception-type
-narrowing. Each distinguished two
-same-URL fixture tabs, completed two sequential goals on one exact ID, navigated
-a second exact borrowed ID, and preserved created-tab default closure.
-Independent CDP observations verified tested form/viewport preservation,
-deliberate state changes, detached sessions, exact identity, the Maps tab and
-the full unrelated page baseline. Twelve assertions passed. A first harness
-attempt is retained because its synthetic selector mistakenly returned `DONE`
-before the phase actions; correcting goal extraction and rerunning produced the
-accepted evidence. No production code changed between those attempts.
+The initial tab-targeting implementation `3bf2dd3` had two successful
+12-assertion slash-command passes in Pi 0.87.1. Subsequent review and bounded
+probes exposed six contract gaps not covered by those happy paths. The fixes at
+`ff49875` received a new 13-assertion actual-surface pass: exact tab discovery,
+sequential continuation, same-target explicit navigation, created-tab closure,
+and independent state/identity/session/baseline observations all passed. An
+additional task-owned-tab case injected a synthetic provider error and a
+focus-disable AttributeError; the primary error survived and exact detach was
+independently observed. These were synthetic-provider command invocations of
+the production registered tools, not outer-model turns. Original attempts and
+correction receipts remain separate in the verification record.
 
 The historical bounded Ling follow-up passed: the native OpenRouter helper
 returned a valid field value, and Pi's normal outer-model/tool path completed
@@ -367,8 +364,8 @@ inspection verified the retained target, then exact cleanup restored the
 baseline. No manual retry or extra browser-tool invocation occurred. It is not
 live evidence for the current direct DeepSeek selection.
 
-A benign public-site acceptance task remains pending and needs its own applicable
-allowance. Preserve earlier ledgers; native step limits do not constitute a
+Public-site acceptance of this tab-targeting candidate remains pending and needs
+its own applicable allowance. Preserve earlier ledgers; native step limits do not constitute a
 billing budget. Report unknown attempts/charges conservatively.
 
 Do not add a broader test or runtime framework to satisfy every hypothetical
