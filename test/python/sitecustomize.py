@@ -305,9 +305,11 @@ def _page():
             "url": _STATE["url"],
             "title": "Generic plan comparison",
             "text": (
-                "Capacity: 40 units.\n\n"
+                "Requested identifier: ITEM-482.\n\n"
                 + "Background notes that do not answer the requested fact. " * 18
-                + "\n\nPrice: 18 credits per month."
+                + "\n\nEstimated total: 120 credits per month.\n\n"
+                + "Additional generic notes. " * 18
+                + "\n\nEstimate excludes service charges."
             ),
             "scroll": {"y": 0},
             "actions": [{"id": "wait", "kind": "wait", "label": "Wait"}],
@@ -337,6 +339,8 @@ def _page():
             "text": (
                 f"Provider key {os.environ.get('TYPESAFE_API_KEY', '')}. "
                 f"Authorization: Bearer {os.environ.get('TEXT_MODEL_API_KEY', '')}. "
+                "Bare synthetic value Bearer abc. "
+                "Synthetic header Authorization: Bearer xyz. "
                 "Approved marker CLEAR-19."
             ),
             "scroll": {"y": 0},
@@ -787,10 +791,8 @@ def _report_response(body):
         operation = str(candidate.get("operation", "")).lower()
         action_label = str(candidate.get("actionLabel", "")).lower()
         score = 0.05
-        if "capacity" in goal and "capacity:" in exact:
+        if "identifier" in goal and "requested identifier:" in exact:
             score = 0.96
-        elif "price" in goal and "price:" in exact:
-            score = 0.95
         elif "estimated total" in goal and (
             "estimated total:" in exact or "estimate excludes" in exact
         ):

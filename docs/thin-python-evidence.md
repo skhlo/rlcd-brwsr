@@ -17,46 +17,61 @@ state/rendering metadata.
 
 One post-cleanup reporting module optionally uses the pinned Jev transport for
 normal completion claims or native `BLOCKED` with observations. It sanitizes
-complete native key/Bearer values, bounds the 6,000-character upstream visible
-text at 24,576 UTF-8 bytes, builds at most 128 candidates of at most 512 bytes,
-adds only allowlisted fields from the last six actions, and bounds serialized
-reporting input at 98,304 bytes. Batched per-candidate Nouls include units,
-periods, estimates, exclusions, caveats and ambiguity. Code strictly validates
-answer IDs/types/ranges plus model and usage, resolves substantial duplicates,
-and copies at most three source records. The 0.5 threshold is an evaluation
-policy. Missing source/key, provider/validation error or cooperative report
-interruption produces no raw-text fallback and does not change browser facts.
+complete native keys plus nonempty bare/header Bearer values, bounds the
+6,000-character upstream visible text at 24,576 UTF-8 bytes, and builds at most
+128 candidates of at most 512 bytes. Generic short paragraphs and label/value
+lines precede bounded fallback windows. Only allowlisted fields from the last six
+actions enter the 98,304-byte request; rejected in-window actions and bounded
+page/input/candidate truncation mark source coverage partial. Batched
+per-candidate Nouls include units, periods, estimates, exclusions, caveats and
+ambiguity. Code strictly validates answer IDs/types/ranges plus model and usage,
+resolves substantial duplicates, and copies at most three source records. The
+0.5 threshold is an evaluation policy. Missing source/key, provider/validation
+error or cooperative report interruption produces no raw-text fallback and does
+not change browser facts.
+
+The corrected fitter bounds the pre-report diagnostic projection first. Optional
+reporting evidence, metadata and `jev_handoff` usage cannot evict page text,
+history or native usage that already fit. If no optional report block fits, the
+parent explicitly presents reporting unavailable. Native `usage: null` remains
+honest unavailable metadata. Terminal validators reject array-valued scalar
+enums without tightening unrelated diagnostics.
 
 Current deterministic evidence:
 
-- All 61 Node tests pass. New registered-tool cases cover different goals over
-  one document, distant necessary qualifications, scroll-action evidence,
-  missing/invalid/provider/interrupted reporting, strict evidence/terminal
-  validation, report-input and both-surface privacy, source/request/content/detail
-  bounds and omission honesty. Existing browser ownership, all corrected
+- All 65 Node tests pass. Corrected regressions cover short Bearer privacy,
+  combined source omissions, nullable native usage, report-pressure priority,
+  strict scalar enums, useful short evidence groups, two goals over one generic
+  document, and the unsupported near-cap omission-label construction as a
+  non-throw control. Existing browser ownership, reporting failures, bounds,
   tab-targeting guards, cleanup, terminal trust and supervision assertions remain.
 - TypeScript, Prettier, no-write compilation of ten Python files, shell syntax,
   lock stability and Git whitespace checks pass. Dependencies, pins, manifests
   and lockfiles are unchanged.
-- Guard proof: temporarily adding full history to compact content made the
-  registered-tool contract test fail on the extra `history` group. Restoring the
-  compact shape made it pass; both logs are retained.
+- Guard proof: temporarily restoring all three scalar `String(...)` coercions
+  made the malformed-array test accept a trusted completion and fail. Restoring
+  narrow string validation made the same test pass; both logs are retained.
 - An actual Pi 0.87.1 TUI slash command invoked the production registered run
-  definition and real runner with synthetic browser/provider boundaries. All
-  16 assertions passed. Exact content was 1,678 bytes versus 3,219-byte details,
-  a 47.9% reduction, while retaining the requested total and distant exclusion.
-  The isolated Pi had no model and no persisted session. The command was not an
+  definition and real runner with synthetic browser/provider boundaries. All 20
+  assertions passed. Exact content was 821 bytes versus 2,362-byte details, a
+  65.2% reduction. Evidence was exactly the 63 bytes containing the requested
+  total and distant exclusion, with zero repeated filler occurrences. The
+  isolated Pi had no model or persisted session. The command was not an
   outer-model-issued turn and never connected to Chrome.
-- Seven sanitized offline replay reconstructions completed with no browser or
-  provider call: five derive from the independent five-tab observations and two
-  are generic value/qualification cases. Compact reductions ranged from 38.5%
-  to 43.7% for the five recorded-task reconstructions. The scrolling case chose
-  copied `SCROLL_DOWN` action evidence. These are reconstructions, not original
-  Agent snapshots, and deterministic selection proves plumbing rather than Jev
-  quality.
+- Seven production-shaped sanitized reconstructions completed with no browser or
+  provider call. Verified old and corrected Python projections fed their actual
+  TypeScript outcome interpreters: 8,117 old-visible bytes versus 5,697
+  new-content bytes (29.8% smaller), and 12,074 new-details bytes versus new
+  content (52.8% smaller). Five cases are shortened reconstructions from
+  independent observations, not original Agent snapshots. The two synthetic
+  goals use the same document and retained zero configured filler occurrences.
+  These are JSON-surface comparisons, not original-live-payload, latency, cost or
+  end-to-end performance measurements. Deterministic selection proves plumbing,
+  not Jev quality.
 
 Raw evidence, exact outputs, replay inputs/results, guard logs, check logs and
-resource receipts remain under `artifacts/compact-output/implementation/`.
+resource receipts remain under `artifacts/compact-output/implementation/`; the
+bounded correction receipts are in its `correction/` directory.
 No live provider request, public-site task, user-tab operation, browser service
 change, dependency operation or publication occurred. A finite sanitized live
 relevance plan is retained for separate parent adjudication. Live semantic

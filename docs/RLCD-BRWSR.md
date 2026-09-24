@@ -1,12 +1,13 @@
 # RLCD-brwsr plan
 
-Status: the generic compact handoff is **implemented and locally verified** on
-the current feature branch, building on existing-tab targeting at `ff49875`.
-Run-tool model content is now goal-aware and compact while bounded diagnostic
-`details` remains available to Pi. Deterministic registered-tool tests and an
-isolated command-driven Pi-TUI check passed with synthetic browser/provider
-boundaries. Sanitized offline reconstructions compare the five recorded tasks
-without browser actions. No user tab or live provider was used; live Jev
+Status: the corrected generic compact handoff is **implemented and locally
+verified** on the current feature branch, building on existing-tab targeting at
+`ff49875`. Run-tool model content is goal-aware and compact while bounded
+diagnostic `details` remains available to Pi. Deterministic registered-tool
+tests and an isolated command-driven Pi-TUI check passed with synthetic
+browser/provider boundaries. Production-shaped sanitized reconstructions compare
+the verified old and corrected interpreters without browser actions. No user tab
+or live provider was used; live Jev
 relevance quality remains pending. The native helper remains direct DeepSeek
 `deepseek-flash` with thinking disabled; Jev and Pi's outer model are unchanged.
 See the [current verification record](thin-python-evidence.md#compact-handoff)
@@ -242,8 +243,10 @@ LLM, recordings or automatic rollout is added.
 Python returns a bounded diagnostic projection: completion claim or stop/error,
 last actually observed page when available, bounded recorded history, configured
 model names, upstream-retained usage, known target, cleanup outcome, sanitized
-primary diagnostic, and reporting metadata/evidence. `config/runtime.json` owns
-a 32 KiB serialized-request cap and one 16 KiB terminal/full-details JSON cap,
+primary diagnostic, and optional reporting metadata/evidence. A present native
+`usage: null` is retained as unavailable metadata rather than invalidating known
+run facts. `config/runtime.json` owns a 32 KiB serialized-request cap and one 16
+KiB terminal/full-details JSON cap,
 including JSON escaping and terminal framing. The result reports omitted
 fields/records.
 
@@ -251,8 +254,12 @@ For normal native completion or `BLOCKED` with observations, one optional
 post-cleanup reporting request uses the existing pinned Jev transport and model.
 Python sanitizes the original goal, full upstream-visible text before the old
 4 KiB projection clipping, and an explicit allowlist from the last six actions.
-It creates at most 128 generic candidates, keeps every candidate within 512 UTF-8
-bytes without splitting a token, and fits the full request within 98,304 bytes.
+It prefers short generic paragraphs and label/value lines before bounded fallback
+windows. It creates at most 128 candidates, keeps every candidate within 512
+UTF-8 bytes without splitting a token, and fits the full request within 98,304
+bytes. Rejected in-window actions and page/input/candidate truncation all mark
+source coverage partial; the documented source is the final visible observation
+plus the last six actions, not whole history.
 The pinned observer limits visible text to 6,000 characters, so the 24,576-byte
 source allowance covers its UTF-8 worst case. Per-candidate Nouls judge direct
 relevance and necessary units, periods, estimates, exclusions, caveats and
@@ -260,9 +267,14 @@ ambiguity. Every answer/model/usage field is validated; code resolves
 substantial overlaps and copies at most three qualifying source records.
 The initial 0.5 threshold is evaluation policy, not a reliability claim.
 
-Pi `details` keeps the bounded diagnostic projection, relevance scores, counts
-and available `jev_handoff` usage. Model-facing content is a different compact
-object with only `outcome`, `lastObservedLocation`, selected source `evidence`,
+Python bounds the legacy browser diagnostic projection before adding reporting,
+so optional evidence, metadata and `jev_handoff` usage cannot evict page text,
+history or native usage that already fit. Pi `details` ordinarily keeps reporting
+scores, counts and available `jev_handoff` usage. If no report block fits, details
+can omit that optional block and compact presentation explicitly reports
+reporting unavailable, source/selection omission and unknown accounting.
+Model-facing content is a different compact object with only `outcome`,
+`lastObservedLocation`, selected source `evidence`,
 `cleanup`, primary `diagnostic`, bounded `reporting` status and `output`
 disclosures. It contains no full page text, complete history, models,
 configuration, per-call usage or relevance dump. Discovery remains unchanged.
@@ -271,9 +283,9 @@ whole evidence records and discloses omissions; it never cuts an extracted value
 or shortens an opaque ID.
 
 - `DONE` is a completion claim, never independent proof of the goal.
-- Redact complete raw key and Bearer values before reporting, clipping or
-  preview. Keep both Jev/helper key privacy checks; no OAuth relay exists in
-  this target design.
+- Redact complete raw key values and nonempty bare or `Authorization: Bearer`
+  values before reporting, clipping or preview. Keep both Jev/helper key privacy
+  checks; no OAuth relay exists in this target design.
 - Missing reporting source/key, provider or validation failure, and cooperative
   report interruption preserve browser outcome, cleanup and primary diagnostic.
   They never fall back to raw page text or invented evidence. Reporting shares
@@ -356,12 +368,15 @@ cannot be forcibly cancelled by a Promise race.
 
 The current suite retains all click/fill/DONE/BLOCKED/error, preflight/input,
 byte/privacy, supervision, cleanup and borrowed/discovery assertions. Compact
-regressions additionally cover the same document under different goals,
-non-adjacent qualifications, scroll-action evidence, missing/invalid/interrupted
-reporting, strict evidence/envelope validation, both returned surfaces and model
-input redaction, candidate/request caps, and honest content/details omissions.
-One direct projection check proves an oversized token is omitted rather than
-split. No live credentials or model calls were used for this candidate.
+regressions additionally cover two goals over the same generic document,
+non-adjacent qualifications without repeated filler, scroll-action evidence,
+missing/invalid/interrupted reporting, short Bearer privacy, combined source
+omissions, nullable usage, scalar enum rejection, reporting-pressure priority,
+strict evidence/envelope validation, both returned surfaces, candidate/request
+caps, and honest content/details omissions. Near-cap omission-label controls
+remain accepted. One direct projection check proves an oversized token is omitted
+rather than split. No live credentials or model calls were used for this
+candidate.
 
 The click/default-close, text/retention, time-budget and TUI-cancellation cases
 were repeated successfully at corrected implementation `b3b42036`, using real
@@ -389,13 +404,23 @@ inspection verified the retained target, then exact cleanup restored the
 baseline. No manual retry or extra browser-tool invocation occurred. It is not
 live evidence for the current direct DeepSeek selection.
 
-The compact output was also checked through an actual isolated Pi TUI slash
+The corrected compact output was checked through an actual isolated Pi TUI slash
 command using the production registered definition and real runner with fully
-synthetic browser/provider boundaries. Exact model-facing content was compared
-with full details. This was command-driven, not an outer-model-issued turn, and
-it did not connect to Chrome. Five-task replay files are explicitly sanitized
-reconstructions of independent observations, not original Agent snapshots.
-Deterministic selection proves plumbing, not Jev relevance quality.
+synthetic browser/provider boundaries. All 20 assertions passed. Exact
+model-facing content was 821 bytes versus 2,362-byte details and retained exactly
+63 bytes of requested amount/exclusion evidence with zero repeated filler. This
+was command-driven, not an outer-model-issued turn, and it did not connect to
+Chrome.
+
+Seven production-shaped sanitized reconstructions ran identical source state
+through verified old and corrected Python projections and TypeScript outcome
+interpreters. They measured 8,117 old-visible bytes versus 5,697 new-content
+bytes (29.8% smaller); new-details versus new-content was 52.8% smaller. The five
+recorded-task cases are shortened independent-observation reconstructions, not
+original Agent snapshots, and the two synthetic goals use one identical
+document. These are JSON-surface byte comparisons, not end-to-end speed, task
+cost or original-live-payload measurements. Deterministic selection proves
+plumbing, not Jev relevance quality.
 
 Live semantic acceptance and public-site acceptance remain pending and need a
 separate finite allowance. Preserve earlier ledgers; native step limits do not

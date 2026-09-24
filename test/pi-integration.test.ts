@@ -338,6 +338,52 @@ function nearLimitTerminal(): Record<string, unknown> {
   return details;
 }
 
+function nearLimitOmissionTerminal(minimal: boolean): Record<string, unknown> {
+  const details = terminalDetails(
+    minimal
+      ? {
+          status: "error",
+          stopReason: "synthetic_error",
+          execution: "not_started",
+          taskTab: "not_created",
+        }
+      : {
+          status: "completion_claim",
+          stopReason: "done",
+          execution: "completed",
+          targetId: "synthetic-target",
+          taskTab: "closed",
+        },
+  );
+  if (minimal) {
+    details.lastObservation = null;
+    details.targetId = null;
+    details.models = {
+      jev: { configuredModel: "" },
+      textHelper: { configuredModel: "", baseUrl: "", reasoning: "" },
+    };
+  }
+  const output = recordField(details, "output");
+  const labels = Array.from(
+    { length: 32 },
+    (_, index) => `synthetic-omission-${String(index).padStart(2, "0")}-`,
+  );
+  output.clipped = true;
+  output.omissions = labels;
+  const target = terminalByteLimit - 44;
+  const size = () => Buffer.byteLength(JSON.stringify(details), "utf8");
+  const available = target - size();
+  assert.ok(available >= 0);
+  const each = Math.floor(available / labels.length);
+  let remainder = available % labels.length;
+  for (let index = 0; index < labels.length; index += 1) {
+    labels[index] += "L".repeat(each + (remainder > 0 ? 1 : 0));
+    if (remainder > 0) remainder -= 1;
+  }
+  assert.equal(size(), target);
+  return details;
+}
+
 function registeredTool(
   extension: typeof rlcdBrwsrExtension = rlcdBrwsrExtension,
   name = "rlcd_brwsr_run",
@@ -1478,10 +1524,21 @@ test("native DONE, BLOCKED, and exceptions remain distinct outcomes", async () =
   });
 });
 
-test("goal-aware reporting selects different exact evidence from the same document", async () => {
+test("goal-aware reporting selects identifier or estimate facts from the same generic document", async () => {
   for (const [goal, included, excluded] of [
-    ["Report the capacity", "Capacity: 40 units.", "Price: 18 credits"],
-    ["Report the price", "Price: 18 credits per month.", "Capacity: 40 units"],
+    [
+      "Return the requested identifier",
+      ["Requested identifier: ITEM-482."],
+      ["Estimated total:", "Estimate excludes"],
+    ],
+    [
+      "Report the estimated total, period, and any exclusions",
+      [
+        "Estimated total: 120 credits per month.",
+        "Estimate excludes service charges.",
+      ],
+      ["Requested identifier:"],
+    ],
   ] as const) {
     await withScenario(
       "report_goal_document",
@@ -1494,21 +1551,27 @@ test("goal-aware reporting selects different exact evidence from the same docume
         const evidence = arrayField(reporting, "evidence") as Array<
           Record<string, unknown>
         >;
-        assert.ok(
-          evidence.some((item) => String(item.exact).includes(included)),
-        );
-        assert.ok(
-          evidence.every((item) => !String(item.exact).includes(excluded)),
-        );
+        const exact = evidence.map((item) => String(item.exact));
+        for (const fragment of included) {
+          assert.ok(exact.some((value) => value.includes(fragment)));
+        }
+        for (const fragment of excluded) {
+          assert.ok(exact.every((value) => !value.includes(fragment)));
+        }
+        assert.ok(exact.every((value) => !value.includes("generic notes")));
         assert.ok(evidence.every((item) => typeof item.relevance === "number"));
 
         const compact = compactOf(result);
         const compactEvidence = arrayField(compact, "evidence") as Array<
           Record<string, unknown>
         >;
-        assert.ok(
-          compactEvidence.some((item) => String(item.exact).includes(included)),
-        );
+        for (const fragment of included) {
+          assert.ok(
+            compactEvidence.some((item) =>
+              String(item.exact).includes(fragment),
+            ),
+          );
+        }
         assert.ok(
           compactEvidence.every((item) => !Object.hasOwn(item, "relevance")),
         );
@@ -1541,10 +1604,9 @@ test("reporting retains distant qualifications or discloses their omission", asy
         .map((item) => String((item as Record<string, unknown>).exact ?? ""))
         .join("\n");
       assert.match(exact, /Estimated total: 120 credits/);
-      assert.ok(
-        /Estimate excludes service charges/.test(exact) ||
-          reporting.selectionOmitted === true,
-      );
+      assert.match(exact, /Estimate excludes service charges/);
+      assert.doesNotMatch(exact, /General explanatory material/);
+      assert.equal(reporting.selectionOmitted, false);
     },
   );
 });
@@ -1652,6 +1714,8 @@ test("reporting input and both returned surfaces redact complete keys and Bearer
         assert.doesNotMatch(value, new RegExp(syntheticTypesafeKey));
         assert.doesNotMatch(value, new RegExp(syntheticHelperKey));
         assert.doesNotMatch(value, /Authorization:\s*Bearer\s+synthetic/i);
+        assert.doesNotMatch(value, /Bearer abc/i);
+        assert.doesNotMatch(value, /Authorization:\s*Bearer\s+xyz/i);
         assert.match(value, /\[REDACTED\]/);
       }
     },
@@ -1978,6 +2042,116 @@ test("borrowed outcome interpretation rejects array-valued cleanup claims", () =
   assert.equal(cleanup.focusEmulation, "unknown");
   assert.equal(cleanup.attachment, "unknown");
   assert.equal(cleanup.bridgeProcess, "reaped");
+});
+
+test("outcome interpretation accepts unavailable native usage without losing trusted facts", () => {
+  const terminal = terminalDetails({
+    status: "completion_claim",
+    stopReason: "done",
+    execution: "completed",
+    targetId: "rlcd-owned-target",
+    taskTab: "closed",
+  });
+  const records = arrayField(recordField(terminal, "usage"), "records");
+  records.push({
+    source: "jev_decision",
+    model: "synthetic-native-model",
+    usage: null,
+  });
+  const details = detailsOf(interpretRlcdChildOutcome(childOutcome(terminal)));
+  assert.equal(details.status, "completion_claim");
+  assert.equal(details.execution, "completed");
+  assert.equal(recordField(details, "cleanup").taskTab, "closed");
+  assert.equal(
+    (
+      arrayField(recordField(details, "usage"), "records")[0] as Record<
+        string,
+        unknown
+      >
+    ).usage,
+    null,
+  );
+});
+
+test("outcome interpretation rejects array-valued usage and reporting scalars", () => {
+  const malformed = terminalDetails({
+    status: "completion_claim",
+    stopReason: "done",
+    execution: "completed",
+    targetId: "rlcd-owned-target",
+    taskTab: "closed",
+  });
+  arrayField(recordField(malformed, "usage"), "records").push({
+    source: ["jev_decision"],
+    model: "synthetic-native-model",
+    usage: { input_tokens: 1 },
+  });
+  const reporting = recordField(malformed, "reporting");
+  reporting.status = ["missing"];
+  reporting.sourceCoverage = ["unavailable"];
+
+  const rejected = detailsOf(
+    interpretRlcdChildOutcome(childOutcome(malformed)),
+  );
+  assert.equal(rejected.status, "error");
+  assert.equal(rejected.stopReason, "invalid_terminal");
+  assert.equal(rejected.execution, "unknown");
+  assert.equal(recordField(rejected, "cleanup").taskTab, "unknown");
+});
+
+test("missing optional reporting stays explicit without replacing browser facts", () => {
+  const terminal = terminalDetails({
+    status: "completion_claim",
+    stopReason: "done",
+    execution: "completed",
+    targetId: "rlcd-owned-target",
+    taskTab: "closed",
+    observationText: "Preserved browser diagnostic text.",
+  });
+  delete terminal.reporting;
+
+  const result = interpretRlcdChildOutcome(childOutcome(terminal));
+  const details = detailsOf(result);
+  assert.equal(details.status, "completion_claim");
+  assert.equal(details.execution, "completed");
+  assert.equal(recordField(details, "cleanup").taskTab, "closed");
+  assert.equal(
+    recordField(details, "lastObservation").text,
+    "Preserved browser diagnostic text.",
+  );
+  assert.equal(Object.hasOwn(details, "reporting"), false);
+
+  const compact = compactOf(result);
+  const reporting = recordField(compact, "reporting");
+  assert.equal(reporting.status, "unavailable");
+  assert.equal(reporting.sourceOmitted, true);
+  assert.equal(reporting.selectionOmitted, true);
+  assert.equal(
+    recordField(reporting, "diagnostic").type,
+    "ReportingUnavailable",
+  );
+  assert.ok(
+    arrayField(recordField(compact, "output"), "omissions").includes(
+      "details.reporting unavailable",
+    ),
+  );
+});
+
+test("near-cap omission labels remain accepted for normal and minimal envelopes", () => {
+  for (const minimal of [false, true]) {
+    const result = interpretRlcdChildOutcome(
+      childOutcome(nearLimitOmissionTerminal(minimal)),
+    );
+    const details = detailsOf(result);
+    assert.equal(details.stopReason, minimal ? "synthetic_error" : "done");
+    assert.ok(
+      Buffer.byteLength(result.content[0]?.text ?? "", "utf8") <=
+        terminalByteLimit,
+    );
+    assert.ok(
+      Buffer.byteLength(JSON.stringify(details), "utf8") <= terminalByteLimit,
+    );
+  }
 });
 
 test("outcome interpretation rejects malformed handoff evidence", () => {
@@ -2533,7 +2707,7 @@ test(
       assert.equal(result.signal, null);
       assert.match(
         Buffer.concat(stdout).toString("utf8"),
-        /projection contract: 3 checks passed/,
+        /projection contract: 6 checks passed/,
       );
     } finally {
       if (!closed) child.kill("SIGTERM");

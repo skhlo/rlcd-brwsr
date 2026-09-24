@@ -81,18 +81,23 @@ second configuration-to-daemon binding owner.
 
 Python consumes `Agent.run()` rather than calling `predict` and `act`. Its full
 result contains only bounded existing page/history/model/usage state, target and
-cleanup outcomes, a sanitized primary diagnostic, and bounded reporting
-metadata. Complete native key and Bearer strings are redacted before reporting
-and clipping. Full snapshots and raw prompts/responses are not projected.
-Native usage remains source-labelled and incomplete; Pi receives no top-level
-`usage`, so footer/session totals are knowingly incomplete.
+cleanup outcomes, a sanitized primary diagnostic, and optional bounded reporting
+metadata. Complete native keys and nonempty bare/header Bearer values are
+redacted before reporting and clipping. Full snapshots and raw prompts/responses
+are not projected. Native usage remains source-labelled and incomplete; a
+present `usage: null` is retained as unavailable rather than discarding trusted
+run facts. Pi receives no top-level `usage`, so footer/session totals are
+knowingly incomplete.
 
 After handled cleanup, one Python reporting module can issue one batched Noul
 request through the pinned `jev_ultrafast.model.post_json` transport for normal
 completion or native `BLOCKED` with available observations. It builds generic
 bounded candidates from sanitized final visible text and the last six recorded
-actions. Page candidates preserve exact source text and token boundaries; action
-candidates expose only step, operation, action label and page-change. The model
+actions. Page candidates prefer short generic paragraphs and label/value lines
+before bounded fallback windows while preserving exact source text and token
+boundaries. Action candidates expose only step, operation, action label and
+page-change. Rejected in-window actions and bounded page/input/candidate
+truncation all mark source coverage partial. The model
 judges relevance, including units, periods, estimates, exclusions, caveats and
 ambiguity. Code validates every answer/model/usage field, resolves substantial
 overlap, applies the evaluation-only 0.5 threshold, and copies at most three
@@ -107,13 +112,18 @@ primary diagnostic. A validated response adds one `jev_handoff` usage record;
 failed/retried usage remains unknown. Reporting shares the original parent wall
 deadline and adds no cleanup grace or second stop owner.
 
-Pi keeps this full bounded result in tool `details`. Run `content` is separately
-built from exactly `outcome`, `lastObservedLocation`, `evidence`, `cleanup`,
-`diagnostic`, `reporting`, and `output`. It excludes full page text, history,
-model configuration, per-call usage and relevance scores. Structural fitting
-drops whole evidence records, then optional location/report fields, while
-preserving outcome, cleanup, opaque IDs and primary-error identity. Both
-surfaces retain the existing 16 KiB hard cap. Discovery stays unchanged.
+Python first bounds the pre-report browser projection, then fits optional
+reporting evidence, metadata and `jev_handoff` usage in the remaining space.
+Reporting cannot evict page text, history or native usage that already fit. If no
+report block fits, details may omit it. Pi then explicitly presents reporting as
+unavailable with omission state; it does not imply complete evidence or zero
+reporting charges. Run `content` is separately built from exactly `outcome`,
+`lastObservedLocation`, `evidence`, `cleanup`, `diagnostic`, `reporting`, and
+`output`. It excludes full page text, history, model configuration, per-call
+usage and relevance scores. Structural fitting drops whole evidence records,
+then optional location/report fields, while preserving outcome, cleanup, opaque
+IDs and primary-error identity. Both surfaces retain the existing 16 KiB hard
+cap. Discovery stays unchanged.
 
 Only one structurally valid terminal envelope followed by an observed zero exit
 without a signal can carry child execution and cleanup claims. A valid normal

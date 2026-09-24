@@ -6,9 +6,9 @@ current working tree. The sibling checkout is retained only for test resources
 and evidence. See the [archive index](docs/archive.md).
 
 **Implementation status:** existing-tab targeting is implemented and locally
-verified at `ff49875`. The current branch adds the generic compact handoff:
-model-facing run content is now a small goal-aware result while `details` retains
-the bounded diagnostic projection. Deterministic tests and an isolated,
+verified at `ff49875`. The current branch adds the corrected generic compact
+handoff: model-facing run content is a small goal-aware result while `details`
+retains the bounded diagnostic projection. Deterministic tests and an isolated,
 command-driven Pi-TUI check use synthetic browser/provider boundaries. Live Jev
 relevance quality remains unevaluated; no user tab or live provider was used.
 Jev and Pi's outer model remain unchanged; the native field helper is direct
@@ -201,33 +201,42 @@ admission are likewise not rewritten as pre-start rejection.
 
 Python projects only bounded current page fields, executed-history summaries,
 configured models, available upstream-recorded usage, known target, cleanup, a
-sanitized primary diagnostic, and bounded reporting metadata. Full snapshots,
-raw prompts/responses, child stderr, and invalid terminal fragments are not
-returned. Complete native key and Bearer values are redacted before reporting
-and before any clipping; invalid Unicode and non-finite numbers are normalized.
-The result discloses field/record omissions. If adding supervised process
-evidence would exceed the same terminal cap, Pi omits variable diagnostics
-conservatively while preserving outcome, cleanup and primary-error identity.
+sanitized primary diagnostic, and optional bounded reporting metadata. Full
+snapshots, raw prompts/responses, child stderr, and invalid terminal fragments
+are not returned. Complete native key and nonempty Bearer values are redacted
+before reporting and before any clipping; invalid Unicode and non-finite numbers
+are normalized. A present native `usage: null` remains an honest unavailable
+value rather than invalidating known execution or cleanup. The result discloses
+field/record omissions. If adding supervised process evidence would exceed the
+same terminal cap, Pi omits variable diagnostics conservatively while preserving
+outcome, cleanup and primary-error identity.
 
 For normal completion claims and native `BLOCKED` outcomes with observations,
 the optional reporter sees the sanitized goal, at most 128 bounded source
 candidates, and no URL, target ID, diagnostics, model configuration, raw native
-request/reply, or usage history. Page evidence is copied exactly from the final
-visible text; action evidence copies only step, operation, action label, and
-page-change from the last six actions. Up to three records survive a 0.5
-selection policy after overlap resolution. This threshold is an evaluation
-policy, not a reliability claim. Missing source/key, invalid response, provider
-failure, or cooperative interruption produces an honest deterministic reporting
-state without raw-text fallback or changing browser facts.
+request/reply, or usage history. Page candidates prefer short generic paragraphs
+and label/value lines before bounded overlap windows. Evidence is copied exactly
+from the final visible text; action evidence copies only step, operation, action
+label, and page-change from the last six actions. Rejected records and bounded
+source/candidate truncation all mark source coverage partial. Up to three records
+survive a 0.5 selection policy after overlap resolution. This threshold is an
+evaluation policy, not a reliability claim. Missing source/key, invalid response,
+provider failure, or cooperative interruption produces an honest deterministic
+reporting state without raw-text fallback or changing browser facts.
 
 Model-facing run content contains only `outcome`, `lastObservedLocation`,
 `evidence`, `cleanup`, `diagnostic`, `reporting`, and `output`. It excludes full
 page text, complete history, model configuration, per-call usage and relevance
-scores. Pi `details` retains the full bounded projection and reporting scores,
-counts and usage. Discovery output is unchanged. Available usage records remain
-incomplete; a validated reporting call adds source `jev_handoff`, while failed
-or retried call usage stays unknown. The tool deliberately returns no Pi
-top-level `usage`, so Pi footer and session totals exclude all native calls.
+scores. Python bounds the pre-report browser projection first; optional evidence,
+report metadata and `jev_handoff` usage cannot evict page text, history or native
+usage that already fit. Pi `details` ordinarily retains reporting scores, counts
+and usage. Under terminal pressure the whole optional reporting block can be
+absent; compact content then explicitly reports reporting unavailable and an
+omission rather than claiming complete evidence or zero charges. Discovery
+output is unchanged. Available usage records remain incomplete; a validated
+reporting call adds source `jev_handoff` when it fits, while failed or retried
+call usage stays unknown. The tool deliberately returns no Pi top-level `usage`,
+so Pi footer and session totals exclude all native calls.
 
 ## Local checks
 
@@ -246,11 +255,17 @@ failure/interruption, strict response/envelope validation, privacy on both
 surfaces, and honest bounds. Separate process/outcome and direct projection
 checks retain the earlier lifecycle guarantees.
 
-A current isolated Pi-TUI slash-command check invoked the production registered
-run definition with synthetic browser and provider boundaries. It compared exact
-compact content with full details; it did not touch Chrome, invoke an outer model,
-or make a live provider request. Sanitized replay reconstructions cover the five
-recorded tasks plus generic value/qualification cases without browser actions.
-Historical real-Chrome and live-provider evidence remains tied to its recorded
-heads. None of this establishes live Jev relevance quality, general-web
-reliability, or complete billing.
+A corrected isolated Pi-TUI slash-command check invoked the production registered
+run definition with synthetic browser and provider boundaries. Its 821-byte
+content retained exactly 63 bytes of requested amount/exclusion evidence with no
+repeated filler, versus 2,362-byte details. It did not touch Chrome, invoke an
+outer model, or make a live provider request. Seven production-shaped sanitized
+reconstructions ran through the verified old and corrected interpreters without
+browser actions: 8,117 old-visible bytes versus 5,697 new-content bytes (29.8%
+smaller), while new-details versus new-content was 52.8% smaller. The five
+recorded-task inputs are shortened reconstructions, not original snapshots, and
+the two synthetic goals use the same document. These are JSON-surface byte
+comparisons, not end-to-end performance measurements. Historical real-Chrome
+and live-provider evidence remains tied to its recorded heads. None of this
+establishes live Jev relevance quality, general-web reliability, or complete
+billing.

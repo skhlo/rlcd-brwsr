@@ -106,63 +106,143 @@ def _bounded_source(value: str) -> tuple[str, bool]:
     return value[:end].rstrip(), True
 
 
+def _trimmed_span(value: str, start: int, end: int) -> tuple[int, int] | None:
+    while start < end and value[start].isspace():
+        start += 1
+    while end > start and value[end - 1].isspace():
+        end -= 1
+    return None if start == end else (start, end)
+
+
+def _source_groups(value: str) -> list[tuple[int, int]]:
+    """Prefer generic paragraphs, then lines inside paragraphs too large to offer."""
+    paragraphs: list[tuple[int, int]] = []
+    start = 0
+    for separator in re.finditer(r"\n[\t \r\f\v]*\n+", value):
+        span = _trimmed_span(value, start, separator.start())
+        if span is not None:
+            paragraphs.append(span)
+        start = separator.end()
+    span = _trimmed_span(value, start, len(value))
+    if span is not None:
+        paragraphs.append(span)
+
+    groups: list[tuple[int, int]] = []
+    for paragraph_start, paragraph_end in paragraphs:
+        paragraph = value[paragraph_start:paragraph_end]
+        if _utf8_bytes(paragraph) <= REPORT_CANDIDATE_MAX_UTF8_BYTES:
+            groups.append((paragraph_start, paragraph_end))
+            continue
+
+        line_breaks = list(re.finditer(r"\r?\n", paragraph))
+        if not line_breaks:
+            groups.append((paragraph_start, paragraph_end))
+            continue
+        line_start = paragraph_start
+        for line_break in line_breaks:
+            line_end = paragraph_start + line_break.start()
+            line = _trimmed_span(value, line_start, line_end)
+            if line is not None:
+                groups.append(line)
+            line_start = paragraph_start + line_break.end()
+        line = _trimmed_span(value, line_start, paragraph_end)
+        if line is not None:
+            groups.append(line)
+    return groups
+
+
+def _page_record(
+    value: str, start: int, end: int, source_omitted: bool
+) -> dict[str, Any] | None:
+    span = _trimmed_span(value, start, end)
+    if span is None:
+        return None
+    exact_start, exact_end = span
+    return {
+        "id": "",
+        "kind": "page",
+        "source": "lastObservation.text",
+        "exact": value[exact_start:exact_end],
+        "cutBefore": exact_start > 0,
+        "cutAfter": exact_end < len(value) or source_omitted,
+        "_start": exact_start,
+        "_end": exact_end,
+    }
+
+
+def _window_candidates(
+    value: str, group_start: int, group_end: int, source_omitted: bool
+) -> tuple[list[dict[str, Any]], bool]:
+    candidates: list[dict[str, Any]] = []
+    start = _next_token_start(value, group_start)
+    while start < group_end:
+        hard_end = min(
+            group_end,
+            _largest_prefix_end(
+                value, start, REPORT_CANDIDATE_MAX_UTF8_BYTES
+            ),
+        )
+        if hard_end == start:
+            token_end = start
+            while token_end < group_end and not value[token_end].isspace():
+                token_end += 1
+            source_omitted = True
+            start = _next_token_start(value, token_end)
+            continue
+        if (
+            hard_end < group_end
+            and not value[hard_end - 1].isspace()
+            and not value[hard_end].isspace()
+        ):
+            token_start = hard_end
+            while token_start > start and not value[token_start - 1].isspace():
+                token_start -= 1
+            if token_start == start:
+                token_end = hard_end
+                while token_end < group_end and not value[token_end].isspace():
+                    token_end += 1
+                source_omitted = True
+                start = _next_token_start(value, token_end)
+                continue
+            hard_end = token_start
+
+        end = (
+            group_end
+            if hard_end >= group_end
+            else _preferred_end(value, start, hard_end)
+        )
+        candidate = _page_record(value, start, end, source_omitted)
+        if candidate is not None:
+            candidates.append(candidate)
+        if end >= group_end:
+            break
+        next_start = max(
+            group_start,
+            _previous_token_start(value, end, 128),
+        )
+        if next_start <= start:
+            next_start = _next_token_start(value, end)
+        start = next_start
+    return candidates, source_omitted
+
+
 def _page_candidates(text: str) -> tuple[list[dict[str, Any]], bool]:
     bounded, source_omitted = _bounded_source(text)
     upstream_code_units = len(text.encode("utf-16-le", errors="surrogatepass")) // 2
     if upstream_code_units >= _UPSTREAM_VISIBLE_TEXT_MAX_CODE_UNITS:
         source_omitted = True
+
     candidates: list[dict[str, Any]] = []
-    start = _next_token_start(bounded, 0)
-    while start < len(bounded):
-        hard_end = _largest_prefix_end(bounded, start, REPORT_CANDIDATE_MAX_UTF8_BYTES)
-        if hard_end == start:
-            token_end = start
-            while token_end < len(bounded) and not bounded[token_end].isspace():
-                token_end += 1
-            source_omitted = True
-            start = _next_token_start(bounded, token_end)
+    for start, end in _source_groups(bounded):
+        if _utf8_bytes(bounded[start:end]) <= REPORT_CANDIDATE_MAX_UTF8_BYTES:
+            candidate = _page_record(bounded, start, end, source_omitted)
+            if candidate is not None:
+                candidates.append(candidate)
             continue
-        if (
-            hard_end < len(bounded)
-            and not bounded[hard_end - 1].isspace()
-            and not bounded[hard_end].isspace()
-        ):
-            token_start = hard_end
-            while token_start > start and not bounded[token_start - 1].isspace():
-                token_start -= 1
-            if token_start == start:
-                token_end = hard_end
-                while token_end < len(bounded) and not bounded[token_end].isspace():
-                    token_end += 1
-                source_omitted = True
-                start = _next_token_start(bounded, token_end)
-                continue
-            hard_end = token_start
-
-        end = _preferred_end(bounded, start, hard_end)
-        exact = bounded[start:end].strip()
-        if exact:
-            exact_start = bounded.find(exact, start, end)
-            exact_end = exact_start + len(exact)
-            candidates.append(
-                {
-                    "id": "",
-                    "kind": "page",
-                    "source": "lastObservation.text",
-                    "exact": exact,
-                    "cutBefore": exact_start > 0,
-                    "cutAfter": exact_end < len(bounded) or source_omitted,
-                    "_start": exact_start,
-                    "_end": exact_end,
-                }
-            )
-
-        if end >= len(bounded):
-            break
-        next_start = _previous_token_start(bounded, end, 128)
-        if next_start <= start:
-            next_start = _next_token_start(bounded, end)
-        start = next_start
+        windows, source_omitted = _window_candidates(
+            bounded, start, end, source_omitted
+        )
+        candidates.extend(windows)
     return candidates, source_omitted
 
 
@@ -204,14 +284,20 @@ def _candidate_without_id(candidate: dict[str, Any]) -> dict[str, Any]:
 
 def _build_candidates(page_text: str, history: Any) -> tuple[list[dict[str, Any]], bool]:
     actions: list[dict[str, Any]] = []
+    action_omitted = False
     if isinstance(history, list):
         for entry in history[-REPORT_ACTION_LIMIT:]:
             candidate = _safe_action_candidate(entry)
-            if candidate is not None:
+            if candidate is None:
+                action_omitted = True
+            else:
                 actions.append(candidate)
+    elif history is not None:
+        action_omitted = True
 
     page_limit = max(0, REPORT_CANDIDATE_LIMIT - len(actions))
     pages, source_omitted = _page_candidates(page_text)
+    source_omitted = source_omitted or action_omitted
     if len(pages) > page_limit:
         del pages[page_limit:]
         source_omitted = True
@@ -407,13 +493,15 @@ def select_handoff(
     """Select exact evidence records and return reporting metadata plus optional usage."""
     candidates, source_omitted = _build_candidates(page_text, history)
     if not candidates:
-        return (
-            missing_report(
-                "ReportingSourceUnavailable",
-                "No bounded page or action evidence was available for handoff reporting.",
-            ),
-            None,
+        report = missing_report(
+            "ReportingSourceUnavailable",
+            "No bounded page or action evidence was available for handoff reporting.",
         )
+        report.update(
+            sourceCoverage="partial" if source_omitted else "unavailable",
+            sourceOmitted=source_omitted,
+        )
+        return report, None
 
     api_key = os.environ.get("TYPESAFE_API_KEY", "")
     if not api_key:

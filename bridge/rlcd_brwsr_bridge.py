@@ -60,14 +60,20 @@ def _normalize_text(value: str) -> str:
 
 def _redact_text(value: str, credentials: tuple[str, ...]) -> str:
     redacted = _normalize_text(value)
-    for credential in credentials:
-        redacted = redacted.replace(credential, "[REDACTED]")
     redacted = re.sub(
-        r"\b(?:Bearer|Authorization:)\s+[A-Za-z0-9._~+\-/=]{8,}",
+        r"\bAuthorization\s*:\s*Bearer\s+[A-Za-z0-9._~+\-/=]+",
         "[REDACTED]",
         redacted,
         flags=re.IGNORECASE,
     )
+    redacted = re.sub(
+        r"\bBearer\s+[A-Za-z0-9._~+\-/=]+",
+        "[REDACTED]",
+        redacted,
+        flags=re.IGNORECASE,
+    )
+    for credential in credentials:
+        redacted = redacted.replace(credential, "[REDACTED]")
     return redacted
 
 
@@ -344,6 +350,17 @@ def _raw_projection(
 def _bound_projection(result: dict[str, Any]) -> dict[str, Any]:
     output = result["output"]
     omissions: list[str] = output["omissions"]
+    reporting = result.pop("reporting", None)
+    records = result.get("usage", {}).get("records", [])
+    reporting_usage: list[Any] = []
+    if isinstance(records, list):
+        native_records: list[Any] = []
+        for record in records:
+            if isinstance(record, dict) and record.get("source") == "jev_handoff":
+                reporting_usage.append(record)
+            else:
+                native_records.append(record)
+        records[:] = native_records
     observation = result.get("lastObservation")
     if isinstance(observation, dict):
         _clip_field(observation, "url", _URL_MAX_BYTES, "lastObservation.url", omissions)
@@ -369,28 +386,6 @@ def _bound_projection(result: dict[str, Any]) -> dict[str, Any]:
             omissions,
         )
 
-    reporting = result.get("reporting")
-    reporting_evidence: list[Any] = []
-    reporting_diagnostic: dict[str, Any] | None = None
-    if isinstance(reporting, dict):
-        evidence_value = reporting.get("evidence")
-        if isinstance(evidence_value, list):
-            reporting_evidence = evidence_value
-        diagnostic_value = reporting.get("diagnostic")
-        if isinstance(diagnostic_value, dict):
-            reporting_diagnostic = diagnostic_value
-            _clip_field(
-                reporting_diagnostic,
-                "message",
-                512,
-                "reporting.diagnostic.message",
-                omissions,
-            )
-        if reporting.get("sourceOmitted") is True:
-            _append_omission(omissions, "reporting source candidates")
-        if reporting.get("selectionOmitted") is True:
-            _append_omission(omissions, "reporting qualifying evidence")
-
     history = result.get("history")
     if isinstance(history, list):
         if len(history) > _HISTORY_LIMIT:
@@ -405,7 +400,6 @@ def _bound_projection(result: dict[str, Any]) -> dict[str, Any]:
             )
             _clip_field(entry, "url", 1_024, "history URL fields", omissions)
 
-    records = result.get("usage", {}).get("records", [])
     if isinstance(records, list):
         if len(records) > _USAGE_RECORD_LIMIT:
             del records[: len(records) - _USAGE_RECORD_LIMIT]
@@ -434,25 +428,6 @@ def _bound_projection(result: dict[str, Any]) -> dict[str, Any]:
         elif isinstance(records, list) and records:
             records.pop(0)
             _append_omission(omissions, "usage records")
-        elif reporting_evidence:
-            lowest = min(
-                range(len(reporting_evidence)),
-                key=lambda index: reporting_evidence[index].get("relevance", 0)
-                if isinstance(reporting_evidence[index], dict)
-                else 0,
-            )
-            reporting_evidence.pop(lowest)
-            if isinstance(reporting, dict):
-                reporting["selectedCount"] = len(reporting_evidence)
-                reporting["selectionOmitted"] = True
-                reporting["omittedQualifyingCandidateCount"] = int(
-                    reporting.get("omittedQualifyingCandidateCount", 0)
-                ) + 1
-            _append_omission(omissions, "reporting evidence records")
-        elif reporting_diagnostic is not None:
-            reporting["diagnostic"] = None
-            reporting_diagnostic = None
-            _append_omission(omissions, "reporting diagnostic")
         elif (
             isinstance(diagnostic, dict)
             and diagnostic.get("message")
@@ -469,17 +444,92 @@ def _bound_projection(result: dict[str, Any]) -> dict[str, Any]:
         else:
             result["history"] = []
             result["usage"]["records"] = []
-            if isinstance(reporting, dict):
-                reporting["evidence"] = []
-                reporting["selectedCount"] = 0
-                reporting["selectionOmitted"] = True
-                reporting["diagnostic"] = None
             _append_omission(omissions, "remaining variable fields")
             if len(_json_bytes(result)) + 1 > TERMINAL_MAX_UTF8_BYTES:
                 omissions[:] = ["variable fields omitted"]
             break
         output["clipped"] = True
 
+    if len(_json_bytes(result)) + 1 > TERMINAL_MAX_UTF8_BYTES:
+        raise RuntimeError("minimal terminal result exceeds configured byte limit")
+
+    # Reporting is additive. Bound the legacy diagnostic projection first, then
+    # fit reporting metadata/evidence and its usage without evicting browser facts.
+    baseline_omissions = list(omissions)
+    baseline_clipped = output["clipped"]
+    if isinstance(reporting, dict):
+        reporting_evidence = reporting.get("evidence")
+        if not isinstance(reporting_evidence, list):
+            reporting_evidence = []
+        reporting_diagnostic = reporting.get("diagnostic")
+        if isinstance(reporting_diagnostic, dict):
+            _clip_field(
+                reporting_diagnostic,
+                "message",
+                512,
+                "reporting.diagnostic.message",
+                omissions,
+            )
+        else:
+            reporting_diagnostic = None
+        if reporting.get("sourceOmitted") is True:
+            _append_omission(omissions, "reporting source candidates")
+        if reporting.get("selectionOmitted") is True:
+            _append_omission(omissions, "reporting qualifying evidence")
+        result["reporting"] = reporting
+        if isinstance(records, list):
+            records.extend(reporting_usage)
+
+        while len(_json_bytes(result)) + 1 > TERMINAL_MAX_UTF8_BYTES:
+            if reporting_usage and isinstance(records, list):
+                omitted_usage = reporting_usage.pop()
+                for index in range(len(records) - 1, -1, -1):
+                    if records[index] is omitted_usage:
+                        records.pop(index)
+                        break
+                _append_omission(omissions, "reporting usage record")
+            elif reporting_evidence:
+                lowest = min(
+                    range(len(reporting_evidence)),
+                    key=lambda index: reporting_evidence[index].get("relevance", 0)
+                    if isinstance(reporting_evidence[index], dict)
+                    else 0,
+                )
+                reporting_evidence.pop(lowest)
+                reporting["selectedCount"] = len(reporting_evidence)
+                reporting["selectionOmitted"] = True
+                reporting["omittedQualifyingCandidateCount"] = int(
+                    reporting.get("omittedQualifyingCandidateCount", 0)
+                ) + 1
+                _append_omission(omissions, "reporting evidence records")
+            elif reporting_diagnostic is not None:
+                reporting["diagnostic"] = None
+                reporting_diagnostic = None
+                _append_omission(omissions, "reporting diagnostic")
+            else:
+                result.pop("reporting", None)
+                if isinstance(records, list):
+                    records[:] = [
+                        record
+                        for record in records
+                        if not (
+                            isinstance(record, dict)
+                            and record.get("source") == "jev_handoff"
+                        )
+                    ]
+                omissions[:] = baseline_omissions
+                output["clipped"] = True
+                break
+            output["clipped"] = True
+
+    elif reporting_usage:
+        # An orphaned reporting-usage record cannot establish that reporting
+        # metadata survived fitting. Keep native usage and expose unavailability
+        # through the parent compact presentation instead.
+        output["clipped"] = True
+
+    if "reporting" not in result and not baseline_clipped:
+        output["clipped"] = True
     if len(_json_bytes(result)) + 1 > TERMINAL_MAX_UTF8_BYTES:
         raise RuntimeError("minimal terminal result exceeds configured byte limit")
     return result

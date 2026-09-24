@@ -172,6 +172,7 @@ function isTerminalEnvelope(
     value.status === "completion_claim" &&
     value.stopReason === "done" &&
     value.execution === "completed";
+  const hasReporting = Object.hasOwn(value, "reporting");
   return (
     hasExactKeys(value, [
       "status",
@@ -185,8 +186,8 @@ function isTerminalEnvelope(
       "targetId",
       "cleanup",
       "diagnostic",
-      "reporting",
       "output",
+      ...(hasReporting ? ["reporting"] : []),
     ]) &&
     typeof value.status === "string" &&
     ["completion_claim", "blocked", "stopped", "error"].includes(
@@ -203,7 +204,7 @@ function isTerminalEnvelope(
     validUsage(value.usage) &&
     (value.targetId === null || typeof value.targetId === "string") &&
     validDiagnostic(value.diagnostic, 1_024) &&
-    validReporting(value.reporting) &&
+    (!hasReporting || validReporting(value.reporting)) &&
     isRecord(claim) &&
     hasExactKeys(claim, ["claimed", "requiresIndependentVerification"]) &&
     claim.claimed === (value.status === "completion_claim") &&
@@ -345,12 +346,11 @@ function validUsage(value: unknown): boolean {
     if (
       !isRecord(record) ||
       !hasExactKeys(record, ["source", "model", "usage"]) ||
-      !["jev_decision", "text_helper", "jev_handoff"].includes(
-        String(record.source),
-      ) ||
+      typeof record.source !== "string" ||
+      !["jev_decision", "text_helper", "jev_handoff"].includes(record.source) ||
       typeof record.model !== "string" ||
       utf8Bytes(record.model) > 512 ||
-      !isRecord(record.usage)
+      !(record.usage === null || isRecord(record.usage))
     ) {
       return false;
     }
@@ -446,12 +446,12 @@ function validReporting(value: unknown): boolean {
       "evidence",
       "diagnostic",
     ]) ||
+    typeof value.status !== "string" ||
     !["selected", "no_match", "missing", "error", "cancelled"].includes(
-      String(value.status),
+      value.status,
     ) ||
-    !["complete", "partial", "unavailable"].includes(
-      String(value.sourceCoverage),
-    ) ||
+    typeof value.sourceCoverage !== "string" ||
+    !["complete", "partial", "unavailable"].includes(value.sourceCoverage) ||
     typeof value.sourceOmitted !== "boolean" ||
     typeof value.selectionOmitted !== "boolean" ||
     !Number.isSafeInteger(value.candidateCount) ||
@@ -769,7 +769,20 @@ function compactRunResult(details: Record<string, unknown>): string {
   const cleanup = recordCopy(details.cleanup);
   const claim = recordCopy(details.completionClaim);
   const detailOutput = recordCopy(details.output);
-  const detailReporting = recordCopy(details.reporting);
+  const reportingAvailable = isRecord(details.reporting);
+  const detailReporting = reportingAvailable
+    ? recordCopy(details.reporting)
+    : {
+        status: "unavailable",
+        sourceOmitted: true,
+        selectionOmitted: true,
+        evidence: [],
+        diagnostic: {
+          type: "ReportingUnavailable",
+          message:
+            "Optional handoff reporting and its usage metadata were omitted to preserve bounded browser diagnostics.",
+        },
+      };
   const detailEvidence = Array.isArray(detailReporting.evidence)
     ? detailReporting.evidence.filter(isRecord)
     : [];
@@ -788,6 +801,9 @@ function compactRunResult(details: Record<string, unknown>): string {
       omissions.push(label);
     }
   };
+  if (!reportingAvailable) {
+    appendOmission("details.reporting unavailable");
+  }
   if (detailReporting.sourceOmitted === true) {
     appendOmission("details.reporting source candidates");
   }
