@@ -317,6 +317,47 @@ def _page():
             "page_key": "report-goal-document",
             "guards": {},
         }
+    if _SCENARIO == "report_fragmented":
+        return {
+            "url": _STATE["url"],
+            "title": "Generic fragmented record",
+            "text": "\n".join(
+                f"Field {index:03d}: synthetic value {index:03d}."
+                for index in range(48)
+            ),
+            "scroll": {"y": 0},
+            "actions": [{"id": "wait", "kind": "wait", "label": "Wait"}],
+            "marker": "report-fragmented",
+            "page_key": "report-fragmented",
+            "guards": {},
+        }
+    if _SCENARIO == "report_duplicates":
+        return {
+            "url": _STATE["url"],
+            "title": "Generic duplicate records",
+            "text": "\n\n".join(
+                [
+                    "Recorded date: November 9, 1914",
+                    ";  Recorded date: November 9, 1914",
+                    "Recorded date: November 9, 1914",
+                    "Signed balance: +12 USD",
+                    "Signed balance: -12 USD",
+                    "Price: $12 per month",
+                    "Price: €12 per month",
+                    "Release: v1.2",
+                    "Release: v1-2",
+                    "Capacity: 12 GB",
+                    "Capacity: 12 GiB",
+                    "Plan includes support",
+                    "Plan includes support; excludes setup",
+                ]
+            ),
+            "scroll": {"y": 0},
+            "actions": [{"id": "wait", "kind": "wait", "label": "Wait"}],
+            "marker": "report-duplicates",
+            "page_key": "report-duplicates",
+            "guards": {},
+        }
     if _SCENARIO == "report_qualification":
         return {
             "url": _STATE["url"],
@@ -791,7 +832,11 @@ def _report_response(body):
         operation = str(candidate.get("operation", "")).lower()
         action_label = str(candidate.get("actionLabel", "")).lower()
         score = 0.05
-        if "identifier" in goal and "requested identifier:" in exact:
+        if _SCENARIO == "report_duplicates":
+            score = 0.9
+        elif "field 047" in goal and "field 047:" in exact:
+            score = 0.96
+        elif "identifier" in goal and "requested identifier:" in exact:
             score = 0.96
         elif "estimated total" in goal and (
             "estimated total:" in exact or "estimate excludes" in exact

@@ -1,17 +1,18 @@
 # RLCD-brwsr plan
 
-Status: the corrected generic compact handoff is **implemented and locally
-verified** on the current feature branch, building on existing-tab targeting at
-`ff49875`. Run-tool model content is goal-aware and compact while bounded
-diagnostic `details` remains available to Pi. Deterministic registered-tool
-tests (67/67) and an isolated command-driven Pi-TUI check passed with synthetic
-browser/provider boundaries. Production-shaped sanitized reconstructions compare
-the verified old and corrected interpreters without browser actions. A separately
-authorized seven-case real-Jev replay retained expected source evidence in six
-cases; the shortened Google case returned no excerpt. This is limited semantic
-evidence, not general relevance acceptance. A later three-task normal-session
-public-page pilot passed exact-target verification using only pilot-owned tabs;
-boilerplate, duplicate evidence and reporting-token expansion remain limitations.
+Status: the corrected generic compact handoff and focused local selector
+refinement are **implemented and locally verified** on the current feature branch,
+building on existing-tab targeting at `ff49875`. Run-tool model content remains
+goal-aware and compact while bounded diagnostic `details` remains available to
+Pi. Deterministic registered-tool tests (69/69) and an isolated command-driven
+Pi-TUI check passed with synthetic browser/provider boundaries. A same-input
+synthetic replay reduced the three saved pilot request shapes while preserving
+nonwhitespace source coverage. The new grouped questions were not evaluated
+live. Earlier production-shaped reconstructions and a separately authorized
+seven-case real-Jev replay remain evidence for the earlier selector shape, not
+semantic acceptance of this refinement. A later three-task normal-session
+public-page pilot passed exact-target verification using only pilot-owned tabs
+and exposed the fragmentation, duplicate and policy repetition addressed here.
 The native helper remains direct DeepSeek
 `deepseek-flash` with thinking disabled; Jev and Pi's outer model are unchanged.
 See the [current verification record](thin-python-evidence.md#compact-handoff)
@@ -259,18 +260,31 @@ For normal native completion or `BLOCKED` with observations, one optional
 post-cleanup reporting request uses the existing pinned Jev transport and model.
 Python sanitizes the original goal, full upstream-visible text before the old
 4 KiB projection clipping, and an explicit allowlist from the last six actions.
-It prefers short generic paragraphs and label/value lines before bounded fallback
-windows. It creates at most 128 candidates, keeps every candidate within 512
-UTF-8 bytes without splitting a token, and fits the full request within 98,304
-bytes. Rejected in-window actions and page/input/candidate truncation all mark
-source coverage partial; the documented source is the final visible observation
-plus the last six actions, not whole history.
+Ordinary blank-delimited short paragraphs remain independent. Within long
+single-newline paragraphs, adjacent short lines become contiguous exact spans
+near 128 UTF-8 bytes; longer material uses bounded non-overlapping token-aligned
+fallback slices. Normal under-limit inputs preserve every nonwhitespace source
+character. Oversized tokens, rejected in-window actions and any
+source/input/candidate truncation mark source coverage partial. The documented
+source remains the final visible observation plus the last six actions, not
+whole history. The reporter creates at most 128 candidates, keeps each candidate
+within 512 UTF-8 bytes, fits the full request within 98,304 bytes, and reserves
+the same last-six action allowance.
+
 The pinned observer limits visible text to 6,000 characters, so the 24,576-byte
-source allowance covers its UTF-8 worst case. Per-candidate Nouls judge direct
-relevance and necessary units, periods, estimates, exclusions, caveats and
-ambiguity. Every answer/model/usage field is validated; code resolves
-substantial overlaps and copies at most three qualifying source records.
-The initial 0.5 threshold is evaluation policy, not a reliability claim.
+source allowance covers its UTF-8 worst case. One named trusted policy in request
+state defines direct requested facts, goal-specific state or milestones,
+blockers, necessary action evidence and qualifications; it also limits generic
+navigation/site furniture to actual goal evidence and labels all page/action
+content untrusted data. Each concise independent Noul references that policy,
+`goal`, and its actual `candidates[index]` path because question IDs are not sent
+to the model. Every answer/model/usage field is validated. Code copies at most
+three qualifying exact source records after conservative identity deduplication:
+page locations and cut flags are ignored, and only the observed leading-semicolon
+plus whitespace presentation variant is normalized. Distinct punctuation,
+values, signs, currency, units, versions, exclusions and action step identities
+remain distinct. The unchanged 0.5 threshold is evaluation policy, not a
+reliability claim; this is not semantic deduplication.
 
 Python bounds the legacy browser diagnostic projection before adding reporting,
 so optional evidence, metadata and `jev_handoff` usage cannot evict page text,
@@ -375,14 +389,16 @@ cannot be forcibly cancelled by a Promise race.
 The current suite retains all click/fill/DONE/BLOCKED/error, preflight/input,
 byte/privacy, supervision, cleanup and borrowed/discovery assertions. Compact
 regressions additionally cover two goals over the same generic document,
-non-adjacent qualifications without repeated filler, scroll-action evidence,
-missing/invalid/interrupted reporting, short Bearer privacy, combined source
-omissions, nullable usage, scalar enum rejection, reporting-pressure priority,
-strict evidence/envelope validation, both returned surfaces, candidate/request
-caps, and honest content/details omissions. Near-cap omission-label controls
-remain accepted. One direct projection check proves an oversized token is omitted
-rather than split. No live credentials or model calls were used for these
-deterministic and synthetic-TUI checks.
+fragmented source coalescing with complete nonwhitespace coverage and allowlisted
+request state, one shared policy with exact candidate references, conservative
+whole-record identities, non-adjacent qualifications without repeated filler,
+scroll-action evidence, missing/invalid/interrupted reporting, short Bearer
+privacy, combined source omissions, nullable usage, scalar enum rejection,
+reporting-pressure priority, strict evidence/envelope validation, both returned
+surfaces, candidate/request caps, and honest content/details omissions. Near-cap
+omission-label controls remain accepted. One direct projection check proves an
+oversized token is omitted rather than split. No live credentials or model calls
+were used for these deterministic and synthetic-TUI checks.
 
 The click/default-close, text/retention, time-budget and TUI-cancellation cases
 were repeated successfully at corrected implementation `b3b42036`, using real

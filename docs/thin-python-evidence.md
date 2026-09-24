@@ -174,6 +174,47 @@ checks. No production or selector change, dependency operation or publication
 occurred. Boilerplate selection, near-duplicate evidence and reporting candidate
 expansion remain optimization work, not fixes completed by this pilot.
 
+### Focused local selector refinement
+
+The later local selector refinement addresses the pilot's structural findings in
+the reporting owner without changing the browser, transport, model, threshold or
+public tool contract. Long single-newline paragraphs now coalesce adjacent short
+lines into contiguous source slices near 128 UTF-8 bytes, widening grouping only
+under candidate pressure and retaining ordinary blank-delimited short paragraphs.
+Fallback slices remain token-aligned and bounded without overlap. One named
+trusted policy in request state defines direct goal evidence, necessary
+qualifications, treatment of generic site furniture and untrusted candidate
+data; each independent Noul references that policy, the goal and its exact
+candidate index. Page deduplication ignores locations and cut flags for identical
+text and handles only the observed leading-semicolon/whitespace presentation
+variant. It does not normalize general punctuation, numbers, currency, signs,
+units, versions, caveats or action step identity.
+
+Two new registered-tool guards pass through the production bridge with synthetic
+provider/browser boundaries. A 48-line generic document is reduced to contiguous
+exact candidates with complete nonwhitespace coverage, one shared policy,
+allowlisted state and per-question candidate references. A separate composition
+collapses two date duplicates while retaining signed, currency/unit, version and
+caveat-bearing identities; selected output remains an exact offered record and
+omission counters remain conservative. The pre-fix run failed both guards, and
+the final full deterministic suite passes 69/69.
+
+A synthetic callback replay regenerated requests from the same three saved pilot
+observations. Candidate counts changed from 83/115/113 to 9/18/16; serialized
+requests changed from 58,430/81,554/80,117 bytes to
+5,388/10,068/9,201 bytes. Every new page candidate was a contiguous exact source
+slice, all nonwhitespace source characters were covered, and the largest page
+candidate was 156 bytes. The retained old scores do not map to the grouped
+candidates and were not compared. An isolated actual Pi-TUI slash command passed
+22/22 structural assertions with synthetic boundaries; it retained the exact
+63-byte amount/exclusion evidence and protected diagnostic surface.
+
+These offline fakes establish request structure, deterministic selection,
+coverage, limits and surface plumbing only. They do not establish improved live
+relevance, actual new token use, latency, billing or broader reliability. No live
+provider, browser, credential, daemon or user-tab operation was part of this
+refinement verification.
+
 Historical rewrite tested implementation: `b3b42036685eba64f3e7bc8ccc296e16b9910fe9`.
 The initial rewrite is `3f984e54`; the corrected implementation was checked again,
 not accepted solely on the earlier candidate's results. These runs preceded

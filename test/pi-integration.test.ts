@@ -107,6 +107,27 @@ if (
   throw new Error("runtime configuration must define terminalMaxUtf8Bytes");
 }
 const terminalByteLimit = Number(testRuntimeConfig.terminalMaxUtf8Bytes);
+const fragmentedReportLines = Array.from(
+  { length: 48 },
+  (_, index) =>
+    `Field ${String(index).padStart(3, "0")}: synthetic value ${String(index).padStart(3, "0")}.`,
+);
+const fragmentedReportText = fragmentedReportLines.join("\n");
+const duplicateReportRecords = [
+  "Recorded date: November 9, 1914",
+  ";  Recorded date: November 9, 1914",
+  "Recorded date: November 9, 1914",
+  "Signed balance: +12 USD",
+  "Signed balance: -12 USD",
+  "Price: $12 per month",
+  "Price: €12 per month",
+  "Release: v1.2",
+  "Release: v1-2",
+  "Capacity: 12 GB",
+  "Capacity: 12 GiB",
+  "Plan includes support",
+  "Plan includes support; excludes setup",
+];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -1681,6 +1702,169 @@ test("goal-aware reporting selects identifier or estimate facts from the same ge
       },
     );
   }
+});
+
+test("reporting coalesces fragmented source under one shared candidate policy", async () => {
+  await withScenario(
+    "report_fragmented",
+    { params: { goal: "Return Field 047" } },
+    async ({ result, markers }) => {
+      const details = detailsOf(result);
+      const reporting = recordField(details, "reporting");
+      assert.equal(reporting.status, "selected");
+      assert.equal(reporting.sourceCoverage, "complete");
+      assert.equal(reporting.sourceOmitted, false);
+
+      const reportText = await readFile(markers.report, "utf8");
+      const request: unknown = JSON.parse(reportText);
+      assert.ok(isRecord(request));
+      assert.deepEqual(Object.keys(request).sort(), [
+        "model",
+        "questions",
+        "state",
+      ]);
+      const state = recordField(request, "state");
+      assert.deepEqual(Object.keys(state).sort(), [
+        "candidates",
+        "goal",
+        "trustedSelectionPolicy",
+      ]);
+      assert.equal(state.goal, "Return Field 047");
+      const policy = recordField(state, "trustedSelectionPolicy");
+      assert.deepEqual(Object.keys(policy).sort(), [
+        "dataHandling",
+        "qualifications",
+        "relevance",
+        "siteFurniture",
+      ]);
+      assert.equal((reportText.match(/"relevance":/g) ?? []).length, 1);
+
+      const candidates = arrayField(state, "candidates") as Array<
+        Record<string, unknown>
+      >;
+      assert.ok(candidates.length <= fragmentedReportLines.length / 3);
+      assert.equal(reporting.candidateCount, candidates.length);
+      assert.ok(
+        candidates.every(
+          (candidate) =>
+            candidate.kind === "page" &&
+            Buffer.byteLength(String(candidate.exact), "utf8") <= 512,
+        ),
+      );
+      assert.ok(
+        Math.max(
+          ...candidates.map((candidate) =>
+            Buffer.byteLength(String(candidate.exact), "utf8"),
+          ),
+        ) <= 192,
+      );
+
+      let cursor = 0;
+      for (const candidate of candidates) {
+        assert.deepEqual(Object.keys(candidate).sort(), [
+          "cutAfter",
+          "cutBefore",
+          "exact",
+          "id",
+          "kind",
+          "source",
+        ]);
+        const exact = String(candidate.exact);
+        const start = fragmentedReportText.indexOf(exact, cursor);
+        assert.ok(
+          start >= cursor,
+          `missing exact candidate after offset ${cursor}`,
+        );
+        assert.equal(fragmentedReportText.slice(cursor, start).trim(), "");
+        cursor = start + exact.length;
+      }
+      assert.equal(fragmentedReportText.slice(cursor).trim(), "");
+
+      const questions = recordField(request, "questions");
+      assert.equal(Object.keys(questions).length, candidates.length);
+      for (let index = 0; index < candidates.length; index += 1) {
+        const question = recordField(
+          questions,
+          `keep_c${String(index).padStart(3, "0")}`,
+        );
+        assert.equal(question.type, "noul");
+        const criteria = recordField(question, "criteria");
+        const candidatePath = `candidates[${index}]`;
+        for (const value of [
+          String(question.instructions),
+          String(criteria.true),
+          String(criteria.false),
+        ]) {
+          assert.ok(value.includes(candidatePath));
+          assert.match(value, /trustedSelectionPolicy/);
+          assert.match(value, /goal/);
+        }
+        assert.ok(
+          !JSON.stringify(question).includes(String(policy.relevance)),
+          "the shared policy must not be copied into each question",
+        );
+      }
+      assert.ok(Buffer.byteLength(reportText, "utf8") < 16_000);
+      assert.equal(Object.hasOwn(state, "url"), false);
+      assert.equal(Object.hasOwn(state, "targetId"), false);
+      assert.equal(Object.hasOwn(state, "diagnostic"), false);
+      assert.equal(Object.hasOwn(state, "models"), false);
+      assert.equal(Object.hasOwn(state, "usage"), false);
+      assert.equal(Object.hasOwn(state, "history"), false);
+    },
+  );
+});
+
+test("reporting deduplicates only conservative whole-record identities", async () => {
+  await withScenario(
+    "report_duplicates",
+    { params: { goal: "Retain every relevant comparison record" } },
+    async ({ result, markers }) => {
+      const details = detailsOf(result);
+      const reporting = recordField(details, "reporting");
+      assert.equal(reporting.status, "selected");
+      assert.equal(reporting.sourceCoverage, "complete");
+      assert.equal(reporting.candidateCount, duplicateReportRecords.length);
+      assert.equal(
+        reporting.qualifyingCandidateCount,
+        duplicateReportRecords.length,
+      );
+      assert.equal(reporting.deduplicatedCandidateCount, 2);
+      assert.equal(reporting.selectedCount, 3);
+      assert.equal(
+        reporting.omittedQualifyingCandidateCount,
+        duplicateReportRecords.length - 3,
+      );
+      assert.equal(reporting.selectionOmitted, true);
+
+      const request: unknown = JSON.parse(
+        await readFile(markers.report, "utf8"),
+      );
+      assert.ok(isRecord(request));
+      const offered = arrayField(
+        recordField(request, "state"),
+        "candidates",
+      ) as Array<Record<string, unknown>>;
+      assert.deepEqual(
+        offered.map((candidate) => candidate.exact),
+        duplicateReportRecords,
+      );
+      assert.notDeepEqual(
+        [offered[0]?.cutBefore, offered[0]?.cutAfter],
+        [offered[2]?.cutBefore, offered[2]?.cutAfter],
+      );
+
+      const exact = arrayField(reporting, "evidence").map((item) =>
+        String((item as Record<string, unknown>).exact),
+      );
+      assert.deepEqual(exact, [
+        "Recorded date: November 9, 1914",
+        "Signed balance: +12 USD",
+        "Signed balance: -12 USD",
+      ]);
+      assert.ok(exact.every((value) => duplicateReportRecords.includes(value)));
+    },
+  );
 });
 
 test("reporting retains distant qualifications or discloses their omission", async () => {
