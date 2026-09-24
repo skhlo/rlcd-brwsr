@@ -43,9 +43,9 @@ def _terminal_envelope(text: str) -> dict[str, object]:
         "models": {
             "jev": {"configuredModel": "jev-1.13.0"},
             "textHelper": {
-                "configuredModel": "inclusionai/ling-3.0-flash",
-                "baseUrl": "https://openrouter.ai/api/v1",
-                "reasoning": "none",
+                "configuredModel": "deepseek-flash",
+                "baseUrl": "https://api.deepseek.com/v1",
+                "reasoning": "disabled",
             },
         },
         "usage": {
@@ -61,6 +61,19 @@ def _terminal_envelope(text: str) -> dict[str, object]:
         "targetId": None,
         "cleanup": {"taskTab": "unknown", "sharedDaemon": "retained"},
         "diagnostic": None,
+        "reporting": {
+            "status": "missing",
+            "sourceCoverage": "unavailable",
+            "sourceOmitted": False,
+            "selectionOmitted": False,
+            "candidateCount": 0,
+            "qualifyingCandidateCount": None,
+            "selectedCount": 0,
+            "deduplicatedCandidateCount": 0,
+            "omittedQualifyingCandidateCount": 0,
+            "evidence": [],
+            "diagnostic": None,
+        },
         "output": {
             "byteLimit": _TERMINAL_LIMIT,
             "clipped": True,
@@ -140,14 +153,31 @@ if _SCENARIO == "near_limit_terminal_after_stop":
     os._exit(32)
 
 import jev_ultrafast
-from browser_harness import admin, helpers as harness_helpers
+from browser_harness import admin
+from browser_harness import helpers as harness_helpers
 from jev_ultrafast import browser, model
 
+_SHARED_STATE_PATH = os.environ.get("RLCD_TEST_SHARED_STATE_MARKER")
 _STATE = {
-    "url": "about:blank",
+    "url": (
+        "about:blank"
+        if _SCENARIO == "borrowed_about_blank"
+        else "https://example.test/existing"
+    ),
     "destination": False,
     "typed": "",
 }
+if _SHARED_STATE_PATH and Path(_SHARED_STATE_PATH).exists():
+    loaded_state = json.loads(Path(_SHARED_STATE_PATH).read_text(encoding="utf-8"))
+    if isinstance(loaded_state, dict):
+        _STATE.update(loaded_state)
+
+
+def _persist_state() -> None:
+    if _SHARED_STATE_PATH:
+        Path(_SHARED_STATE_PATH).write_text(
+            json.dumps(_STATE, sort_keys=True), encoding="utf-8"
+        )
 
 
 def _append(environment_name: str, value: str) -> None:
@@ -263,7 +293,137 @@ class _ProjectionInterruptPage(dict):
         return super().get(key, default)
 
 
+def _static_report_page(title: str, text: str, marker: str) -> dict[str, object]:
+    return {
+        "url": _STATE["url"],
+        "title": title,
+        "text": text,
+        "scroll": {"y": 0},
+        "actions": [{"id": "wait", "kind": "wait", "label": "Wait"}],
+        "marker": marker,
+        "page_key": marker,
+        "guards": {},
+    }
+
+
 def _page():
+    if _SCENARIO in {
+        "report_goal_document",
+        "report_invalid",
+        "report_provider_error",
+        "report_cancelled",
+        "report_missing_key",
+    }:
+        return _static_report_page(
+            "Generic plan comparison",
+            (
+                "Requested identifier: ITEM-482.\n\n"
+                + "Background notes that do not answer the requested fact. " * 18
+                + "\n\nEstimated total: 120 credits per month.\n\n"
+                + "Additional generic notes. " * 18
+                + "\n\nEstimate excludes service charges."
+            ),
+            "report-goal-document",
+        )
+    if _SCENARIO == "report_span_context":
+        return _static_report_page(
+            "Generic account summary",
+            (
+                "Account summary "
+                + "x" * 110
+                + "\nRequested monthly total:\n120 credits per month.\n"
+                + "Unrequested biographical background.\n\n"
+                + "Estimate excludes service charges."
+            ),
+            "report-span-context",
+        )
+    if _SCENARIO == "report_fragmented":
+        return _static_report_page(
+            "Generic fragmented record",
+            "\n".join(
+                ["Context " + "x" * 110, "Total:", "$12"]
+                + [
+                    f"Field {index:03d}: synthetic value {index:03d}."
+                    for index in range(48)
+                ]
+            ),
+            "report-fragmented",
+        )
+    if _SCENARIO == "report_duplicates":
+        return _static_report_page(
+            "Generic duplicate records",
+            "\n\n".join(
+                [
+                    "November 9, 1914",
+                    ";  November 9, 1914",
+                    "November 9, 1914",
+                    "Signed balance: +12 USD",
+                    "Signed balance: -12 USD",
+                    "Price: $12 per month",
+                    "Price: €12 per month",
+                    "Release: v1.2",
+                    "Release: v1-2",
+                    "Capacity: 12 GB",
+                    "Capacity: 12 GiB",
+                    "Plan includes support",
+                    "Plan includes support; excludes setup",
+                    ";excluded",
+                    "excluded",
+                ]
+            ),
+            "report-duplicates",
+        )
+    if _SCENARIO == "report_qualification":
+        return _static_report_page(
+            "Generic estimate",
+            (
+                "Estimated total: 120 credits.\n\n"
+                + "General explanatory material. " * 24
+                + "\n\nEstimate excludes service charges."
+            ),
+            "report-qualification",
+        )
+    if _SCENARIO == "report_redaction":
+        return _static_report_page(
+            "Generic redaction",
+            (
+                f"Provider key {os.environ.get('TYPESAFE_API_KEY', '')}. "
+                f"Authorization: Bearer {os.environ.get('TEXT_MODEL_API_KEY', '')}. "
+                "Bare synthetic value Bearer abc. "
+                "Synthetic header Authorization: Bearer xyz. "
+                "Approved marker CLEAR-19."
+            ),
+            "report-redaction",
+        )
+    if _SCENARIO == "report_scroll":
+        if _STATE["destination"]:
+            return {
+                "url": _STATE["url"],
+                "title": "Generic feed",
+                "text": "Unrelated visible entries after the viewport moved.",
+                "scroll": {"y": 560},
+                "actions": [{"id": "wait", "kind": "wait", "label": "Wait"}],
+                "marker": "report-scroll-finished",
+                "page_key": "report-scroll-finished",
+                "guards": {},
+            }
+        return {
+            "url": _STATE["url"],
+            "title": "Generic feed",
+            "text": "Initial visible entries.",
+            "scroll": {"y": 0},
+            "actions": [
+                {
+                    "id": "scroll_down",
+                    "kind": "scroll",
+                    "label": "Scroll down",
+                    "delta": 560,
+                }
+            ],
+            "marker": "report-scroll-start",
+            "page_key": "report-scroll-start",
+            "guards": {},
+        }
     if _SCENARIO in {
         "fill",
         "helper_invalid_empty",
@@ -351,44 +511,234 @@ def _page():
     }
 
 
+def _target_infos():
+    if _SCENARIO == "list_error":
+        raise RuntimeError("synthetic tab discovery failed")
+    if _SCENARIO == "list_empty":
+        return [
+            {
+                "targetId": "INTERNAL",
+                "type": "page",
+                "title": "Settings",
+                "url": "chrome://settings/",
+            },
+            {
+                "targetId": "WORKER",
+                "type": "service_worker",
+                "title": "Worker",
+                "url": "https://example.test/worker.js",
+            },
+        ]
+    if _SCENARIO == "list_tabs":
+        return [
+            {
+                "targetId": "TAB-Z",
+                "type": "page",
+                "title": "Second duplicate",
+                "url": "https://example.test/same",
+            },
+            {
+                "targetId": "TAB-A",
+                "type": "page",
+                "title": "First duplicate",
+                "url": "https://example.test/same",
+            },
+            {
+                "targetId": "TAB-BLANK",
+                "type": "page",
+                "title": "",
+                "url": "about:blank",
+            },
+            {
+                "targetId": "INTERNAL",
+                "type": "page",
+                "title": "Settings",
+                "url": "chrome://settings/",
+            },
+        ]
+    if _SCENARIO in {"list_redacted_host", "list_redacted_path"}:
+        helper_key = os.environ.get("TEXT_MODEL_API_KEY", "")
+        url = (
+            f"https://{helper_key}/"
+            if _SCENARIO == "list_redacted_host"
+            else f"https://example.test/path/{helper_key}"
+        )
+        return [
+            {
+                "targetId": "REDACTED-URL",
+                "type": "page",
+                "title": "Redacted URL metadata",
+                "url": url,
+            }
+        ]
+    if _SCENARIO == "list_blank_id":
+        return [
+            {
+                "targetId": "   ",
+                "type": "page",
+                "title": "Blank ID",
+                "url": "https://example.test/blank-id",
+            },
+            {
+                "targetId": "VALID-PAGE-ID",
+                "type": "page",
+                "title": "Valid ID",
+                "url": "https://example.test/valid-id",
+            },
+        ]
+    if _SCENARIO == "list_unicode_ids":
+        return [
+            {
+                "targetId": "\U00010000",
+                "type": "page",
+                "title": "Supplementary ID",
+                "url": "https://example.test/supplementary",
+            },
+            {
+                "targetId": "\ue000",
+                "type": "page",
+                "title": "Private-use ID",
+                "url": "https://example.test/private-use",
+            },
+        ]
+    if _SCENARIO == "list_native_redaction":
+        return [
+            {
+                "targetId": "NATIVE-REDACTION",
+                "type": "page",
+                "title": f"Native {os.environ.get('TYPESAFE_API_KEY', '')}",
+                "url": (
+                    "https://example.test/"
+                    + os.environ.get("TEXT_MODEL_API_KEY", "")
+                ),
+            }
+        ]
+    if _SCENARIO == "list_omission":
+        items = [
+            {
+                "targetId": f"TAB-{index:03d}",
+                "type": "page",
+                "title": "T" * 700,
+                "url": "https://example.test/" + "U" * 2_500,
+            }
+            for index in range(40)
+        ]
+        items[0]["title"] = os.environ.get("TYPESAFE_API_KEY", "") + "T" * 700
+        items[0]["url"] = (
+            "https://example.test/?value="
+            + os.environ.get("TEXT_MODEL_API_KEY", "")
+            + "U" * 2_500
+        )
+        items.extend(
+            [
+                {
+                    "targetId": "X" * 600,
+                    "type": "page",
+                    "title": "overlong id",
+                    "url": "https://example.test/overlong-id",
+                },
+                {
+                    "targetId": os.environ.get("TYPESAFE_API_KEY", ""),
+                    "type": "page",
+                    "title": "credential-shaped id",
+                    "url": "https://example.test/credential-id",
+                },
+            ]
+        )
+        return list(reversed(items))
+    if _SCENARIO in {"borrowed_missing", "borrowed_closed"}:
+        return []
+    if _SCENARIO == "borrowed_unsuitable":
+        return [
+            {
+                "targetId": "rlcd-borrowed-target",
+                "type": "page",
+                "title": "Internal",
+                "url": "chrome://settings/",
+            }
+        ]
+    return [
+        {
+            "targetId": "rlcd-borrowed-target",
+            "type": "page",
+            "title": "Borrowed fixture",
+            "url": _STATE["url"],
+        }
+    ]
+
+
 def _cdp(method, session_id=None, **params):
-    del session_id
+    if method == "Target.getTargets":
+        _append("RLCD_TEST_BROWSER_MARKER", "get-targets")
+        return {"targetInfos": _target_infos()}
     if method == "Target.createTarget":
         _append("RLCD_TEST_BROWSER_MARKER", "created:rlcd-owned-target")
         return {"targetId": "rlcd-owned-target"}
     if method == "Target.attachToTarget":
+        target_id = params.get("targetId")
+        _append("RLCD_TEST_BROWSER_MARKER", f"attach:{target_id}")
         if _SCENARIO == "constructor_interrupt":
             os.kill(os.getpid(), signal.SIGTERM)
+        if target_id == "rlcd-borrowed-target":
+            return {"sessionId": "rlcd-borrowed-session"}
         return {"sessionId": "rlcd-owned-session"}
+    if method == "Target.detachFromTarget":
+        detached = params.get("sessionId")
+        _append("RLCD_TEST_BROWSER_MARKER", f"detach:{detached}")
+        if _SCENARIO == "borrowed_detach_failure":
+            raise RuntimeError("synthetic detach failure")
+        return {}
     if method == "Target.closeTarget":
         target_id = params.get("targetId")
         _append("RLCD_TEST_BROWSER_MARKER", f"close:{target_id}")
         if target_id != "rlcd-owned-target":
             raise RuntimeError("attempted to close an unrelated target")
         return {"success": _SCENARIO not in {"close_false", "slow_close_false"}}
-    if method == "Target.getTargets":
-        return {"targetInfos": []}
     if method == "Page.navigate":
         _STATE["url"] = params["url"]
+        _STATE["destination"] = False
+        _persist_state()
+        _append(
+            "RLCD_TEST_BROWSER_MARKER",
+            f"navigate:{session_id}:{params['url']}",
+        )
         return {"frameId": "fixture-frame"}
+    if method == "Emulation.setFocusEmulationEnabled":
+        enabled = params.get("enabled")
+        _append(
+            "RLCD_TEST_BROWSER_MARKER", f"focus:{session_id}:{str(enabled).lower()}"
+        )
+        if not enabled and _SCENARIO == "borrowed_focus_release_failure":
+            raise RuntimeError("synthetic focus release failure")
+        if not enabled and _SCENARIO == "borrowed_cleanup_attribute_error":
+            raise AttributeError("synthetic focus release attribute error")
+        return {}
     if method.startswith("Emulation."):
         return {}
     if method == "Input.dispatchMouseEvent":
         if params.get("type") == "mouseReleased":
             _STATE["destination"] = True
+            _persist_state()
             _append("RLCD_TEST_BROWSER_MARKER", "click:continue")
+        if params.get("type") == "mouseWheel":
+            _STATE["destination"] = True
+            _persist_state()
+            _append("RLCD_TEST_BROWSER_MARKER", "scroll:down")
         return {}
     if method == "Input.dispatchKeyEvent":
         return {}
     if method == "Input.insertText":
         value = params["text"]
         _STATE["typed"] = value
+        _persist_state()
         _append("RLCD_TEST_FIELD_MARKER", f"value:{value}")
         return {}
     if method == "Runtime.evaluate":
         expression = params.get("expression", "")
         if expression == "document.readyState":
             value = "complete"
+        elif expression == "JSON.stringify({url:location.href,topLevel:self===top})":
+            value = json.dumps({"url": _STATE["url"], "topLevel": True})
         elif "return state?.marker ?? null" in expression:
             value = _page()["marker"]
         elif "return c ? [c.pageKey()" in expression:
@@ -399,6 +749,8 @@ def _cdp(method, session_id=None, **params):
         elif "return {x,y}" in expression:
             value = {"x": 100, "y": 100}
         elif "if (!document.body) return null" in expression:
+            if _SCENARIO == "borrowed_constructor_error":
+                raise RuntimeError("synthetic borrowed initial observation failure")
             value = _page()
         else:
             value = None
@@ -419,16 +771,26 @@ def _choice(criteria, selected):
 
 
 def _helper_response(key, body):
-    if os.environ.get("TEXT_MODEL_BASE_URL") != "https://openrouter.ai/api/v1":
-        raise RuntimeError("runner did not select the OpenRouter helper base URL")
-    if os.environ.get("TEXT_MODEL") != "inclusionai/ling-3.0-flash":
-        raise RuntimeError("runner did not select Ling 3.0 Flash")
-    if os.environ.get("TEXT_MODEL_REASONING") != "none":
-        raise RuntimeError("runner did not disable helper reasoning")
+    if body.get("model") != "deepseek-flash":
+        raise RuntimeError("native helper request did not forward deepseek-flash")
+    if body.get("thinking") != {"type": "disabled"}:
+        raise RuntimeError("native helper request did not disable thinking natively")
+    if "reasoning" in body:
+        raise RuntimeError(
+            "native helper request retained the OpenRouter reasoning field"
+        )
+    if body.get("response_format") != {"type": "json_object"}:
+        raise RuntimeError("native helper request did not retain JSON-object output")
+    if body.get("max_tokens") != 1024:
+        raise RuntimeError("native helper request did not retain the output token cap")
+    if os.environ.get("TEXT_MODEL_BASE_URL") != "https://api.deepseek.com/v1":
+        raise RuntimeError("runner did not select the direct DeepSeek helper base URL")
+    if os.environ.get("TEXT_MODEL") != "deepseek-flash":
+        raise RuntimeError("runner did not select deepseek-flash")
+    if os.environ.get("TEXT_MODEL_REASONING") != "disabled":
+        raise RuntimeError("runner did not preserve native thinking disablement")
     if key != os.environ.get("TEXT_MODEL_API_KEY"):
         raise RuntimeError("native helper did not receive its child environment key")
-    if body.get("reasoning") != {"enabled": False}:
-        raise RuntimeError("native helper request did not disable reasoning")
 
     if _SCENARIO == "helper_invalid_empty":
         content = json.dumps({"text": " "})
@@ -448,16 +810,78 @@ def _helper_response(key, body):
     }
 
 
+def _report_response(body):
+    marker = os.environ.get("RLCD_TEST_REPORT_MARKER")
+    if marker:
+        Path(marker).write_text(
+            json.dumps(body, ensure_ascii=False, sort_keys=True), encoding="utf-8"
+        )
+    questions = body["questions"]
+    candidates = body["state"]["candidates"]
+    goal = str(body["state"]["goal"]).lower()
+    if _SCENARIO == "report_provider_error":
+        raise RuntimeError("upstream phrase: no action executed")
+    if _SCENARIO == "report_cancelled":
+        time.sleep(30)
+    if _SCENARIO == "report_invalid":
+        return {
+            "model": "deterministic-reporting-fake",
+            "answers": {"unexpected": {"type": "noul", "noul": 0.9}},
+            "usage": {"input_tokens": 13, "output_tokens": 5},
+        }
+
+    answers = {}
+    for index, question_id in enumerate(questions):
+        candidate = candidates[index]
+        exact = str(candidate.get("exact", "")).lower()
+        operation = str(candidate.get("operation", "")).lower()
+        action_label = str(candidate.get("actionLabel", "")).lower()
+        score = 0.05
+        if _SCENARIO == "report_span_context":
+            context = str(body["state"]["judgmentContext"])
+            if (
+                exact == "120 credits per month."
+                and "Requested monthly total:\n120 credits per month." in context
+            ) or exact == "estimate excludes service charges.":
+                score = 0.96
+        elif _SCENARIO == "report_duplicates":
+            score = 0.9
+        elif "field 047" in goal and "field 047:" in exact:
+            score = 0.96
+        elif "identifier" in goal and "requested identifier:" in exact:
+            score = 0.96
+        elif "estimated total" in goal and (
+            "estimated total:" in exact or "estimate excludes" in exact
+        ):
+            score = 0.94
+        elif "scroll" in goal and (
+            "scroll" in operation or "scroll" in action_label
+        ):
+            score = 0.98
+        elif "clear-19" in goal and "clear-19" in exact:
+            score = 0.97
+        answers[question_id] = {"type": "noul", "noul": score}
+    return {
+        "model": "deterministic-reporting-fake",
+        "answers": answers,
+        "usage": {"input_tokens": 13, "output_tokens": 5},
+    }
+
+
 def _post_json(url, key, body):
     _append("RLCD_TEST_MODEL_MARKER", f"request:{url}")
     if "questions" not in body:
+        if url != "https://api.deepseek.com/v1/chat/completions":
+            raise RuntimeError(
+                "native helper request did not use the direct DeepSeek URL"
+            )
         return _helper_response(key, body)
 
     if os.environ.get("TYPESAFE_MODEL") != "jev-1.13.0":
         raise RuntimeError("runner did not select the pinned Jev model")
     if key != os.environ.get("TYPESAFE_API_KEY"):
         raise RuntimeError("native Jev call did not receive its child environment key")
-    if _SCENARIO == "model_error":
+    if _SCENARIO in {"model_error", "borrowed_cleanup_attribute_error"}:
         raise RuntimeError("provider failed before a decision")
     if _SCENARIO in {"slow_model", "slow_close_false"}:
         time.sleep(30)
@@ -475,6 +899,8 @@ def _post_json(url, key, body):
         os._exit(29)
 
     questions = body["questions"]
+    if questions and all(str(name).startswith("keep_c") for name in questions):
+        return _report_response(body)
     operations = questions["operation"]["criteria"]
     if _SCENARIO in {
         "fill",
@@ -483,7 +909,13 @@ def _post_json(url, key, body):
         "secret_error",
     }:
         operation = "DONE" if _STATE["typed"] else "TYPE_TEXT"
-    elif _SCENARIO == "done" or _STATE["destination"]:
+    elif _SCENARIO == "report_scroll" and not _STATE["destination"]:
+        operation = "SCROLL_DOWN"
+    elif (
+        _SCENARIO == "done"
+        or _STATE["destination"]
+        or _SCENARIO.startswith("report_")
+    ):
         operation = "DONE"
     elif _SCENARIO == "blocked":
         operation = "BLOCKED"
@@ -510,11 +942,14 @@ def _post_json(url, key, body):
     if _SCENARIO == "terminal_overflow":
         usage = {f"large-key-{index}": "V" * 5_000 for index in range(40)}
 
-    return {
+    result = {
         "model": reported_model,
         "answers": answers,
         "usage": usage,
     }
+    if _SCENARIO == "report_missing_key":
+        os.environ.pop("TYPESAFE_API_KEY", None)
+    return result
 
 
 model.post_json = _post_json

@@ -5,7 +5,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 import rlcdBrwsrExtension from "../config/pi/extensions/rlcd-brwsr.ts";
 
-test("loading the production extension only registers rlcd_brwsr_run", () => {
+test("loading the production extension registers discovery and run without other work", () => {
   const registered: string[] = [];
   const pi = {
     registerTool(tool: { name: string }) {
@@ -15,5 +15,5 @@ test("loading the production extension only registers rlcd_brwsr_run", () => {
 
   rlcdBrwsrExtension(pi);
 
-  assert.deepEqual(registered, ["rlcd_brwsr_run"]);
+  assert.deepEqual(registered, ["rlcd_brwsr_list_tabs", "rlcd_brwsr_run"]);
 });

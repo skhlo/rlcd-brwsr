@@ -66,10 +66,12 @@ def main() -> int:
             )
 
         from jev_ultrafast import Agent
+        from jev_ultrafast import agent as upstream_agent
         from jev_ultrafast import browser as upstream_browser
 
         for owner, attribute in (
             (Agent, "run"),
+            (upstream_agent, "Browser"),
             (upstream_browser, "cdp"),
         ):
             if not hasattr(owner, attribute):

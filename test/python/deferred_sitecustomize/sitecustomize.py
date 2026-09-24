@@ -53,6 +53,12 @@ def _import_after_native_env(
         _installed = True
         builtins.__import__ = _original_import
         runpy.run_path(os.environ["RLCD_BASE_FAKE"])
+        if os.environ.get("RLCD_TEST_SCENARIO") == "list_native_resolution_error":
+            raise RuntimeError(
+                "native load failed for "
+                f"{os.environ.get('TYPESAFE_API_KEY', '')} and "
+                f"{os.environ.get('TEXT_MODEL_API_KEY', '')}"
+            )
     return module
 
 

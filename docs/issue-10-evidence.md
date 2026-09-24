@@ -1,5 +1,13 @@
 # Issue #10 evidence
 
+> **Historical and superseded.** This records an earlier command-level bridge
+> and progress implementation, not the current architecture. See the
+> [current contract](RLCD-BRWSR.md) and
+> [current verification evidence](thin-python-evidence.md#compact-handoff).
+> Pending statements below are historical, not current work assignments.
+> `artifacts/` paths identify ignored operator-local receipts that are not
+> distributed as public links.
+
 The first upstream-backed slice was exercised through the registered Pi tool,
 the real Python bridge and pinned Jev Agent, Browser Harness 0.1.13, and an
 isolated Chrome. Model HTTP was replaced by the deterministic fixture responder;

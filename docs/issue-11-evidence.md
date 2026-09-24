@@ -1,5 +1,13 @@
 # Issue #11 evidence
 
+> **Historical and superseded.** The generic helper and later Pi-native Luna
+> helper recorded here are no longer the implementation. See the
+> [current contract](RLCD-BRWSR.md) and
+> [current verification evidence](thin-python-evidence.md#compact-handoff) for
+> the native field-text path. Pending statements below are historical, not
+> current work assignments. `artifacts/` paths identify ignored operator-local
+> receipts that are not distributed as public links.
+
 Base: `f103e64571d93ce8a1cb26546f78eacc1936dc85`.
 
 The original evidence below records the then-approved API-key helper. The

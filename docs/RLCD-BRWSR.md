@@ -1,331 +1,311 @@
-# RLCD-brwsr plan
+# RLCD-brwsr contract
 
-Status: the thin Python-owned rewrite is **implemented and locally verified**.
-Corrected implementation `b3b42036` passed 20 automated tests and four repeated
-Pi-TUI/real-Chrome command checks with synthetic provider replies. Those command
-checks invoke the registered tool, not an outer-LLM-issued tool turn. A later
-bounded live helper probe and one local fixture through Pi's normal agent-turn
-path also passed, using real Jev and Ling on that unchanged implementation. The
-current hardened local candidate has a 38-test deterministic suite; it has not
-received a new live, real-Chrome, outer-agent-turn or public-site check. See
-the [verification record](thin-python-evidence.md). The user confirmed
-dropping `maxActions`, selected OpenRouter `inclusionai/ling-3.0-flash`, and
-accepted available native usage with explicitly incomplete Pi totals. The build
-itself excluded live calls. The subsequent allowance covered only the live
-helper probe and one 30-second local fixture; it did not cover public-site
-trials. No push or PR has occurred.
+RLCD-brwsr delegates one bounded browser task to the pinned Jev Ultrafast Agent.
+The outer agent remains responsible for authorization, consequential-action
+judgment, recovery, and independent verification. The initial operating scope is
+benign, unauthenticated, and non-booking. Neither the wrapper nor upstream
+claims prompt-injection immunity or recognition of every consequential control.
 
-The larger experimental Pi-native-helper implementation remains historical at
-`dde01a46dba112dbf9d002aeb2ebe2626363c034`. Its delivery gate was cancelled,
-not passed; four static review findings remain recorded. Recovery preserved all
-three gate correction commits. Nothing was pushed and no new PR was created.
-The old as-built contract remains available in this document's Git history at
-that commit, with historical verification in the issue evidence files.
+Baseline acceptance, verification status, and raw evidence are owned by
+[thin-python-evidence.md](thin-python-evidence.md#compact-handoff).
 
-## Decision and reason
+## Public tools
 
-Use the pinned upstream `Agent.run()` generator and its native API-key text
-helper. Python owns the browser run and its state. Pi launches it, requests stop,
-reaps the process and displays a bounded result. Do not port upstream to
-TypeScript or retain a Pi-Luna callback as another helper backend.
-
-This trades an additional host-local text-provider key for less orchestration:
-no bidirectional helper relay, no TypeScript shadow browser state and no
-cross-language action-history reconciliation. It also deliberately promises
-less after forced termination. [ADR-0003](adr/0003-python-owned-run.md) records
-this change to ADR-0002's later amendments.
-
-## What the investigation established
-
-[Thin Python feasibility](thin-python-feasibility.md) owns the source citations
-and probe findings. The evidence is narrow:
-
-- At the pinned revision, `Agent.run()` returns a synchronous generator. It
-  yields snapshots; exhausting it does not return a separate result object.
-- Eleven offline assertions exercised native completion, text validation,
-  limits and signals with external Browser/provider fakes. Expected failures
-  and unknown cleanup counted as passing assertions, not successful cleanup.
-- Two direct-runtime fixtures used the real Agent, native helper validation,
-  Browser Harness and isolated Chrome, with synthetic Jev/helper HTTP replies.
-  Independent CDP inspection verified the exact click and text-entry targets.
-  Exact close responses were true and the target baseline was restored.
-- A separate normal-retention probe confirmed an exact task target remained
-  inspectable after its Python child exited and was reaped, then closed that
-  target. A preceding harness setup failure is retained; this was not a
-  first-attempt reliability result.
-- At that stage no new Pi wrapper had been tested. No live Jev/helper inference,
-  provider compatibility, public-site reliability, general cancellation
-  guarantee or speed improvement was established.
-
-The source/probe distinction still matters: those direct upstream fixtures were
-a reason to build the wrapper, not acceptance evidence for the implementation.
-
-## Implemented interface
-
-Keep `rlcd_brwsr_run` and initially expose only:
+The extension registers two inert, sequential Pi tools:
 
 ```ts
+rlcd_brwsr_list_tabs({});
+
 rlcd_brwsr_run({
-  url: string;
+  url?: string;
+  targetId?: string;
   goal: string;
-  maxSeconds?: number;
+  maxSeconds?: number; // default 30; 1 through 120
   retainTab?: boolean;
 });
 ```
 
-- Validate the HTTP(S) URL, nonempty goal and serialized request before starting
-  a process. No shell interpolation or credentials in argv.
-- `maxSeconds` is a coarse stop-request deadline measured by Pi from before
-  startup. A fixed shutdown grace follows it. It is not a promise that no browser
-  action crossed the deadline or that stopping a process rolled back input.
-- `retainTab` applies only to a normal upstream completion claim. Retention
-  requires a usable task-target handle and must not retain the runner process.
-- Schedule sequentially within Pi, without claiming a global browser lock.
+Registration performs no installation, browser/service operation, tab
+inspection, or model call. Sequential execution prevents overlap inside one Pi
+session; it is not a global browser or user lock.
 
-**Implemented contract reduction:** `maxActions` is absent. There is no
-replacement per-call step knob or compatibility alias. Upstream's native limits
-remain unchanged: history counts waits
-and scrolls as well as clicks/fills and is capped at 60, with a separate
-120-decision cap. These are not HTTP-attempt or spend caps. The wrapper adds
-only the coarse `maxSeconds` stop request.
+### Tab discovery
 
-## Ownership and smallest implementation
+Discovery has a fixed five-second parent deadline and reads the configured,
+already-running Browser Harness connection. It returns bounded `page` targets
+whose current URL is HTTP(S), plus exact `about:blank` pages. It:
 
-```text
-Pi tool
-  -> validate input; start fixed project-local Python with one JSON stdin request
-  -> Python resolves native configuration and requires the existing named Harness daemon
-  -> Python constructs Agent and consumes Agent.run()
-  -> upstream owns observation, Jev selection, native helper HTTP and browser input
-  -> Python projects available state, makes the normal cleanup/retention decision
-  <- one bounded terminal JSON result
-```
+- performs no navigation, foreground selection, Agent construction, or model
+  call;
+- sorts exact target IDs by UTF-8 byte order;
+- returns IDs unchanged or omits them;
+- clips titles to 512 UTF-8 bytes and URLs to 2,048 bytes with field labels;
+- distinguishes an empty successful list from an error; and
+- reports omitted tab records within the 16 KiB terminal bound.
 
-The small TypeScript launcher owns only input validation, process I/O bounds,
-its stop reason, stop/reap handling and presentation. It does not reconstruct
-browser phases or merge helper replies with Python history. Installed Pi 0.85.1
-`pi.exec` lacks the stdin and output-bound controls this interface needs; use a
-small Node built-in `spawn` helper rather than another process package/framework.
-For each valid request, one spawn-first supervisor owns the child, first observed
-stop, original absolute deadline, pipe bounds, escalation and observed reap.
-There is no asynchronous file-access precheck or separate pre-spawn stop owner.
-A no-PID launch error remains a definite pre-start setup result; Python starting
-with an absent script becomes a reaped non-clean result with unknown execution
-and task-tab cleanup. The escalation path is exercised locally with a child that
-ignores `SIGTERM`.
+Titles and URLs are untrusted display data. Discovery establishes technical
+eligibility, not authorization to act.
 
-Python owns the Agent reference, current upstream state, known task target,
-provider configuration, result projection, redaction and normal cleanup. Iterate
-`Agent.run()` rather than separately driving `predict` and `act`. Keep state
-local to Python; do not stream a second model of the run to Pi. On a handled
-exception, project only state that actually exists. Do not dump full native
-snapshots: they contain raw model request/answer data and potentially large
-history and page data.
+### Run input
 
-Two small pinned integrations remain justified:
+At least one of `url` or `targetId` is required:
 
-1. Bind upstream's imported `ensure_daemon` startup symbol to Harness's
-   `require_existing_daemon`, retaining the current resolved-configuration and
-   reported-mode checks. Calling direct `Agent` otherwise permits automatic
-   setup/recovery.
-2. Once construction returns a known target, use its pinned handle for optional
-   retention and one direct `Target.closeTarget` call. Report confirmed closure
-   only from a successful response; `Agent.close()` returning is not proof.
+- `url` alone creates a task tab and preserves optional `retainTab` behavior.
+- `targetId` alone continues the exact borrowed tab's current HTTP(S) page
+  without startup navigation.
+- Both values navigate that exact borrowed tab to the HTTP(S) URL before the
+  goal. An `about:blank` target is eligible only in this mode.
 
-No startup target interception, parent fallback-cleanup mode, tab-difference
-ownership inference, generic RPC framework, new daemon or durable run journal
-is part of the implementation.
+URLs must be absolute HTTP(S), contain no credentials, and be at most 2,048
+characters. Goals are trimmed, nonempty, and at most 24,000 characters. Target
+IDs are opaque, nonblank, valid UTF-8 strings of at most 512 bytes; they are
+never trimmed, case-folded, shortened, guessed, or matched by title/URL. Any
+supplied `retainTab`, including `false`, is invalid with `targetId`. The
+serialized child request, including its newline, is capped at 32,768 UTF-8
+bytes.
 
-## Configuration and operating scope
+There is no `maxActions`, alias, or per-call step setting. Upstream's pinned
+limits remain 60 history entries, including waits and scrolls, and 120
+decisions. They are not HTTP-attempt, token, or spend caps.
 
-Retain the uv-managed Python 3.12 environment, Jev Ultrafast commit
-`1231850a0bf1a0c0341fe408ef1668dbbfdfac46`, Browser Harness 0.1.13 and evaluated
-Jev model pin. Browser Harness remains the single browser-configuration owner.
-Loading the Pi extension stays inert; installation/provisioning is explicit,
-and tool runs require the already-provisioned named daemon while rejecting
-currently resolved remote/cloud configuration and unsupported reported modes.
-
-This intentionally does not attest that an already-running same-named `cdp`
-daemon matches the current endpoint, profile, or local-vs-remote settings.
-Browser Harness consumes those settings at daemon startup, and `cdp` is only a
-reported mode. After any browser setting changes, the operator must explicitly
-stop the existing daemon, restart it, and reprovision through the project setup
-path before preflight or another tool run. Otherwise the stale daemon can still
-reach a remote or otherwise wrong browser.
-
-Use native `TYPESAFE_API_KEY` and `TEXT_MODEL_*` settings through the authorized
-host-local environment/configuration. Do not introduce a secret store, copy
-existing credentials or read Pi's OAuth credentials. The selected text helper
-is OpenRouter `inclusionai/ling-3.0-flash`; Jev remains the decision model.
-After Browser Harness loads its native workspace environment, one shared runtime
-owner supplies these selected settings process-locally when absent and rejects
-conflicting values before daemon checks or browser startup:
+## Ownership
 
 ```text
-TEXT_MODEL_BASE_URL=https://openrouter.ai/api/v1
-TEXT_MODEL=inclusionai/ling-3.0-flash
-TEXT_MODEL_REASONING=none
+Pi extension
+  -> validate one request and start one fixed project-local Python child
+  -> own the absolute deadline, first parent stop, bounded pipes, escalation,
+     observed exit, terminal validation, and compact presentation
+Python runner
+  -> load native configuration and require the existing named Harness daemon
+  -> construct the upstream Agent or exact-session borrowed-tab adapter
+  -> consume Agent.run(), project bounded state, and perform handled cleanup
+Upstream Jev Ultrafast + Browser Harness
+  -> own observation, candidates, decisions, field-text generation, freshness,
+     browser input, and native run state
+Python reporter, after handled cleanup
+  -> optionally ask pinned Jev to select exact bounded handoff evidence
+Pi extension
+  <- retain bounded diagnostic details and show separate compact content
 ```
 
-`TEXT_MODEL_API_KEY` must come from a host-local OpenRouter key; this build did
-not read or configure one during implementation. The later explicitly authorized
-tests reused preserved host-local keys in process environments without copying
-them to another file. The reasoning setting makes the unchanged upstream helper
-send `reasoning.enabled: false`. One subsequent live helper response validated
-`Busan` and reported zero reasoning tokens; this does not guarantee every route
-or request will behave identically. Its current JSON-mode route and
-pricing differ from the model's cheapest advertised route; see the
-[provider evidence](openrouter-ling-3.0-flash.md). An offline probe verified the
-native request shape and local value validation only. No provider adapter or
-routing selector is added.
+Python is the sole owner of the Agent reference, upstream state, target handle,
+normal cleanup, result projection, redaction, and reporting request. Pi does not
+reconstruct browser phases, shadow history, merge helper replies, or infer
+cleanup from target differences. No TypeScript browser executor, Pi-model text
+callback, alternate helper backend, parent fallback cleanup, durable progress
+journal, or automatic retry exists.
 
-The helper remains optional for click-only tasks. Native missing-key or invalid
-value errors return sanitized errors and available state, without inventing a
-field value or switching to the outer Pi model. Run results retain the configured
-helper model, base URL and reasoning setting but omit the former guessed
-`models.textHelper.availability`. Preflight's separate
-`textHelperAvailability` reports only whether the resolved key is nonblank; it
-does not prove provider availability or credential validity.
+Three revision-pinned integrations remain:
 
-Initial tasks remain benign, unauthenticated and non-booking. The outer agent
-owns permissions and verification. Neither the wrapper nor upstream guarantees
-recognition of every consequential control or prompt-injection immunity. No
-custom extractor, site script, TypeScript port, Chrome-CLI fallback, page-cleanup
-LLM, recordings or automatic rollout is added.
+1. The runner rebinds upstream's imported `ensure_daemon` symbol to Harness's
+   `require_existing_daemon`, preventing run-time startup/recovery.
+2. Created-tab cleanup uses the pinned target handle and one direct
+   `Target.closeTarget`; only `{success: true}` confirms closure.
+3. Borrowed mode acquires one exact flattened session and temporarily supplies a
+   Browser object that reuses upstream observe/fresh/act behavior without normal
+   Browser-constructor ownership effects.
 
-## Results and deliberately narrower guarantees
+Pin changes must revalidate these seams.
 
-Python returns a small projection: completion claim or stop/error, last actually
-observed page when available, bounded recorded history, configured model names,
-upstream-retained usage, known target, cleanup outcome and a sanitized diagnostic.
-`config/runtime.json` owns a 32 KiB serialized-request cap and one 16 KiB
-terminal/model-visible JSON cap, including JSON escaping and terminal framing.
-The result reports omitted fields/records. Content and details use the same final
-projection. Local executable tests cover overflow, malformed Unicode, non-finite
-numbers and complete-key redaction before clipping.
+## Runtime and configuration
 
-- `DONE` is a completion claim, never independent proof of the goal.
-- Redact complete raw values before clipping or preview. Keep both Jev/helper
-  key privacy checks; no OAuth relay exists in this target design.
-- A handled error or cooperative stop may provide available Agent state. A hard
-  kill, failed construction or invalid/missing result may provide none. After a
-  request is accepted for dispatch, an exception escaping final projection falls
-  back to unknown execution and cleanup rather than an input-error claim.
-- Trust child execution and cleanup claims only from one structurally valid
-  terminal envelope followed by an observed zero exit without a signal. After
-  forced, nonzero, signalled, invalid-terminal, or incomplete exits, report
-  execution and cleanup as unknown; do not infer zero side effects, zero charges
-  or closed tabs. A task tab can remain for operator inspection. Do not
-  automatically retry uncertain input.
-- Keep the parent's first stop reason when requested shutdown yields no trusted
-  terminal result. A structurally valid normal completion claim followed by an
-  observed clean zero exit may win a late parent stop race when the child did
-  not report a stopped run; it remains a claim requiring independent
-  verification. Retention is valid only with that completion claim. Confirm
-  child exit before reporting it reaped; a sent signal is not an exit
-  observation. If supervised process evidence would push a child projection
-  over the terminal cap, omit that projection conservatively while retaining
-  the parent's stop and the observed reap.
-- An unexpected EOF on the child's stdout while Python remains alive is not a
-  stop trigger and proves neither completion, process exit, provider
-  cancellation nor cleanup. Browser work can continue until Pi cancellation,
-  the wall deadline or process exit.
-- No live phase-by-phase progress, hard-kill evidence recovery or universal
-  no-dispatch-after-deadline guarantee is promised.
+The project-local lock fixes Python 3.12, Jev Ultrafast commit
+`1231850a0bf1a0c0341fe408ef1668dbbfdfac46`, and Browser Harness 0.1.13.
+`config/runtime.json` is the single owner of:
 
-An upstream budget exception is not the same as Jev choosing `BLOCKED`; preserve
-the exception rather than translating solely from upstream's status field.
+```text
+Jev model                 jev-1.13.0
+field-text base           https://api.deepseek.com/v1
+field-text model          deepseek-flash
+field-text reasoning      disabled
+serialized request cap    32,768 UTF-8 bytes
+terminal/details cap      16,384 UTF-8 bytes
+```
 
-Available usage is only the subset upstream retained. Invalid helper responses,
-failed requests and retry counts can be absent. Do not equate record count with
-request count or missing usage with zero. **Confirmed initial accounting policy:**
-show bounded source-labelled records and unavailable values in tool details;
-omit Pi top-level `usage`. This leaves Pi footer/session totals incomplete and
-must be disclosed. Rate-based estimated totals are outside this initial build.
-Selecting OpenRouter and obtaining advertised rates does not recover missing fields or failed-call
-usage, and is not a reason to build a billing adapter now.
+`deepseek-flash` is DeepSeek's current V4.1 Flash alias, not immutable version
+identity. The `/v1` form selects the pinned helper's slash-sensitive direct
+DeepSeek branch. The readable `disabled` value preserves upstream's native
+`thinking: {"type":"disabled"}` payload; it is not an upstream enum.
 
-## Reuse and leave behind
+Browser Harness owns browser configuration through `BU_NAME` and its native
+workspace environment. The runner first triggers that native loader, then sets
+missing selected model values process-locally and rejects conflicts before
+daemon checks or browser startup. `TYPESAFE_API_KEY` authenticates Jev decisions
+and optional handoff reporting. `TEXT_MODEL_API_KEY` must be a DeepSeek-issued
+key for upstream text entry; click-only tasks do not need it. Preflight's helper availability means only that the resolved key is
+nonblank, not that the credential or provider is valid.
 
-Reuse dependency pins/setup, native Harness configuration and existing-daemon
-checks, inert Pi registration, browser fixtures, independent observation helpers,
-and the redaction/bounding/cleanup lessons. Reuse behavior tests where the
-contract is unchanged; do not preserve the old implementation solely for tests.
+Resolved cloud, remote WebSocket, `BU_AUTOSPAWN`, and non-loopback CDP settings
+are rejected. Provisioning may invoke Harness's native startup path. Preflight
+and runs require the selected daemon to be healthy and already running and
+accept only Harness-reported `local` or `cdp` mode.
 
-The rewrite replaced the TypeScript protocol engine and Python command-level
-bridge. It removed the Pi-Luna completion adapter, helper reply channel and
-sentinel backend, shadow state, phase validators/reducers, usage-to-field merge
-and parent fallback cleanup mode. Tests for deliberately removed promises were
-replaced with the reduced public contract. Historical branches, reports, raw
-evidence and the earlier custom-loop work remain retained.
+A same-named running `cdp` daemon is not bound to the current endpoint, profile,
+or local/remote selection by these checks. Harness consumes those settings when
+it starts, and its reported mode does not identify the live endpoint. After any
+browser-setting change, stop the daemon, restart it, and reprovision before
+preflight or use. Otherwise a stale daemon may reach a wrong or remote browser.
 
-## Implementation and verification sequence
+## Supervision and terminal trust
 
-The 38-test deterministic suite separates its evidence interfaces. Ordinary
-registered Pi-tool cases cross the real runner and pinned Agent/native helper
-while replacing external Browser/CDP and provider interactions. One labelled
-lifecycle case wraps the real Agent to interrupt known-target recovery. Internal
-process/outcome tests exercise spawn, stop precedence, fitting, EOF, hard-stop
-and observed reap without global event/timer patches or whole-extension copies.
-A direct Python projection contract supplies explicit synthetic state rather
-than mutating Agent history. The read-readiness fixture scopes a child, marker
-and workspace through callback and timeout, including the callback's lifetime;
-its cleanup bounds observation, not filesystem deletion or arbitrary callback
-execution. A timed-out filesystem removal reports its exact workspace as
-pending or unconfirmed, and late rejection is handled. Callback JavaScript
-cannot be forcibly cancelled by a Promise race.
+`maxSeconds` is a coarse parent stop deadline measured from before startup. For
+a valid request, one spawn-first supervisor owns the original absolute deadline,
+first observed parent stop, stdout/stderr drainage, and process reap. It sends
+`SIGTERM`, allows 1.5 seconds for cooperative cleanup, and sends `SIGKILL` only
+while exit remains unobserved. It does not guarantee that no browser action
+crosses the deadline or that termination rolled back input.
 
-Together they cover click/fill/DONE/BLOCKED/error, missing and malformed helper
-values, preflight/input failure, byte bounds, Unicode/non-finite normalization,
-native `.env` ordering and key privacy, first-stop precedence, post-dispatch
-projection interruption, conservative output fitting, cooperative cleanup,
-non-clean terminal rejection and a reaped TERM-ignoring child. No live credentials
-or model calls were used for this candidate.
+A pre-spawn cancellation/deadline or no-PID launch failure is `not_started`. Once
+Python starts, an absent script, nonzero or signalled exit, stdout overflow,
+missing/invalid terminal result, or exception escaping final projection leaves
+execution and applicable cleanup `unknown`. An unexpected stdout EOF while the
+child remains alive is not a stop trigger and proves no lifecycle fact.
 
-The click/default-close, text/retention, time-budget and TUI-cancellation cases
-were repeated successfully at corrected implementation `b3b42036`, using real
-upstream/Harness/Chrome and synthetic provider replies. Independent observers
-checked exact targets, retained field values, actual runner exits and restored
-browser baselines. This verifies command-invoked execution of the registered
-tool in Pi's TUI, not the whole outer-model agent-turn/tool-scheduling path.
+Pi trusts child execution and cleanup claims only when exactly one structurally
+valid terminal envelope is followed by an observed zero exit without a signal.
+The process is `reaped` only after exit is observed. The parent's first
+cancellation/deadline wins unless a trusted normal completion claim is followed
+by a clean exit and the child did not report a stopped run; that late completion
+remains a claim requiring verification. A native budget exception is not
+rewritten as Jev `BLOCKED`.
 
-The subsequent bounded live follow-up passed: the native OpenRouter helper
-returned a valid field value, and Pi's normal outer-model/tool path completed
-one local text-entry fixture using real Jev and Ling. Independent post-exit
-inspection verified the retained target, then exact cleanup restored the
-baseline. No manual retry or extra browser-tool invocation occurred.
+Raw child stderr, invalid terminal fragments, and untrusted child claims are not
+returned. If parent process evidence makes an otherwise valid projection exceed
+the terminal cap, Pi uses a conservative bounded result that preserves the
+parent stop and observed reap while reporting child facts unknown.
 
-A benign public-site acceptance task remains pending and needs its own applicable
-allowance. Preserve earlier ledgers; native step limits do not constitute a
-billing budget. Report unknown attempts/charges conservatively.
+## Tab ownership and cleanup
 
-Do not add a broader test or runtime framework to satisfy every hypothetical
-failure. A discovered limitation may require a narrower disclosed contract,
-not another state owner. The tested live local fixture does not imply general-web
-acceptance, compatibility across providers/configurations, or delivery.
+For a created tab, `retainTab: true` is honored only after a normal completion
+claim with a known target. Every other handled outcome with a usable created
+target attempts one direct close. Cleanup is `closed` only after an acknowledged
+success; otherwise it is `unconfirmed` or `unknown`. The shared daemon and
+unrelated targets are always retained.
 
-## Evidence and history
+A borrowed tab is never closed by the wrapper or upstream cleanup. Before Agent
+construction, Python validates exact target type/current URL, attaches one
+flattened session, then repeats eligibility through a session-bound top-level
+page observation. Requested navigation crosses the conservative effect boundary
+before `Page.navigate`; provider or input races after admission therefore retain
+unknown effects.
 
-The canonical development checkout is now `~/Repositories/rlcd-brwsr/`. The
-[archive index](archive.md) owns historical branch/backup locations and explains
-why the former implementation checkout remains for test resources. Pre-consolidation
-raw artifact paths below resolve under that retained checkout.
+Handled outcomes independently attempt focus-emulation disable and exact-session
+detach. Trusted borrowed results use `taskTab: "not_owned"` and report focus as
+`not_applied`, `disable_acknowledged`, or `unconfirmed`, and attachment as
+`not_acquired`, `detach_acknowledged`, or `unconfirmed`. Acknowledged focus
+disable does not prove restoration of the original document or OS focus. Forced
+termination can strand both operations; untrusted exits overwrite all three
+claims with `unknown` rather than attempting parent repair.
 
-- [Thin rewrite verification and limits](thin-python-evidence.md).
-- [Feasibility source/probe record](thin-python-feasibility.md).
-- [Selected OpenRouter helper evidence](openrouter-ling-3.0-flash.md).
-- [Next architecture decision](adr/0003-python-owned-run.md).
-- [Recovered architecture and amendments](adr/0002-wrap-pinned-jev-ultrafast-agent.md).
-- Earlier verification: [#10](issue-10-evidence.md), [#11](issue-11-evidence.md),
-  [#12](issue-12-evidence.md). Those are not tests of this rewrite.
-- Local raw probes and recovery receipts: `artifacts/thin-python-plan/`.
-- Cancelled gate: `01M33MP2Y3PGGAM3EARNPYQMTQ`; unresolved static findings R23-R26
-  are preserved in the local review log, not represented as fixed or reproduced.
+## Results, evidence, and privacy
 
-GitHub issues #9-#13 still describe the prior implementation and have not been
-rewritten by this local implementation task. The approved direction and this
-current implementation must be reconciled with those issues before the work is
-presented as satisfying them. PR #8 and historical research commits remain
-unchanged. The user's later checkout-consolidation request replaced the visible
-experimental working tree with the current implementation while preserving the
-research branches and a verified archive.
+Python's diagnostic projection contains only available current page fields, a
+bounded history suffix, configured models, upstream-retained usage, known target,
+cleanup, one sanitized primary diagnostic, output disclosures, and optional
+reporting metadata. It never returns full snapshots, raw model prompts/replies,
+unbounded history, raw stderr, or invalid terminal bytes.
+
+Before optional reporting, Python applies these principal limits:
+
+- last observed URL 2,048 bytes, title 512 bytes, and text 4,096 bytes;
+- the newest 24 history records, with bounded action/operation/URL fields;
+- at most 24 usage records, each bounded to 2,048 bytes of usage data;
+- primary diagnostic message 1,024 bytes; and
+- at most 32 explicit omission labels.
+
+It fits valid JSON rather than truncating serialized bytes. Page text, then
+history, then usage and other variable diagnostics can be omitted in the
+disclosed fitting order. Outcome, cleanup, and primary-error identity remain
+protected. Opaque target IDs are returned exactly or omitted.
+
+Complete native key values and nonempty bare or `Authorization: Bearer` values
+are redacted before clipping or reporting. Invalid Unicode is normalized;
+non-finite and JavaScript-unsafe numeric values do not survive as trusted
+numbers. Sanitized page data remains untrusted.
+
+### Optional handoff reporting
+
+After handled cleanup, normal completion claims and native `BLOCKED` outcomes
+with a page observation may issue one batched request through the pinned Jev
+transport. The reporter receives the sanitized goal, a bounded final-visible-page
+`judgmentContext`, and allowlisted candidates from that page plus the last six
+actions. It receives no browser-location metadata, target ID, primary
+diagnostic, model configuration, usage history, or raw native request/reply.
+
+The judgment context is bounded to 24,576 UTF-8 bytes; the pinned observer itself
+exposes at most 6,000 characters. It preserves source order, labels, neighbors,
+and qualifications for interpretation, but is untrusted and never becomes
+returned evidence automatically. The request has at most 128 candidates and a
+98,304-byte bound.
+
+Selectable page records are exact contiguous source copies. Short useful
+paragraphs remain independent. Long fragmented paragraphs offer individual
+nonempty lines; long lines and prose use token-aligned spans near a 128-byte soft
+target. One unsplittable token may remain whole up to the 512-byte record cap;
+larger tokens are omitted and disclosed. Under candidate pressure, adjacent
+spans may coalesce up to that cap to preserve later source without keyword
+shortlisting. Source, candidate, action, or request fitting marks coverage
+partial even if omitted selectable text remains in `judgmentContext`.
+
+One shared trusted policy limits usefulness to requested answer facts, visible
+goal-result evidence, blockers, necessary action evidence, and qualifications.
+Topic background, incidental instruction compliance, and generic site furniture
+are excluded unless themselves requested or result evidence. Each independent
+Noul judges only its offered exact page span or allowlisted action record, using
+context only for interpretation. Page identity ignores location/cut flags and
+normalizes only a leading semicolon followed by whitespace; signs, currencies,
+units, versions, caveats, no-space semicolons, and action steps remain distinct.
+
+Every answer/model/usage field is validated. At most three records at or above
+the 0.5 evaluation threshold survive whole-record identity deduplication. Missing
+source/key, provider failure, invalid response, or cooperative interruption
+produces an explicit deterministic reporting state without raw-text fallback,
+invented evidence, or changed browser facts. Reporting shares the parent
+deadline and adds no cleanup grace or second stop owner.
+
+Python bounds the browser projection before adding reporting, so evidence,
+report metadata, and `jev_handoff` usage cannot evict page text, history, or
+native usage that already fit. If the entire optional block cannot fit, details
+omit it. Absence reports reporting unavailable; it does not imply no useful
+evidence or zero reporting charges.
+
+Pi's model-facing `content` is a separate compact JSON object containing only
+`outcome`, `lastObservedLocation`, `evidence`, `cleanup`, `diagnostic`,
+`reporting`, and `output`. It excludes full page text, history, model
+configuration, per-call usage, and scores. Whole evidence records, then optional
+location/report fields, are omitted to fit the same 16 KiB cap; extracted values
+and opaque IDs are never shortened. `details` retains the bounded diagnostic
+projection. Discovery content and details remain identical.
+
+### Usage accounting
+
+Available usage is only what upstream retained. A native `usage: null` remains
+an honest unavailable value. Provider attempts, retries, failed-call usage, and
+complete billing can be absent; record count is not request count and missing
+usage is not zero. A validated report may add a source-labelled `jev_handoff`
+record when space remains. The tool deliberately returns no Pi top-level
+`usage`, so Pi footer/session totals exclude all native calls. Rate-derived
+billing estimates are outside this contract.
+
+## Verification requirements
+
+Routine local verification is:
+
+```bash
+pnpm check
+uv lock --check
+git diff --check
+```
+
+The deterministic registered-tool suite must continue to cross the real Python
+runner and pinned Agent/native helper while replacing external Browser/CDP and
+provider boundaries. It covers request modes, exact tab identity, lifecycle
+trust, cleanup, bounds, privacy, evidence selection, omissions, and both output
+surfaces. Browser/lifecycle changes require acceptance on the actual Pi surface;
+provider or public-site inference requires a separately authorized finite
+allowance. Preserve failed checks as evidence rather than rewriting them as
+passes.
+
+Future optimization is justified by observed lost information, avoidable
+follow-up, or slowness. Smaller output alone is not success when expected
+evidence is lost.

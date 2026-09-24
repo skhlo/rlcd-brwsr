@@ -505,7 +505,7 @@ export async function withReadReadyRunner<T>(
           BU_NAME: "rlcd-brwsr-read-ready-test",
           BU_CDP_URL: "http://127.0.0.1:43114",
           TYPESAFE_API_KEY: "synthetic-typesafe-key-MOON-62",
-          TEXT_MODEL_API_KEY: "synthetic-openrouter-key-STAR-73",
+          TEXT_MODEL_API_KEY: "synthetic-deepseek-key-STAR-73",
         },
         shell: false,
         stdio: ["pipe", "pipe", "pipe"],
