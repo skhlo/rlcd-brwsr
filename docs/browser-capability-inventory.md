@@ -103,10 +103,11 @@ outer agent retains authorization and verification.
 
 ## Evidence and remaining decisions
 
-This inventory came from static installed-source inspection and public,
-versioned primary sources. Neither browser CLI was executed; no daemon, tab,
-credential store or application model was used. It does not validate the
-candidates on live tasks or establish the cause of #17.
+The inventory's source-review phase used static installed-source inspection and
+public, versioned primary sources, without browser operations or application
+inference. The later [mechanics evaluation](browser-capability-run-results.md)
+and [live Jev–CLI probe](jev-cli-live-probe.md) supply separate, bounded evidence.
+Neither establishes general live-site reliability or the cause of #17.
 
 The [geometry research and fixture probe](browser-geometry-research.md) remain
 one narrow supporting experiment, not the basis for selecting the entire

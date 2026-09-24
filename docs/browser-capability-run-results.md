@@ -124,8 +124,13 @@ Operator-local records are under `artifacts/browser-capability-run/`, including
 correction authorizations, cleanup records and `keychain/STARTUP-CHECK.json`.
 They are not distributed files in a public clone.
 
-Select **one** practical adaptation before implementation. Target-aware
-scrolling currently has the clearest fixture evidence. An implementation still
-needs an explicit decision about the pinned Jev observer/executor seam, followed
-by a focused regression and a separately authorized real-Jev check. Do not adopt
-a second executor or declare #17 fixed from this evaluation.
+The next architectural choice is whether to adapt selected behaviors or reuse
+the CLI's observation/execution layer as a coherent whole. The mechanics results
+do not require adopting only one capability; implementation order is separate
+from capability selection.
+
+A subsequent, separately authorized [live Jev–CLI probe](jev-cli-live-probe.md)
+tested real model decisions over CLI observations. That evidence is separate
+from this synthetic-policy comparison. Production adoption still needs an
+explicit decision about the run owner, exact-tab routing and lifecycle
+contract; neither evaluation declares #17 fixed.

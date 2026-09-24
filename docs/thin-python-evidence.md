@@ -202,6 +202,12 @@ corrected, combined results inform capability selection, not live-Jev quality
 or a fix for #17. The report preserves driver failures, the macOS startup
 correction, separate execution allowances and untested subchecks.
 
+A separately authorized [live Jev–CLI prototype](jev-cli-live-probe.md) then
+used real Jev choices on four local fixtures: three model DONE outcomes and one
+code-enforced dialog handoff were independently confirmed. It reused the pinned
+choice policy but bypassed `Agent.run()` and the registered Pi tool, so it is
+not acceptance of a changed production runner or an established fix for #17.
+
 ## Known limits
 
 The accepted baseline retains these limits:

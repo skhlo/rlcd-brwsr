@@ -212,12 +212,17 @@ If these are unmet, choose **keep**, **recovery only**, **defer** or
 
 ## Later integration and live-Jev gate
 
-After this report, select at most one adaptation for a separately approved
-vertical slice. First prove its mechanics at the agreed public seam with a
-regression that fails without the behavior. Then consider a finite live-Jev
-comparison of baseline and candidate on the relevant fixture goal, followed by
-one independent outcome read. Only that stage can test whether Jev uses the
-capability or stops more appropriately.
+Capability selection and implementation order are separate decisions. Choose
+the useful capability set and its execution owner before implementing it; the
+set may contain several related capabilities. Focused vertical slices can keep
+verification attributable without requiring a separate release for each one.
+A production adaptation still needs a regression at the agreed public seam and
+independent outcome verification.
+
+After the mechanics comparison, the owner instead authorized a disposable
+[live Jev–CLI loop probe](jev-cli-live-probe.md) over four fixtures. Its real
+model decisions are separate evidence from the synthetic-policy matrix above;
+its success does not silently adopt that alternative architecture.
 
 That later allowance must name cases, logical calls, maximum HTTP attempts
 including retries/reporting/helper work, wall bounds and any spend ceiling. It
@@ -226,8 +231,8 @@ the original one-pixel probe does not stand in for that task.
 
 ## Approval checkpoint
 
-The initial, reference-correction, startup-check and remaining-CLI records are
-historical, not a standing allowance. Before further work, review the
-[results and omissions](browser-capability-run-results.md), choose one justified
-adaptation and approve its finite scope. No live inference was performed, and
-no production capability has been adopted from this evaluation.
+The mechanics-run, correction and startup-check records are historical, not a
+standing allowance. The later live probe also has its own completed allowance.
+Before further work, review both sets of results, choose the intended capability
+set/integration and approve its finite scope. The mechanics matrix used no live
+inference; no production capability has been adopted by either experiment.
