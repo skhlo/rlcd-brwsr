@@ -8,9 +8,12 @@ and evidence. See the [archive index](docs/archive.md).
 **Implementation status:** existing-tab targeting is implemented and locally
 verified at `ff49875`. The current branch adds the corrected generic compact
 handoff: model-facing run content is a small goal-aware result while `details`
-retains the bounded diagnostic projection. Deterministic tests and an isolated,
-command-driven Pi-TUI check use synthetic browser/provider boundaries. Live Jev
-relevance quality remains unevaluated; no user tab or live provider was used.
+retains the bounded diagnostic projection. All 67 deterministic tests and an
+isolated command-driven Pi-TUI check passed with synthetic browser/provider
+boundaries. A separately authorized seven-case live Jev replay retained expected
+evidence in six cases; the shortened Google case returned no excerpt. This is
+limited relevance evidence, not a general quality guarantee. No user tab was
+touched by the compact-output verification.
 Jev and Pi's outer model remain unchanged; the native field helper is direct
 DeepSeek `deepseek-flash` with thinking disabled. The feature is local and
 unpublished. See [current verification and limits](docs/thin-python-evidence.md#compact-handoff)
@@ -64,16 +67,16 @@ setting, stop the existing same-named daemon with Harness's native controls,
 then restart it through `scripts/provision-browser.sh` before preflight or tool
 use.
 
-`TYPESAFE_API_KEY` authenticates Jev decisions. `TEXT_MODEL_API_KEY` must be a
-DeepSeek-issued key for the optional native field-text helper. The parent-owned,
-human-run four-stage wizard will supply these names and values in Browser
-Harness's native workspace `.env`; this repository task does not author or run
-that wizard and does not read or write the host `.env`.
+`TYPESAFE_API_KEY` authenticates Jev decisions and optional evidence selection.
+`TEXT_MODEL_API_KEY` must be a DeepSeek-issued key for the optional native
+field-text helper. Configure these through the owning host's Browser Harness
+workspace environment. Its normal loader reads that `.env` during authorized
+runtime use; this feature does not copy or edit the credential store or rerun
+the host-local setup wizard.
 
-Do not use the retained old `pi-rlcd` launcher for direct DeepSeek. It injects an
-OpenRouter key into `TEXT_MODEL_API_KEY`, so the credential could reach the
-wrong provider endpoint. The parent task will make that launcher fail closed
-without deleting it; this repository change does not edit the launcher.
+Use plain Pi with the native configuration for direct DeepSeek, not a launcher
+that maps an OpenRouter credential into `TEXT_MODEL_API_KEY`. Host launcher
+management is separate from this repository change.
 
 `uv.lock` fixes Python 3.12, Jev Ultrafast commit
 `1231850a0bf1a0c0341fe408ef1668dbbfdfac46`, and Browser Harness 0.1.13.
@@ -266,6 +269,10 @@ smaller), while new-details versus new-content was 52.8% smaller. The five
 recorded-task inputs are shortened reconstructions, not original snapshots, and
 the two synthetic goals use the same document. These are JSON-surface byte
 comparisons, not end-to-end performance measurements. Historical real-Chrome
-and live-provider evidence remains tied to its recorded heads. None of this
-establishes live Jev relevance quality, general-web reliability, or complete
-billing.
+and live-provider evidence remains tied to its recorded heads. A later live
+reporting-only replay of seven sanitized cases validated API operation and
+retained expected evidence in six, including distinct answers to two goals over
+one document and a distant qualification. One shortened Google example was
+filtered out. Selection took 175-514 ms per case; these are not browser-task or
+end-to-end timings. General-web reliability and complete billing remain
+unestablished.

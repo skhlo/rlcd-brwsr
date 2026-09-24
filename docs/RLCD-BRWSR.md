@@ -4,11 +4,12 @@ Status: the corrected generic compact handoff is **implemented and locally
 verified** on the current feature branch, building on existing-tab targeting at
 `ff49875`. Run-tool model content is goal-aware and compact while bounded
 diagnostic `details` remains available to Pi. Deterministic registered-tool
-tests and an isolated command-driven Pi-TUI check passed with synthetic
+tests (67/67) and an isolated command-driven Pi-TUI check passed with synthetic
 browser/provider boundaries. Production-shaped sanitized reconstructions compare
-the verified old and corrected interpreters without browser actions. No user tab
-or live provider was used; live Jev
-relevance quality remains pending. The native helper remains direct DeepSeek
+the verified old and corrected interpreters without browser actions. A separately
+authorized seven-case real-Jev replay retained expected source evidence in six
+cases; the shortened Google case returned no excerpt. This is limited semantic
+evidence, not general relevance acceptance. No user tab was touched. The native helper remains direct DeepSeek
 `deepseek-flash` with thinking disabled; Jev and Pi's outer model are unchanged.
 See the [current verification record](thin-python-evidence.md#compact-handoff)
 and retained local artifacts under `artifacts/compact-output/implementation/`.
@@ -211,12 +212,13 @@ fake-provider seam verifies that payload, the absence of the OpenRouter
 `reasoning` field, the direct URL, model, JSON-object format and 1,024-token cap.
 See the [current direct-provider evidence](deepseek-direct-flash.md).
 
-The parent-owned, human-run four-stage wizard will supply the named values in
-Browser Harness's native workspace `.env`; this task does not author or run it
-and did not read or write a host `.env`. Do not use the retained old `pi-rlcd`
-launcher for direct DeepSeek: it injects an OpenRouter key into
-`TEXT_MODEL_API_KEY`. The parent task will make that launcher fail closed without
-deleting it; this repository change does not edit the launcher.
+The host-local setup wizard and native workspace `.env` remain configuration
+owned by the host, not by this feature. The normal Harness environment loader
+reads that file during authorized runtime use, including the bounded live
+relevance evaluation. This work did not rerun the wizard, manually inspect the
+file, or copy/edit the credential store. Use plain Pi with native configuration
+for direct DeepSeek, not a launcher that maps an OpenRouter credential into
+`TEXT_MODEL_API_KEY`; host launcher management remains separate.
 
 The earlier DeepSeek-through-OpenRouter selection is preserved as
 [superseded local research](openrouter-deepseek-v4.1-flash.md), and the authorized
@@ -376,8 +378,8 @@ omissions, nullable usage, scalar enum rejection, reporting-pressure priority,
 strict evidence/envelope validation, both returned surfaces, candidate/request
 caps, and honest content/details omissions. Near-cap omission-label controls
 remain accepted. One direct projection check proves an oversized token is omitted
-rather than split. No live credentials or model calls were used for this
-candidate.
+rather than split. No live credentials or model calls were used for these
+deterministic and synthetic-TUI checks.
 
 The click/default-close, text/retention, time-budget and TUI-cancellation cases
 were repeated successfully at corrected implementation `b3b42036`, using real
@@ -423,9 +425,18 @@ document. These are JSON-surface byte comparisons, not end-to-end speed, task
 cost or original-live-payload measurements. Deterministic selection proves
 plumbing, not Jev relevance quality.
 
-Live semantic acceptance and public-site acceptance remain pending and need a
-separate finite allowance. Preserve earlier ledgers; native step limits do not
-constitute a billing budget. Report unknown attempts/charges conservatively.
+The owner then authorized exactly seven sanitized model-only relevance cases.
+All seven TypeSafe calls returned valid responses with no observed client retry;
+six retained the expected evidence. Google search-label evidence was filtered out
+at relevance 0.28, and Naver was borderline at 0.52. Both goals over the shared
+synthetic document selected the requested facts without filler, retaining the
+estimate's period and distant exclusion. Selection took 175-514 ms per case,
+not end-to-end browser/outer-agent time. No user-tab or browser operation occurred.
+See the verification record and `artifacts/compact-output/live-evaluation/`.
+A no-match result is not proof that useful evidence is absent, and no threshold
+was tuned from this small sample. Broader semantic/public-site acceptance and
+complete billing remain unestablished. Additional live trials need their own
+finite allowance. Preserve earlier ledgers; native step limits are not spend caps.
 
 Do not add a broader test or runtime framework to satisfy every hypothetical
 failure. A discovered limitation may require a narrower disclosed contract,

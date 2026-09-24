@@ -3,8 +3,11 @@
 Status: accepted and implemented; the tab-targeting amendment is locally
 verified at corrected candidate `ff49875`. The current compact-handoff amendment
 separates goal-aware model-facing content from bounded diagnostic `details` and
-has deterministic plus isolated command-driven Pi-TUI evidence with synthetic
-browser/provider boundaries. Live Jev relevance quality remains pending. The
+has 67-test deterministic plus isolated command-driven Pi-TUI evidence with
+synthetic browser/provider boundaries. A separately authorized live reporting
+replay retained expected evidence in six of seven sanitized cases; one shortened
+Google case returned no excerpt. This is limited semantic evidence, not general
+relevance or public-site acceptance. No user tabs were touched. The
 helper remains direct DeepSeek `deepseek-flash` with native thinking disabled;
 Jev and Pi's outer model are unchanged. See the
 [current verification record](../thin-python-evidence.md#compact-handoff), which

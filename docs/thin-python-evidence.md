@@ -6,6 +6,8 @@ tested heads and scope.
 
 ## Compact handoff
 
+Verified runtime: `0b3c5ab0e34a002b98c279a9a5fa354ffd508c9b`, with additional
+protected-fact test assertions at `f6a7c5466f34364e8c84affbe8ab54dc3984599b`.
 The current feature branch replaces run-tool content/details identity with two
 bounded surfaces. Python keeps the full diagnostic projection in Pi `details`.
 TypeScript builds separate model-facing JSON containing only outcome, exact
@@ -39,18 +41,27 @@ enums without tightening unrelated diagnostics.
 
 Current deterministic evidence:
 
-- All 65 Node tests pass. Corrected regressions cover short Bearer privacy,
+- All 67 Node tests pass. Corrected regressions cover short Bearer privacy,
   combined source omissions, nullable native usage, report-pressure priority,
   strict scalar enums, useful short evidence groups, two goals over one generic
   document, and the unsupported near-cap omission-label construction as a
-  non-throw control. Existing browser ownership, reporting failures, bounds,
-  tab-targeting guards, cleanup, terminal trust and supervision assertions remain.
-- TypeScript, Prettier, no-write compilation of ten Python files, shell syntax,
+  non-throw control. Follow-up guards exercise 23/24 native usage-record capacity
+  through the production producer/parent, and an actually absent report with
+  maximal omission labels. Non-null target identity, primary diagnostic and all
+  original outcome/cleanup facts are checked in both output surfaces. Existing
+  browser ownership, reporting failures, bounds, tab-targeting guards, cleanup,
+  terminal trust and supervision assertions remain.
+- TypeScript, Prettier, no-write compilation of relevant Python files, shell syntax,
   lock stability and Git whitespace checks pass. Dependencies, pins, manifests
   and lockfiles are unchanged.
 - Guard proof: temporarily restoring all three scalar `String(...)` coercions
   made the malformed-array test accept a trusted completion and fail. Restoring
   narrow string validation made the same test pass; both logs are retained.
+  A later guard break that erased compact target identity failed both pressure
+  guards; restoring the runtime passed them and the full 67-test suite.
+- Targeted Standards/Spec rechecks resolved the runtime findings. The remaining
+  protected-fact verification gap was closed by the strengthened tests and a
+  read-only closure check; no runtime change followed that closure.
 - An actual Pi 0.87.1 TUI slash command invoked the production registered run
   definition and real runner with synthetic browser/provider boundaries. All 20
   assertions passed. Exact content was 821 bytes versus 2,362-byte details, a
@@ -71,11 +82,51 @@ Current deterministic evidence:
 
 Raw evidence, exact outputs, replay inputs/results, guard logs, check logs and
 resource receipts remain under `artifacts/compact-output/implementation/`; the
-bounded correction receipts are in its `correction/` directory.
-No live provider request, public-site task, user-tab operation, browser service
-change, dependency operation or publication occurred. A finite sanitized live
-relevance plan is retained for separate parent adjudication. Live semantic
-acceptance, complete billing and general-web quality remain pending.
+bounded correction receipts are in `correction/` and `correction/pressure-followup/`.
+Those implementation checks made no live provider request, public-site task,
+user-tab operation, browser service change, dependency operation or publication.
+
+### Bounded live relevance follow-up
+
+The owner separately approved seven sanitized model-only Jev cases with all
+browser tabs untouched. All seven logical calls completed with valid responses:
+seven observed client POST attempts, all HTTP 200, with no manual or native retry.
+The normal native environment loader read the existing workspace configuration
+and supplied TypeSafe authentication in the evaluation process. The credential
+store was not manually inspected, copied or changed; resolved key values were
+kept out of argv, logs and retained artifacts. DeepSeek and the outer Pi model
+were not called.
+
+Six of seven configured evidence-retention checks passed. The shortened Google
+query/results/weather-label excerpt received relevance 0.28 and was not selected.
+Naver's corresponding Korean excerpt was selected at 0.52, near the 0.5 policy
+threshold. Maps search labels and the sanitized local-overview state survived;
+the community case retained the recorded SCROLL_DOWN action. Two goals over one
+synthetic document selected different records: the identifier alone, or the
+estimated amount and monthly period plus its distant service-charge exclusion.
+Neither selected the configured filler. Every selected record exactly matched
+an offered sanitized source record.
+
+The Google result is a miss against this shortened fixture's expected excerpt,
+not evidence that a full live Google page or browser task would fail. The
+code-owned location and outcome remain available independently of text selection.
+No-match is a relevance judgment, not proof of absence. No prompt, threshold,
+code or corpus was changed in response to this small sample.
+
+Selection took 175-514 ms per case (median 187 ms); the evaluation completed in
+1,667 ms. Successful responses reported 5,461 input and 348 output tokens.
+These are isolated reporting measurements, not browser-task/outer-agent timing
+or a complete bill. Five inputs were shortened independent-observation
+reconstructions, and two were goals on one synthetic document; none were current
+browser observations or full original Agent snapshots. This is partial semantic
+acceptance, not a seven-of-seven pass, general reliability, or an end-to-end win.
+
+Evidence is retained in `artifacts/compact-output/live-evaluation/`:
+`REPORT.md`, `authorization.json`, `attempts.json`, `results.json`, `summary.json`
+and `run.py`. No browser/daemon connection or tab action occurred, the HTTP
+client was closed and no evaluation process remained. Nothing was pushed or
+published. Broader semantic/public-site quality and complete billing remain
+unestablished; further live trials need a separate finite allowance.
 
 Historical rewrite tested implementation: `b3b42036685eba64f3e7bc8ccc296e16b9910fe9`.
 The initial rewrite is `3f984e54`; the corrected implementation was checked again,
