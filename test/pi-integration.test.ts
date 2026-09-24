@@ -107,11 +107,16 @@ if (
   throw new Error("runtime configuration must define terminalMaxUtf8Bytes");
 }
 const terminalByteLimit = Number(testRuntimeConfig.terminalMaxUtf8Bytes);
-const fragmentedReportLines = Array.from(
-  { length: 48 },
-  (_, index) =>
-    `Field ${String(index).padStart(3, "0")}: synthetic value ${String(index).padStart(3, "0")}.`,
-);
+const fragmentedReportLines = [
+  `Context ${"x".repeat(110)}`,
+  "Total:",
+  "$12",
+  ...Array.from(
+    { length: 48 },
+    (_, index) =>
+      `Field ${String(index).padStart(3, "0")}: synthetic value ${String(index).padStart(3, "0")}.`,
+  ),
+];
 const fragmentedReportText = fragmentedReportLines.join("\n");
 const duplicateReportRecords = [
   "Recorded date: November 9, 1914",
@@ -127,6 +132,8 @@ const duplicateReportRecords = [
   "Capacity: 12 GiB",
   "Plan includes support",
   "Plan includes support; excludes setup",
+  ";excluded",
+  "excluded",
 ];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -1759,7 +1766,13 @@ test("reporting coalesces fragmented source under one shared candidate policy", 
         ) <= 192,
       );
 
-      let cursor = 0;
+      assert.ok(
+        candidates.some((candidate) =>
+          String(candidate.exact).includes("Total:\n$12"),
+        ),
+      );
+      let previousStart = 0;
+      let coveredEnd = 0;
       for (const candidate of candidates) {
         assert.deepEqual(Object.keys(candidate).sort(), [
           "cutAfter",
@@ -1770,15 +1783,21 @@ test("reporting coalesces fragmented source under one shared candidate policy", 
           "source",
         ]);
         const exact = String(candidate.exact);
-        const start = fragmentedReportText.indexOf(exact, cursor);
+        const start = fragmentedReportText.indexOf(exact, previousStart);
         assert.ok(
-          start >= cursor,
-          `missing exact candidate after offset ${cursor}`,
+          start >= previousStart,
+          `missing ordered exact candidate after offset ${previousStart}`,
         );
-        assert.equal(fragmentedReportText.slice(cursor, start).trim(), "");
-        cursor = start + exact.length;
+        if (start > coveredEnd) {
+          assert.equal(
+            fragmentedReportText.slice(coveredEnd, start).trim(),
+            "",
+          );
+        }
+        previousStart = start;
+        coveredEnd = Math.max(coveredEnd, start + exact.length);
       }
-      assert.equal(fragmentedReportText.slice(cursor).trim(), "");
+      assert.equal(fragmentedReportText.slice(coveredEnd).trim(), "");
 
       const questions = recordField(request, "questions");
       assert.equal(Object.keys(questions).length, candidates.length);
@@ -3095,7 +3114,7 @@ test(
       assert.equal(result.signal, null);
       assert.match(
         Buffer.concat(stdout).toString("utf8"),
-        /projection contract: 6 checks passed/,
+        /projection contract: 7 checks passed/,
       );
     } finally {
       if (!closed) child.kill("SIGTERM");

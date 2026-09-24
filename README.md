@@ -8,14 +8,14 @@ and evidence. See the [archive index](docs/archive.md).
 **Implementation status:** existing-tab targeting is implemented and locally
 verified at `ff49875`. The current branch adds the corrected generic compact
 handoff and a focused selector refinement: model-facing run content stays small,
-while reporting coalesces fragmented lines, shares one precise policy, and
-conservatively deduplicates identical page records. All 69 deterministic tests
-and an isolated command-driven Pi-TUI check passed with synthetic
-browser/provider boundaries. A same-input offline replay reduced the three
-pilot request shapes without dropping nonwhitespace source text, but no grouped
-question shape has been evaluated live. A separately authorized seven-case live
-Jev replay of the earlier shape retained expected evidence in six cases; the
-shortened Google case returned no excerpt. This is limited historical relevance
+while reporting coalesces fragmented lines with bounded boundary context, shares
+one precise policy, and conservatively deduplicates identical page records. All
+69 deterministic tests and an isolated command-driven Pi-TUI check passed with
+synthetic browser/provider boundaries. A same-input offline replay reduced the
+three pilot request shapes without dropping nonwhitespace source text, but no
+corrected grouped question shape has been evaluated live. A separately
+authorized seven-case live Jev replay of the earlier shape retained expected
+evidence in six cases; the shortened Google case returned no excerpt. This is limited historical relevance
 evidence, not a quality guarantee for the refinement. A subsequent three-task
 normal-session public-page pilot passed independent verification and motivated
 the local change. Only pilot-owned tabs were operated; existing user tabs were
@@ -224,21 +224,26 @@ For normal completion claims and native `BLOCKED` outcomes with observations,
 the optional reporter sees the sanitized goal, at most 128 bounded source
 candidates, and no URL, target ID, diagnostics, model configuration, raw native
 request/reply, or usage history. It keeps ordinary blank-delimited short
-paragraphs independent, coalesces adjacent short lines in long fragmented
-paragraphs into contiguous spans near 128 UTF-8 bytes, and uses bounded
-non-overlapping token-aligned fallback slices. Normal under-limit source remains
-covered by exact slices; oversized tokens and any source/candidate truncation
-mark coverage partial. Each candidate stays within 512 bytes. One named trusted
+paragraphs independent and coalesces adjacent short lines in long fragmented
+paragraphs into forward spans near 128 UTF-8 bytes. At each coalesced-line
+boundary, the next span may also carry up to two immediately preceding complete
+short lines, bounded to 64 UTF-8 bytes of backward context and the unchanged
+512-byte whole-record limit. Context never crosses a blank-paragraph boundary;
+bounded token-aligned fallback slices remain non-overlapping. Normal under-limit
+source remains covered by the union of ordered exact slices; oversized tokens
+and any source/candidate truncation mark coverage partial. One named trusted
 policy describes direct goal evidence, necessary qualifications, site furniture,
 and untrusted candidate data; concise independent Nouls reference that policy
 and their exact candidate path. Evidence is copied exactly from the final
 visible text; action evidence copies only step, operation, action label, and
 page-change from the last six actions. Up to three records survive the unchanged
-0.5 policy after identity-based deduplication. Page identity ignores location and
-cut flags and only normalizes the observed leading-semicolon/whitespace variant;
-it does not strip general punctuation, normalize values, or use semantic
-similarity. Missing source/key, invalid response, provider failure, or
-cooperative interruption produces an honest deterministic reporting state
+0.5 policy after whole-record identity deduplication. Page identity ignores
+location and cut flags and normalizes only a leading semicolon followed by
+whitespace; a bare or no-space semicolon remains exact. It does not strip general
+punctuation, normalize values, or use semantic similarity. Action identity keeps
+the step, so otherwise identical different-step actions remain separate while
+an exact repeated same-step action can deduplicate. Missing source/key, invalid
+response, provider failure, or cooperative interruption produces an honest deterministic reporting state
 without raw-text fallback or changing browser facts.
 
 Model-facing run content contains only `outcome`, `lastObservedLocation`,
@@ -267,10 +272,10 @@ git diff --check
 The deterministic suite includes registered-tool cases that cross the real
 Python runner and pinned `Agent.run()`/native helper while substituting external
 Browser Harness CDP and provider responses. It now checks goal-dependent source
-selection, fragmented-source coverage and request shape, shared policy
-references, conservative whole-record identities, distant qualifications,
-scroll-action evidence, report failure/interruption, strict response/envelope
-validation, privacy on both surfaces, and honest bounds. Separate process/outcome
+selection, fragmented-source union coverage, bounded line-boundary context and
+request shape, shared policy references, strict semicolon and action-step
+whole-record identities, distant qualifications, scroll-action evidence, report
+failure/interruption, strict response/envelope validation, privacy on both surfaces, and honest bounds. Separate process/outcome
 and direct projection checks retain the earlier lifecycle guarantees.
 
 A corrected isolated Pi-TUI slash-command check invoked the production registered

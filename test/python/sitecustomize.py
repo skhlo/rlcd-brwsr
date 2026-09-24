@@ -322,8 +322,11 @@ def _page():
             "url": _STATE["url"],
             "title": "Generic fragmented record",
             "text": "\n".join(
-                f"Field {index:03d}: synthetic value {index:03d}."
-                for index in range(48)
+                ["Context " + "x" * 110, "Total:", "$12"]
+                + [
+                    f"Field {index:03d}: synthetic value {index:03d}."
+                    for index in range(48)
+                ]
             ),
             "scroll": {"y": 0},
             "actions": [{"id": "wait", "kind": "wait", "label": "Wait"}],
@@ -350,6 +353,8 @@ def _page():
                     "Capacity: 12 GiB",
                     "Plan includes support",
                     "Plan includes support; excludes setup",
+                    ";excluded",
+                    "excluded",
                 ]
             ),
             "scroll": {"y": 0},

@@ -14,6 +14,8 @@ from borrowed_tab import StopRequested
 REPORT_SOURCE_MAX_UTF8_BYTES = 24_576
 REPORT_CANDIDATE_MAX_UTF8_BYTES = 512
 REPORT_GROUP_TARGET_UTF8_BYTES = 128
+REPORT_BOUNDARY_CONTEXT_MAX_UTF8_BYTES = 64
+REPORT_BOUNDARY_CONTEXT_MAX_LINES = 2
 REPORT_CANDIDATE_LIMIT = 128
 REPORT_ACTION_LIMIT = 6
 REPORT_EVIDENCE_LIMIT = 3
@@ -123,7 +125,7 @@ def _trimmed_span(value: str, start: int, end: int) -> tuple[int, int] | None:
 
 
 def _source_groups(value: str, target_bytes: int) -> list[tuple[int, int]]:
-    """Keep short paragraphs whole and coalesce fragmented long paragraphs."""
+    """Keep short paragraphs whole and coalesce long ones with bounded context."""
     paragraphs: list[tuple[int, int]] = []
     start = 0
     for separator in re.finditer(r"\n[\t \r\f\v]*\n+", value):
@@ -158,21 +160,43 @@ def _source_groups(value: str, target_bytes: int) -> list[tuple[int, int]]:
             groups.append((paragraph_start, paragraph_end))
             continue
 
+        paragraph_groups: list[tuple[int, int]] = []
         group_start: int | None = None
         group_end = 0
         for line_start, line_end in lines:
             if group_start is None:
                 group_start, group_end = line_start, line_end
                 continue
-            if (
-                _utf8_bytes(value[group_start:line_end]) <= target_bytes
-            ):
+            if _utf8_bytes(value[group_start:line_end]) <= target_bytes:
                 group_end = line_end
                 continue
-            groups.append((group_start, group_end))
+            paragraph_groups.append((group_start, group_end))
             group_start, group_end = line_start, line_end
         if group_start is not None:
-            groups.append((group_start, group_end))
+            paragraph_groups.append((group_start, group_end))
+
+        line_indexes = {
+            line_start: index for index, (line_start, _) in enumerate(lines)
+        }
+        for index, (forward_start, forward_end) in enumerate(paragraph_groups):
+            candidate_start = forward_start
+            if index > 0:
+                line_index = line_indexes[forward_start]
+                for previous_index in range(
+                    line_index - 1,
+                    max(-1, line_index - REPORT_BOUNDARY_CONTEXT_MAX_LINES - 1),
+                    -1,
+                ):
+                    context_start = lines[previous_index][0]
+                    if (
+                        _utf8_bytes(value[context_start:forward_start])
+                        > REPORT_BOUNDARY_CONTEXT_MAX_UTF8_BYTES
+                        or _utf8_bytes(value[context_start:forward_end])
+                        > REPORT_CANDIDATE_MAX_UTF8_BYTES
+                    ):
+                        break
+                    candidate_start = context_start
+            groups.append((candidate_start, forward_end))
     return groups
 
 
@@ -453,7 +477,7 @@ def _validated_response(
 def _candidate_identity(candidate: dict[str, Any]) -> tuple[Any, ...]:
     if candidate["kind"] == "page":
         exact = candidate["exact"].strip()
-        if exact.startswith(";"):
+        if re.match(r"^;\s", exact):
             exact = exact[1:].lstrip()
         return ("page", exact)
     return (

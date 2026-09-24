@@ -3,11 +3,12 @@
 Status: accepted and implemented; the tab-targeting amendment is locally
 verified at corrected candidate `ff49875`. The current compact-handoff amendment
 separates goal-aware model-facing content from bounded diagnostic `details` and
-has 67-test deterministic plus isolated command-driven Pi-TUI evidence with
-synthetic browser/provider boundaries. A separately authorized live reporting
-replay retained expected evidence in six of seven sanitized cases; one shortened
-Google case returned no excerpt. This is limited semantic evidence, not general
-relevance acceptance. A later three-task normal-session public-page pilot passed
+has 69-test deterministic plus isolated command-driven Pi-TUI evidence with
+synthetic browser/provider boundaries. Its selector correction adds bounded
+line-boundary context and strict whole-record identity without changing owners.
+A separately authorized live reporting replay retained expected evidence in six
+of seven sanitized cases; one shortened Google case returned no excerpt. This is
+limited semantic evidence, not general relevance acceptance. A later three-task normal-session public-page pilot passed
 independent verification on pilot-owned tabs but exposed boilerplate/duplicate
 selection and reporting-token overhead. Existing user tabs were left alone. The
 helper remains direct DeepSeek `deepseek-flash` with native thinking disabled;
@@ -116,6 +117,32 @@ states with no raw-text fallback and never replace the browser outcome or
 primary diagnostic. A validated response adds one `jev_handoff` usage record;
 failed/retried usage remains unknown. Reporting shares the original parent wall
 deadline and adds no cleanup grace or second stop owner.
+
+### Selector-refinement amendment
+
+The reporting description immediately above remains decision history; this
+amendment supersedes its candidate grouping, policy placement and identity
+details. The same reporting module remains the sole owner of candidate
+construction, request policy and deterministic selection. Ordinary short
+blank-delimited paragraphs remain independent. In a long single-newline paragraph, forward
+coalescing targets about 128 UTF-8 bytes. At each coalesced-line boundary the
+next record may also include up to two immediately preceding complete short
+lines, bounded to 64 UTF-8 bytes of backward context and the unchanged 512-byte
+whole-record cap. It does not cross a blank-paragraph boundary or split lines or
+tokens to manufacture context. Forward progress and normal source coverage are
+unchanged; coverage is the union of ordered exact slices, and bounded fallback
+windows remain non-overlapping. This overlap improves local boundary context but
+does not guarantee that every arbitrarily long field fits one record.
+
+The request carries one named trusted selection policy shared by concise
+candidate-specific Nouls. Conservative identity compares whole records: page
+location and cut flags are ignored, and only a leading semicolon followed by
+whitespace is normalized. Bare and no-space semicolons, qualifiers, punctuation,
+values, units and versions remain exact. Action identity includes its step, so
+otherwise identical different-step actions remain separate while an exact
+repeated same-step action can deduplicate. Source overlap can legitimately remain
+when records contain different information. This is not substring, word-set or
+semantic deduplication, and it adds no architectural owner or lifecycle promise.
 
 Python first bounds the pre-report browser projection, then fits optional
 reporting evidence, metadata and `jev_handoff` usage in the remaining space.

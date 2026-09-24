@@ -176,9 +176,10 @@ expansion remain optimization work, not fixes completed by this pilot.
 
 ### Focused local selector refinement
 
-The later local selector refinement addresses the pilot's structural findings in
-the reporting owner without changing the browser, transport, model, threshold or
-public tool contract. Long single-newline paragraphs now coalesce adjacent short
+The initial local selector refinement at
+`4f976c0800339811c4ad1e6b2549b16a6e1e8228` addressed the pilot's structural
+findings in the reporting owner without changing the browser, transport, model,
+threshold or public tool contract. Long single-newline paragraphs now coalesce adjacent short
 lines into contiguous source slices near 128 UTF-8 bytes, widening grouping only
 under candidate pressure and retaining ordinary blank-delimited short paragraphs.
 Fallback slices remain token-aligned and bounded without overlap. One named
@@ -214,6 +215,42 @@ coverage, limits and surface plumbing only. They do not establish improved live
 relevance, actual new token use, latency, billing or broader reliability. No live
 provider, browser, credential, daemon or user-tab operation was part of this
 refinement verification.
+
+#### Consolidated selector correction
+
+A correction from the frozen refinement candidate keeps the same reporting owner
+and adds bounded context at coalesced-line boundaries. The next forward group may
+include at most two immediately preceding complete short lines and at most 64
+UTF-8 bytes of backward context without crossing a blank paragraph or exceeding
+the 512-byte record cap. Source validation now checks union coverage of ordered
+exact slices because these context records can overlap. Identity normalization
+now requires a leading semicolon followed by whitespace; bare and no-space
+semicolon forms remain exact. A direct public-reporting guard also proves that
+otherwise identical actions with different steps remain separate while an exact
+repeated same-step action deduplicates.
+
+Before repair, production reporting with synthetic callbacks selected no record
+for a generic split `Total:`/`$12` boundary and collapsed `;excluded` with
+`excluded`. Both correction guards pass after repair. The full deterministic
+suite passes 69/69, including the existing two-goal, qualification/filler,
+oversized-token, redaction, failure, cap, reporting-pressure and protected-fact
+checks.
+
+The corrected same-input replay kept candidate counts at 9/18/16 and request
+sizes at 5,541/10,530/9,663 bytes for Google/Wikipedia/birth. Against the original
+58,430/81,554/80,117-byte request shapes, those remain 90.5%/87.1%/87.9% smaller.
+All three requests had complete union coverage of ordered exact slices. The
+retained birth observation now offers `Born`, `Hedwig Eva Maria Kiesler` and
+`November 9, 1914` together in one bounded record. The largest corrected record
+was 188 bytes. Old scores were not reused across changed boundaries.
+
+A repeated isolated Pi 0.87.1 TUI slash-command acceptance passed 22/22 through
+the production registered tool with synthetic browser/provider boundaries. It
+retained the exact 63 bytes of requested amount/exclusion evidence, zero filler,
+821-byte compact content and 2,362-byte details. This was command-driven rather
+than an outer-model-issued turn. No offline score, structural replay or synthetic
+TUI check proves live relevance, actual token use, latency, billing or broader
+reliability; the corrected question shape remains unevaluated live.
 
 Historical rewrite tested implementation: `b3b42036685eba64f3e7bc8ccc296e16b9910fe9`.
 The initial rewrite is `3f984e54`; the corrected implementation was checked again,

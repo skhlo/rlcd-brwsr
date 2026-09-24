@@ -195,6 +195,58 @@ def assert_source_omissions_cover_rejected_actions_and_empty_candidates() -> Non
             os.environ["TYPESAFE_API_KEY"] = previous
 
 
+def assert_action_identity_keeps_distinct_steps() -> None:
+    previous = os.environ.get("TYPESAFE_API_KEY")
+    os.environ["TYPESAFE_API_KEY"] = "synthetic-projection-report-key"
+    try:
+        def select_all(
+            _url: str, _key: str, body: dict[str, Any]
+        ) -> dict[str, Any]:
+            return {
+                "model": "synthetic-report-model",
+                "answers": {
+                    question_id: {"type": "noul", "noul": 0.9}
+                    for question_id in body["questions"]
+                },
+                "usage": {"input_tokens": 0, "output_tokens": 0},
+            }
+
+        selected, _ = handoff_report.select_handoff(
+            goal="Retain the action steps",
+            page_text="",
+            history=[
+                {
+                    "step": 3,
+                    "operation": "CLICK",
+                    "action": "Open details",
+                    "page_changed": True,
+                },
+                {
+                    "step": 3,
+                    "operation": "CLICK",
+                    "action": "Open details",
+                    "page_changed": True,
+                },
+                {
+                    "step": 4,
+                    "operation": "CLICK",
+                    "action": "Open details",
+                    "page_changed": True,
+                },
+            ],
+            model="jev-1.13.0",
+            post_json=select_all,
+        )
+        assert selected["selectedCount"] == 2
+        assert selected["deduplicatedCandidateCount"] == 1
+        assert [item["step"] for item in selected["evidence"]] == [3, 4]
+    finally:
+        if previous is None:
+            os.environ.pop("TYPESAFE_API_KEY", None)
+        else:
+            os.environ["TYPESAFE_API_KEY"] = previous
+
+
 def assert_short_groups_support_two_goals_without_filler() -> None:
     page_text = (
         "Requested identifier: ITEM-482.\n\n"
@@ -373,9 +425,10 @@ def main() -> int:
     assert_oversized_state_is_bounded_without_agent_mutation()
     assert_candidate_bounds_do_not_split_oversized_tokens()
     assert_source_omissions_cover_rejected_actions_and_empty_candidates()
+    assert_action_identity_keeps_distinct_steps()
     assert_short_groups_support_two_goals_without_filler()
     assert_reporting_pressure_preserves_legacy_diagnostics()
-    print("projection contract: 6 checks passed")
+    print("projection contract: 7 checks passed")
     return 0
 
 

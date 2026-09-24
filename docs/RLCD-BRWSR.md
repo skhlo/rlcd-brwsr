@@ -7,9 +7,10 @@ goal-aware and compact while bounded diagnostic `details` remains available to
 Pi. Deterministic registered-tool tests (69/69) and an isolated command-driven
 Pi-TUI check passed with synthetic browser/provider boundaries. A same-input
 synthetic replay reduced the three saved pilot request shapes while preserving
-nonwhitespace source coverage. The new grouped questions were not evaluated
-live. Earlier production-shaped reconstructions and a separately authorized
-seven-case real-Jev replay remain evidence for the earlier selector shape, not
+nonwhitespace source coverage, including bounded boundary context for split
+label/value records. The corrected grouped questions were not evaluated live.
+Earlier production-shaped reconstructions and a separately authorized seven-case
+real-Jev replay remain evidence for the earlier selector shape, not
 semantic acceptance of this refinement. A later three-task normal-session
 public-page pilot passed exact-target verification using only pilot-owned tabs
 and exposed the fragmentation, duplicate and policy repetition addressed here.
@@ -261,10 +262,14 @@ post-cleanup reporting request uses the existing pinned Jev transport and model.
 Python sanitizes the original goal, full upstream-visible text before the old
 4 KiB projection clipping, and an explicit allowlist from the last six actions.
 Ordinary blank-delimited short paragraphs remain independent. Within long
-single-newline paragraphs, adjacent short lines become contiguous exact spans
-near 128 UTF-8 bytes; longer material uses bounded non-overlapping token-aligned
-fallback slices. Normal under-limit inputs preserve every nonwhitespace source
-character. Oversized tokens, rejected in-window actions and any
+single-newline paragraphs, adjacent short lines become forward exact spans near
+128 UTF-8 bytes. At a coalesced-line boundary, the next span may carry up to two
+immediately preceding complete short lines, bounded to 64 UTF-8 bytes of
+backward context and the unchanged 512-byte whole-record limit. Context does not
+cross a blank-paragraph boundary or split a line or token. Longer material keeps
+the bounded non-overlapping token-aligned fallback. Normal under-limit inputs
+preserve every nonwhitespace source character through the union of ordered exact
+slices. Oversized tokens, rejected in-window actions and any
 source/input/candidate truncation mark source coverage partial. The documented
 source remains the final visible observation plus the last six actions, not
 whole history. The reporter creates at most 128 candidates, keeps each candidate
@@ -280,11 +285,13 @@ content untrusted data. Each concise independent Noul references that policy,
 `goal`, and its actual `candidates[index]` path because question IDs are not sent
 to the model. Every answer/model/usage field is validated. Code copies at most
 three qualifying exact source records after conservative identity deduplication:
-page locations and cut flags are ignored, and only the observed leading-semicolon
-plus whitespace presentation variant is normalized. Distinct punctuation,
-values, signs, currency, units, versions, exclusions and action step identities
-remain distinct. The unchanged 0.5 threshold is evaluation policy, not a
-reliability claim; this is not semantic deduplication.
+page locations and cut flags are ignored, and only a leading semicolon followed
+by whitespace is normalized. A bare or no-space semicolon remains exact.
+Distinct punctuation, values, signs, currency, units, versions, exclusions and
+action step identities remain distinct; exact repeated same-step actions can
+deduplicate. The unchanged 0.5 threshold is evaluation policy, not a reliability
+claim; source overlap may legitimately survive when whole records contain
+different information, and this is not semantic deduplication.
 
 Python bounds the legacy browser diagnostic projection before adding reporting,
 so optional evidence, metadata and `jev_handoff` usage cannot evict page text,
@@ -389,13 +396,15 @@ cannot be forcibly cancelled by a Promise race.
 The current suite retains all click/fill/DONE/BLOCKED/error, preflight/input,
 byte/privacy, supervision, cleanup and borrowed/discovery assertions. Compact
 regressions additionally cover two goals over the same generic document,
-fragmented source coalescing with complete nonwhitespace coverage and allowlisted
-request state, one shared policy with exact candidate references, conservative
-whole-record identities, non-adjacent qualifications without repeated filler,
-scroll-action evidence, missing/invalid/interrupted reporting, short Bearer
-privacy, combined source omissions, nullable usage, scalar enum rejection,
-reporting-pressure priority, strict evidence/envelope validation, both returned
-surfaces, candidate/request caps, and honest content/details omissions. Near-cap
+fragmented source coalescing with union coverage of ordered exact slices,
+bounded two-line boundary context and allowlisted request state, one shared
+policy with exact candidate references, conservative whole-record identities
+including strict no-space semicolons and action steps, non-adjacent
+qualifications without repeated filler, scroll-action evidence,
+missing/invalid/interrupted reporting, short Bearer privacy, combined source
+omissions, nullable usage, scalar enum rejection, reporting-pressure priority,
+strict evidence/envelope validation, both returned surfaces, candidate/request
+caps, and honest content/details omissions. Near-cap
 omission-label controls remain accepted. One direct projection check proves an
 oversized token is omitted rather than split. No live credentials or model calls
 were used for these deterministic and synthetic-TUI checks.
