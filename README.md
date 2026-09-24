@@ -7,19 +7,17 @@ and evidence. See the [archive index](docs/archive.md).
 
 **Implementation status:** existing-tab targeting is implemented and locally
 verified at `ff49875`. The current branch adds the corrected generic compact
-handoff and a focused selector refinement: model-facing run content stays small,
-while reporting coalesces fragmented lines with bounded boundary context, shares
-one precise policy, and conservatively deduplicates identical page records. All
-69 deterministic tests and an isolated command-driven Pi-TUI check passed with
-synthetic browser/provider boundaries. A same-input offline replay reduced the
-three pilot request shapes without dropping nonwhitespace source text, but no
-corrected grouped question shape has been evaluated live. A separately
-authorized seven-case live Jev replay of the earlier shape retained expected
-evidence in six cases; the shortened Google case returned no excerpt. This is limited historical relevance
-evidence, not a quality guarantee for the refinement. A subsequent three-task
-normal-session public-page pilot passed independent verification and motivated
-the local change. Only pilot-owned tabs were operated; existing user tabs were
-left alone.
+handoff and a focused selector refinement: reporting coalesces fragmented lines
+with bounded context, shares one policy, and conservatively deduplicates identical
+page records. All 69 deterministic tests and 22 synthetic Pi-TUI assertions pass.
+Seven authorized live model-only checks retained expected facts and correctly
+rejected the no-answer control. For the same three saved pilot observations,
+reported input tokens fell 84.8%, but counterfactual model-facing content grew
+25.9%. Grouped excerpts still include unnecessary text and repeat the birth date
+across different passages. This is an efficiency gain, not a completed
+minimal-output improvement. Earlier browser and selector evidence remains tied
+to its recorded heads. Only pilot-owned tabs were operated in the preceding
+browser pilot; the latest model-only evaluation did not connect to the browser.
 Jev and Pi's outer model remain unchanged; the native field helper is direct
 DeepSeek `deepseek-flash` with thinking disabled. The feature is local and
 unpublished. See [current verification and limits](docs/thin-python-evidence.md#compact-handoff)
@@ -222,7 +220,8 @@ outcome, cleanup and primary-error identity.
 
 For normal completion claims and native `BLOCKED` outcomes with observations,
 the optional reporter sees the sanitized goal, at most 128 bounded source
-candidates, and no URL, target ID, diagnostics, model configuration, raw native
+candidates, and no browser-location URL or target-ID metadata, diagnostics,
+model configuration, raw native
 request/reply, or usage history. It keeps ordinary blank-delimited short
 paragraphs independent and coalesces adjacent short lines in long fragmented
 paragraphs into forward spans near 128 UTF-8 bytes. At each coalesced-line

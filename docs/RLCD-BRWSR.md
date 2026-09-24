@@ -8,12 +8,15 @@ Pi. Deterministic registered-tool tests (69/69) and an isolated command-driven
 Pi-TUI check passed with synthetic browser/provider boundaries. A same-input
 synthetic replay reduced the three saved pilot request shapes while preserving
 nonwhitespace source coverage, including bounded boundary context for split
-label/value records. The corrected grouped questions were not evaluated live.
-Earlier production-shaped reconstructions and a separately authorized seven-case
-real-Jev replay remain evidence for the earlier selector shape, not
-semantic acceptance of this refinement. A later three-task normal-session
-public-page pilot passed exact-target verification using only pilot-owned tabs
-and exposed the fragmentation, duplicate and policy repetition addressed here.
+label/value records. Seven subsequent live model-only checks retained the
+expected facts and correctly rejected a no-answer control. On the same three
+saved pilot observations, reported input tokens fell 84.8%, while offline
+production presentation of the new evidence grew 25.9%. Unnecessary context and
+semantic repetition remain, so minimal-output quality is not resolved. The
+preceding three-task normal-session public-page pilot passed exact-target
+verification on pilot-owned tabs; that browser evidence and the older selector
+replays remain tied to their recorded heads. No browser operation occurred in
+the latest model-only evaluation.
 The native helper remains direct DeepSeek
 `deepseek-flash` with thinking disabled; Jev and Pi's outer model are unchanged.
 See the [current verification record](thin-python-evidence.md#compact-handoff)

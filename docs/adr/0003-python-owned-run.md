@@ -6,11 +6,13 @@ separates goal-aware model-facing content from bounded diagnostic `details` and
 has 69-test deterministic plus isolated command-driven Pi-TUI evidence with
 synthetic browser/provider boundaries. Its selector correction adds bounded
 line-boundary context and strict whole-record identity without changing owners.
-A separately authorized live reporting replay retained expected evidence in six
-of seven sanitized cases; one shortened Google case returned no excerpt. This is
-limited semantic evidence, not general relevance acceptance. A later three-task normal-session public-page pilot passed
-independent verification on pilot-owned tabs but exposed boilerplate/duplicate
-selection and reporting-token overhead. Existing user tabs were left alone. The
+The corrected selector's seven authorized live model-only checks retained
+expected facts and rejected the no-answer control. Same-source reporting tokens
+fell, but grouped excerpts made counterfactual output larger and retained
+unnecessary context and semantic repetition. This is not complete acceptance of
+minimal-output quality. The preceding three-task normal-session public-page
+pilot and earlier six-of-seven selector replay remain historical evidence at
+their recorded heads. Existing user tabs were left alone. The
 helper remains direct DeepSeek `deepseek-flash` with native thinking disabled;
 Jev and Pi's outer model are unchanged. See the
 [current verification record](../thin-python-evidence.md#compact-handoff), which
@@ -110,8 +112,10 @@ overlap, applies the evaluation-only 0.5 threshold, and copies at most three
 source records. The request has a 98,304-byte bound and at most 128 candidates;
 the pinned observer supplies at most 6,000 characters of visible text.
 
-The reporter never receives URL, target ID, diagnostic, configuration, usage
-history or raw native request/reply data. Missing source/key, provider or
+The reporter receives no browser-location URL or target-ID metadata, diagnostic,
+configuration, usage history or raw native request/reply data. Visible page text
+may itself contain addresses; those remain source text rather than injected
+location metadata. Missing source/key, provider or
 validation failure, and cooperative interruption return explicit reporting
 states with no raw-text fallback and never replace the browser outcome or
 primary diagnostic. A validated response adds one `jev_handoff` usage record;

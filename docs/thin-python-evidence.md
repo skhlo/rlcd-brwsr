@@ -218,7 +218,8 @@ refinement verification.
 
 #### Consolidated selector correction
 
-A correction from the frozen refinement candidate keeps the same reporting owner
+Correction `82333404355750be247d3752d1485a860b8013d0` from the frozen refinement
+candidate keeps the same reporting owner
 and adds bounded context at coalesced-line boundaries. The next forward group may
 include at most two immediately preceding complete short lines and at most 64
 UTF-8 bytes of backward context without crossing a blank paragraph or exceeding
@@ -250,7 +251,55 @@ retained the exact 63 bytes of requested amount/exclusion evidence, zero filler,
 821-byte compact content and 2,362-byte details. This was command-driven rather
 than an outer-model-issued turn. No offline score, structural replay or synthetic
 TUI check proves live relevance, actual token use, latency, billing or broader
-reliability; the corrected question shape remains unevaluated live.
+reliability. Targeted closure found Standards 1 resolved / 0 unresolved /
+0 introduced and Spec 3 resolved / 0 unresolved / 0 introduced. The parent
+independently reran all 69 tests, types, formatting and protected-runtime/pin
+stability checks successfully.
+
+#### Corrected-selector live checks: efficiency gain, minimality unresolved
+
+The owner then authorized seven sanitized model-only cases, at most 21 client
+POST attempts, without browser operations or manual retries. All seven finished
+in seven observed POST attempts, all HTTP 200. Six positive cases retained their
+expected text; the navigation-only negative control correctly returned no match.
+The identifier and estimate goals on the same synthetic document selected
+different records, retained the estimate's monthly period and distant exclusion,
+and excluded their configured filler. The shortened Korean example also retained
+its expected text. All evidence was an exact offered source copy.
+
+For the three saved full bounded pilot observations with identical goals,
+reported Jev input tokens fell from 63,679 to 9,697 (84.8%), and output tokens
+from 6,232 to 872 (86.0%). All seven cases reported 13,526 input / 1,128 output
+tokens. Per-case reporting times were 208-609 ms, median 275 ms. This is not an
+end-to-end timing comparison, measured bill or broad reliability claim.
+
+Quality remains mixed. Wikipedia excerpts now include the requested name but
+also menu/appearance/citizenship material. The birth date appears in a useful
+Born/name/date record, yet also in another passage, alongside unnecessary
+citizenship/occupation text. Literal whole-record deduplication does not remove
+that semantic repetition. The automated checks establish expected-text recall
+and negative-control status, not perfect relevance or minimality.
+
+An offline counterfactual used the unchanged production presenter with historical
+browser facts and the new report/usage. It first reproduced all original compact
+objects and byte counts exactly. Content grew from 1,470/1,005/1,058 bytes to
+1,680/1,419/1,349 bytes: 3,533 to 4,448 total, **25.9% larger**. Protected outcome,
+location, cleanup and primary diagnostic remained identical. This is a
+production-presentation calculation, not three new browser returns. The initial
+comparison harness incorrectly supplied the parent-only reap field as part of
+a child terminal; removing that field corrected the harness, not production.
+
+Thus the reporting-efficiency improvement is measured, but the primary
+minimal-communication goal remains only partially achieved. No further policy,
+threshold, corpus or runtime tuning followed these results. All seven cases are
+consumed; additional live trials need new authorization. No browser/daemon
+connection, tab operation, credential-store edit or publication occurred.
+The normal native loader supplied existing TypeSafe authentication, with values
+excluded from argv/logs/artifacts. Complete billing remains unknown.
+Evidence and scripts are retained under
+`artifacts/compact-output/selector-refinement/live-evaluation/`, including
+`REPORT.md`, response/attempt receipts, token comparison and the counterfactual
+content comparison.
 
 Historical rewrite tested implementation: `b3b42036685eba64f3e7bc8ccc296e16b9910fe9`.
 The initial rewrite is `3f984e54`; the corrected implementation was checked again,
