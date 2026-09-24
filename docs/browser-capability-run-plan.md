@@ -1,11 +1,13 @@
 # Browser capability evaluation run
 
-**Status: proposed, not executed.** This turns the
-[capability inventory](browser-capability-inventory.md) into one bounded,
-repeatable evaluation run. Writing this plan does not authorize execution;
-building/running requires explicit approval of the seams, cases, disposable
-resource setup and finite allowance below. Live inference, production changes
-and publication remain excluded.
+**Status: attempted; comparison incomplete and execution stopped.** The owner
+approved the initial model-free run and a separate 12-case reference correction.
+Both records are retained locally under `artifacts/browser-capability-run/`.
+CLI driver/setup failures prevented a complete comparison, and the owner
+cancelled unexpected macOS keychain prompts. No further browser trial is
+currently authorized. The protocol below is retained for review; it is not a
+claim that all cases passed. Live inference, production changes and publication
+remain excluded.
 
 ## Decision the run should enable
 
@@ -136,6 +138,28 @@ Disable optional telemetry/remote metrics through supported flags. Missing
 prerequisites stop the run instead of triggering installs, browser discovery or
 permission flows.
 
+### macOS native-app startup guard
+
+Keep the real OS account `HOME` for Chrome and other native macOS apps. Isolate
+Chrome with a new, run-owned `--user-data-dir`; isolate Python/Node workspace
+configuration separately. Do not point a native app at a fake home directory
+and then grant keychain permissions to compensate.
+
+Reuse the installed Puppeteer launch defaults instead of maintaining a shortened
+manual argument list. The reviewed [Puppeteer defaults](https://github.com/puppeteer/puppeteer/blob/f8d63c73c3d7c21a8b0f421411e7df8386195436/packages/puppeteer-core/src/node/ChromeLauncher.ts)
+include `--use-mock-keychain`, the macOS automation safeguard, and
+`--password-store=basic`. These settings are **only for disposable fixtures**,
+never personal profiles, real logins or credential storage.
+
+Before spawning, fail closed unless the emitted command uses a profile beneath
+the owned run directory, retains the mock-keychain setting, keeps the real OS
+home and forwards no provider credentials. The evaluation launcher now enforces
+this and its offline executable-capture/negative-control checks pass. This
+verifies startup configuration, **not yet prompt-free live behavior**; Chrome
+was not relaunched after the user's cancellation. Never reset a keychain,
+change its default or approve/retry an OS prompt as part of recovery. A new live
+launch check needs explicit approval.
+
 Fixture servers bind to loopback. Any user-facing test UI uses an explicitly
 owned Tailscale Serve route/URL; preserve unrelated routes. If that requires an
 unapproved setup change, stop for a setup decision. Foreground changes are
@@ -200,6 +224,8 @@ the original one-pixel probe does not stand in for that task.
 
 ## Approval checkpoint
 
-Approve or amend the seams, matrix, disposable resource scope and zero-inference
-budget before building or running this evaluation. The current document is a
-plan only; no new browser run, fixture implementation or model call occurred.
+The initial and reference-correction execution records are historical, not a
+standing allowance. Before resuming, review the incomplete cases, confirm the
+native-app startup guard and approve a new finite scope. No live inference was
+performed, and no production capability has been adopted on the basis of these
+partial results.

@@ -72,8 +72,9 @@ The generated CLI surface is narrower than the MCP tool surface. In 1.7.0:
 ## Proposed comparison order
 
 The [evaluation run plan](browser-capability-run-plan.md) maps every inventory
-item to a controlled case, comparison lanes and approval/budget gates. It has
-not been executed.
+item to a controlled case, comparison lanes and approval/budget gates. The
+initial run and a reference correction were attempted, but the comparison is
+incomplete and execution is stopped; the plan records the remaining limits.
 
 This is a shortlist for choosing capabilities, **not implementation approval**:
 
