@@ -1,8 +1,8 @@
 # Historical work and evidence archive
 
-This page is public wayfinding for earlier RLCD-brwsr work. Read each document
-as describing the repository revision in which it appears; its presence here
-does not mean that every later feature is on the default branch.
+This page separates the implementation merged into `main` from earlier
+RLCD-brwsr research and operator-local evidence. Historical records describe
+their recorded revisions, not the current implementation.
 
 ## Current entry points
 
@@ -19,7 +19,11 @@ does not mean that every later feature is on the default branch.
 The initial Python-owned implementation merged through
 [PR #16](https://github.com/skhlo/rlcd-brwsr/pull/16) at
 [`4f4d42aa98c68aa10007ef831a163a7dd867990c`](https://github.com/skhlo/rlcd-brwsr/commit/4f4d42aa98c68aa10007ef831a163a7dd867990c).
-Later tracked documents and code should still be read at their own revision.
+Existing-tab targeting, direct DeepSeek field text, compact handoffs and the
+repo-scoped co-browse skill merged through
+[PR #18](https://github.com/skhlo/rlcd-brwsr/pull/18) on 2026-09-24 at
+[`8afaa0e`](https://github.com/skhlo/rlcd-brwsr/commit/8afaa0e1e8611042a681a2fc30eae1d6898b3215).
+The merge does not change the recorded verification limits or resolve #17.
 
 The earlier custom TypeScript/Chrome-CLI research summary and source are public
 at
@@ -33,9 +37,10 @@ Issues [#9](https://github.com/skhlo/rlcd-brwsr/issues/9),
 [#10](https://github.com/skhlo/rlcd-brwsr/issues/10),
 [#11](https://github.com/skhlo/rlcd-brwsr/issues/11),
 [#12](https://github.com/skhlo/rlcd-brwsr/issues/12), and
-[#13](https://github.com/skhlo/rlcd-brwsr/issues/13) describe superseded
-implementation stages. Their acceptance criteria are historical and are not
-marked as passed. The retained summaries for three of those stages are
+[#13](https://github.com/skhlo/rlcd-brwsr/issues/13) were closed as not planned
+(superseded). Their original specifications remain preserved; their acceptance
+criteria are historical and are not marked as passed. The retained summaries
+for three of those stages are
 [issue #10 evidence](issue-10-evidence.md),
 [issue #11 evidence](issue-11-evidence.md), and
 [issue #12 evidence](issue-12-evidence.md).

@@ -13,9 +13,10 @@ presents a compact handoff while retaining bounded diagnostics in tool details.
 A completion claim always requires independent verification by the outer agent.
 
 This is an experimental capability, not a general browser-reliability or speed
-claim. These docs describe the revision you are viewing. The Python-owned base
-was merged in [PR #16](https://github.com/skhlo/rlcd-brwsr/pull/16); later features
-may require a feature-branch checkout rather than `main`.
+claim. The Python-owned base merged in
+[PR #16](https://github.com/skhlo/rlcd-brwsr/pull/16). Exact existing-tab
+support, the direct DeepSeek helper, compact handoffs and co-browse are on
+`main` following [PR #18](https://github.com/skhlo/rlcd-brwsr/pull/18).
 
 The [verification record](docs/thin-python-evidence.md) distinguishes tested
 outcomes from known limits. Current work is tracked in

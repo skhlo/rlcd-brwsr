@@ -216,10 +216,11 @@ The accepted baseline retains these limits:
   totals omit native calls.
 - Direct `deepseek-flash` is a mutable alias. Recorded successful calls do not
   guarantee future provider acceptance, latency, JSON adherence, or quality.
-- Branch publication is not a merge or release. The base Python-owned runner
-  merged in [PR #16](https://github.com/skhlo/rlcd-brwsr/pull/16); later feature
-  availability depends on the selected revision. The superseded #9–#13
-  checklists are not represented as satisfied by newer evidence.
+- The base Python-owned runner merged in
+  [PR #16](https://github.com/skhlo/rlcd-brwsr/pull/16), and the subsequent
+  DeepSeek, existing-tab, compact-handoff and co-browse work merged in
+  [PR #18](https://github.com/skhlo/rlcd-brwsr/pull/18). Merging adds no new
+  validation evidence and does not satisfy the retired #9–#13 checklists.
 - Earlier cancelled-gate findings concern the removed larger protocol and remain
   historical; cancellation was never rewritten as a pass.
 
@@ -243,6 +244,7 @@ of the ignored raw receipts. Evidence classes and limits are stated above.
 | `c9a655a`             | Live span result: four of seven configured excerpt/status checks                                         |
 | `a521ea9`             | Behavior-preserving cleanup with 70 tests and offline parity checks                                      |
 | `c0a8ae5` / `1a4db4e` | Repo-scoped co-browse skill and subsequent goal-based delegation; observations above                     |
+| `8afaa0e`             | PR #18 merge into `main`; integration/publication event, not a new test result                           |
 
 For the removed chronology and every older section, use
 `git show c9a655a:docs/thin-python-evidence.md`. Do not delete retained evidence
