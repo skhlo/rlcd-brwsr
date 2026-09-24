@@ -1,9 +1,9 @@
 # Let upstream Python own the run
 
-Status: accepted. The initial Python-owned implementation was merged in
-[PR #16](https://github.com/skhlo/rlcd-brwsr/pull/16). Later tab-targeting and
-handoff amendments below describe this revision, not a claim that every feature
-is already on the default branch.
+Status: accepted and implemented on `main`. The initial Python-owned
+implementation merged in [PR #16](https://github.com/skhlo/rlcd-brwsr/pull/16);
+the direct DeepSeek helper, tab-targeting and handoff amendments merged in
+[PR #18](https://github.com/skhlo/rlcd-brwsr/pull/18).
 
 ## Context
 
