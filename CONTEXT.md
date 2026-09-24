@@ -23,3 +23,15 @@ _Avoid_: Success, proof
 **Consequential action**:
 A browser action whose external effect, sensitivity or irreversibility requires the fast loop to stop and return control to the outer agent.
 _Avoid_: Unsupported action, dangerous action
+
+**Created tab**:
+A page opened for one fast-loop run whose lifetime belongs to that run.
+_Avoid_: Borrowed tab, existing tab
+
+**Borrowed tab**:
+An eligible pre-existing page selected by exact target identity for a fast-loop run. Selection can permit navigation or input without transferring the page's lifetime to the run.
+_Avoid_: Created tab, owned tab
+
+**Tab discovery**:
+A bounded read-only view of technically eligible page targets. Discovery identifies candidates but does not authorize using them.
+_Avoid_: Tab selection, permission

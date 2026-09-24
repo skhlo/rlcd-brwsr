@@ -8,9 +8,14 @@ bounded live helper probe and one local fixture through Pi's normal agent-turn
 path also passed, using real Jev and Ling on that unchanged historical
 implementation. The current helper selection is direct DeepSeek
 `deepseek-flash`, with native thinking disabled in the request; Jev and Pi's
-outer model remain unchanged. This configuration-only switch has a 38-test
-deterministic suite but no live inference, real-Chrome, outer-agent-turn or
-public-site check. See the [verification record](thin-python-evidence.md).
+outer model remain unchanged. The configuration-only switch itself had no live
+or actual-surface check. The local tab-targeting candidate extends it with a
+49-test deterministic suite and two bounded command-driven
+actual-Pi-TUI/real-Chrome acceptance passes using only local fixture tabs and
+synthetic provider replies. Those passes invoked the production registered definitions by name and used no
+outer model, live inference or public site. See the historical
+[verification record](thin-python-evidence.md) and the retained local handoff
+under `artifacts/tab-targeting/implementation/`.
 The user confirmed dropping `maxActions` and accepted available native usage
 with explicitly incomplete Pi totals. This model change excluded live calls.
 Historical live checks used Ling and covered bounded helper/local-fixture cases,
@@ -63,25 +68,44 @@ a reason to build the wrapper, not acceptance evidence for the implementation.
 
 ## Implemented interface
 
-Keep `rlcd_brwsr_run` and initially expose only:
+The extension registers two inert tools:
 
 ```ts
+rlcd_brwsr_list_tabs({});
+
 rlcd_brwsr_run({
-  url: string;
+  url?: string;
+  targetId?: string;
   goal: string;
   maxSeconds?: number;
   retainTab?: boolean;
 });
 ```
 
+- Discovery lists bounded eligible HTTP(S) and exact `about:blank` page targets
+  from the same configured existing Harness connection. It sorts exact IDs,
+  distinguishes empty success from error, clips untrusted titles/URLs with
+  labels, omits any ID it cannot return exactly, and performs no navigation,
+  foreground selection, Agent/model call or daemon startup. Technical
+  eligibility is not authorization.
+- A URL alone preserves created-tab behavior. A target ID alone continues an
+  exact eligible HTTP(S) borrowed tab without startup navigation. Supplying both
+  navigates that borrowed tab before the goal; `about:blank` therefore requires
+  an explicit HTTP(S) URL. Missing, closed and unsuitable targets do not fall
+  back by title, URL or target difference.
+- Target IDs are nonblank opaque strings of at most 512 UTF-8 bytes and remain
+  byte-for-byte unchanged. At least one of URL or target ID is required. Any
+  supplied `retainTab`, including false, is invalid in borrowed mode.
 - Validate the HTTP(S) URL, nonempty goal and serialized request before starting
   a process. No shell interpolation or credentials in argv.
 - `maxSeconds` is a coarse stop-request deadline measured by Pi from before
   startup. A fixed shutdown grace follows it. It is not a promise that no browser
   action crossed the deadline or that stopping a process rolled back input.
-- `retainTab` applies only to a normal upstream completion claim. Retention
-  requires a usable task-target handle and must not retain the runner process.
-- Schedule sequentially within Pi, without claiming a global browser lock.
+- `retainTab` applies only to a normal upstream completion claim for a created
+  tab. Retention requires a usable task-target handle and must not retain the
+  runner process.
+- Schedule sequentially within Pi, without claiming a global browser or user-tab
+  lock.
 
 **Implemented contract reduction:** `maxActions` is absent. There is no
 replacement per-call step knob or compatibility alias. Upstream's native limits
@@ -123,19 +147,31 @@ exception, project only state that actually exists. Do not dump full native
 snapshots: they contain raw model request/answer data and potentially large
 history and page data.
 
-Two small pinned integrations remain justified:
+Three small pinned integrations remain justified:
 
 1. Bind upstream's imported `ensure_daemon` startup symbol to Harness's
    `require_existing_daemon`, retaining the current resolved-configuration and
    reported-mode checks. Calling direct `Agent` otherwise permits automatic
    setup/recovery.
-2. Once construction returns a known target, use its pinned handle for optional
-   retention and one direct `Target.closeTarget` call. Report confirmed closure
-   only from a successful response; `Agent.close()` returning is not proof.
+2. Once created-tab construction returns a known target, use its pinned handle
+   for optional retention and one direct `Target.closeTarget` call. Report
+   confirmed closure only from a successful response; `Agent.close()` returning
+   is not proof.
+3. In borrowed mode, acquire one exact flattened session and temporarily bind
+   the pinned `jev_ultrafast.agent.Browser` factory to a Browser object that
+   reuses native observe/fresh/act behavior without native constructor effects.
+   Its one lifetime owner handles optional exact-session navigation, focus
+   enable/disable and `Target.detachFromTarget`, and never closes the target.
 
-No startup target interception, parent fallback-cleanup mode, tab-difference
-ownership inference, generic RPC framework, new daemon or durable run journal
-is part of the implementation.
+Borrowed mode validates target type and current URL before attach, then checks
+eligibility again through a session-bound page/frame observation before
+navigation or Agent construction. Cleanup attempts explicit focus disable and
+exact detach independently. Focus acknowledgement does not establish original
+document or OS focus restoration. Forced termination may strand both operations
+in the persistent daemon; the selected contract reports unknown cleanup and has
+no parent fallback. No created-tab startup interception, tab-difference ownership
+inference, generic RPC framework, new daemon or durable run journal is part of
+the implementation.
 
 ## Configuration and operating scope
 
@@ -224,12 +260,17 @@ numbers and complete-key redaction before clipping.
   kill, failed construction or invalid/missing result may provide none. After a
   request is accepted for dispatch, an exception escaping final projection falls
   back to unknown execution and cleanup rather than an input-error claim.
+- Trusted borrowed outcomes use `taskTab: "not_owned"` and independently report
+  focus release as `not_applied`, `disable_acknowledged`, or `unconfirmed`, and
+  attachment release as `not_acquired`, `detach_acknowledged`, or `unconfirmed`.
+  Requested navigation crosses the conservative effect boundary before
+  `Page.navigate`; provider/input races after admission retain unknown effects.
 - Trust child execution and cleanup claims only from one structurally valid
   terminal envelope followed by an observed zero exit without a signal. After
   forced, nonzero, signalled, invalid-terminal, or incomplete exits, report
-  execution and cleanup as unknown; do not infer zero side effects, zero charges
-  or closed tabs. A task tab can remain for operator inspection. Do not
-  automatically retry uncertain input.
+  execution and all applicable cleanup fields as unknown; do not infer zero side
+  effects, zero charges or closed tabs. A task tab can remain for operator
+  inspection. Do not automatically retry uncertain input.
 - Keep the parent's first stop reason when requested shutdown yields no trusted
   terminal result. A structurally valid normal completion claim followed by an
   observed clean zero exit may win a late parent stop race when the child did
@@ -274,9 +315,12 @@ evidence and the earlier custom-loop work remain retained.
 
 ## Implementation and verification sequence
 
-The 38-test deterministic suite separates its evidence interfaces. Ordinary
-registered Pi-tool cases cross the real runner and pinned Agent/native helper
-while replacing external Browser/CDP and provider interactions. One labelled
+The deterministic suite separates its evidence interfaces. Ordinary registered
+Pi-tool cases cross the real runner and pinned Agent/native helper while
+replacing external Browser/CDP and provider interactions. Tab-targeting cases
+cover model-free discovery, empty/error/omission distinctions, request modes,
+exact continuation and navigation, pre-effect rejection, post-navigation
+uncertainty, handled borrowed cleanup and forced-exit uncertainty. One labelled
 lifecycle case wraps the real Agent to interrupt known-target recovery. Internal
 process/outcome tests exercise spawn, stop precedence, fitting, EOF, hard-stop
 and observed reap without global event/timer patches or whole-extension copies.
@@ -288,12 +332,13 @@ execution. A timed-out filesystem removal reports its exact workspace as
 pending or unconfirmed, and late rejection is handled. Callback JavaScript
 cannot be forcibly cancelled by a Promise race.
 
-Together they cover click/fill/DONE/BLOCKED/error, missing and malformed helper
-values, preflight/input failure, byte bounds, Unicode/non-finite normalization,
-native `.env` ordering and key privacy, first-stop precedence, post-dispatch
-projection interruption, conservative output fitting, cooperative cleanup,
-non-clean terminal rejection and a reaped TERM-ignoring child. No live credentials
-or model calls were used for this candidate.
+Together, 49 tests cover click/fill/DONE/BLOCKED/error, missing and malformed
+helper values, preflight/input failure, byte bounds, Unicode/non-finite
+normalization, native `.env` ordering and key privacy, first-stop precedence,
+post-dispatch projection interruption, conservative output fitting, cooperative
+cleanup, non-clean terminal rejection, a reaped TERM-ignoring child, and the
+borrowed/discovery cases above. No live credentials or model calls were used for
+this candidate.
 
 The click/default-close, text/retention, time-budget and TUI-cancellation cases
 were repeated successfully at corrected implementation `b3b42036`, using real
@@ -301,6 +346,19 @@ upstream/Harness/Chrome and synthetic provider replies. Independent observers
 checked exact targets, retained field values, actual runner exits and restored
 browser baselines. This verifies command-invoked execution of the registered
 tool in Pi's TUI, not the whole outer-model agent-turn/tool-scheduling path.
+
+The tab-targeting actual-surface acceptance ran twice successfully as a slash
+command in Pi 0.87.1 with the production registrations loaded explicitly; the
+second pass repeated the final production code after a cleanup exception-type
+narrowing. Each distinguished two
+same-URL fixture tabs, completed two sequential goals on one exact ID, navigated
+a second exact borrowed ID, and preserved created-tab default closure.
+Independent CDP observations verified tested form/viewport preservation,
+deliberate state changes, detached sessions, exact identity, the Maps tab and
+the full unrelated page baseline. Twelve assertions passed. A first harness
+attempt is retained because its synthetic selector mistakenly returned `DONE`
+before the phase actions; correcting goal extraction and rerunning produced the
+accepted evidence. No production code changed between those attempts.
 
 The historical bounded Ling follow-up passed: the native OpenRouter helper
 returned a valid field value, and Pi's normal outer-model/tool path completed

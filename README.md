@@ -9,10 +9,13 @@ and evidence. See the [archive index](docs/archive.md).
 and four repeated Pi-TUI/real-Chrome checks with synthetic provider replies at
 `b3b42036`. A subsequent live helper probe and normal Pi agent-turn fixture used
 Ling at their recorded historical heads. The current helper selection is direct
-DeepSeek `deepseek-flash`, with native thinking disabled in the request. This
-configuration-only switch has a 38-test deterministic suite but no live
-inference, real-Chrome, outer-agent-turn or public-site acceptance. Jev and Pi's
-outer model remain unchanged. See
+DeepSeek `deepseek-flash`, with native thinking disabled in the request. The
+configuration-only switch itself had no live or actual-surface check. The local
+tab-targeting candidate extends it with a 49-test deterministic suite and two
+bounded command-driven actual-Pi-TUI/real-Chrome acceptance passes using only
+local fixture tabs and synthetic provider replies. Those checks invoked the production registered
+definitions by name and used no outer model, live inference or public site. Jev
+and Pi's outer model remain unchanged. See
 [verification and limits](docs/thin-python-evidence.md). Current GitHub issues
 still describe the superseded implementation and are not claimed as satisfied.
 See the
@@ -29,8 +32,9 @@ outer agent must independently verify the visible result.
 
 ## Project-local setup
 
-Setup is explicit. Loading the extension only registers `rlcd_brwsr_run`; it does
-not install packages, start services, open Chrome, or make model calls.
+Setup is explicit. Loading the extension only registers
+`rlcd_brwsr_list_tabs` and `rlcd_brwsr_run`; it does not install packages, start
+services, open Chrome, inspect tabs, or make model calls.
 
 ```bash
 pnpm install --frozen-lockfile
@@ -108,19 +112,39 @@ is nonblank; that is configuration feedback, not provider or credential validity
 Load the project extension in a fresh Pi session:
 
 ```bash
-pi -e ./config/pi/extensions/rlcd-brwsr.ts -t rlcd_brwsr_run
+pi -e ./config/pi/extensions/rlcd-brwsr.ts \
+  -t rlcd_brwsr_list_tabs,rlcd_brwsr_run
 ```
 
-The registered interface is:
+The registered interfaces are:
 
 ```ts
+rlcd_brwsr_list_tabs({});
+
 rlcd_brwsr_run({
-  url: string;
+  url?: string;
+  targetId?: string;
   goal: string;
   maxSeconds?: number; // default 30, maximum 120
   retainTab?: boolean;
 });
 ```
+
+Tab discovery returns bounded eligible HTTP(S) pages and exact `about:blank`
+pages from the configured existing Harness connection. It is read-only: it does
+not navigate, activate a foreground tab, construct an Agent or call a model.
+Entries are sorted by exact target ID. Titles and URLs are untrusted and can be
+explicitly clipped; IDs that cannot be returned exactly are omitted. An empty
+success is distinct from a bounded error. Discovery establishes technical
+eligibility only and does not authorize a run.
+
+A URL without a target ID preserves created-tab behavior. A target ID without a
+URL continues the exact borrowed tab's current HTTP(S) state without startup
+navigation. Supplying both explicitly navigates that borrowed tab before the
+goal; an exact `about:blank` target is usable only in this mode. At least one of
+URL or target ID is required. Target IDs are opaque, nonblank, at most 512 UTF-8
+bytes and are never trimmed or case-folded. Any supplied `retainTab`, including
+`false`, is invalid with `targetId`.
 
 There is no `maxActions`, alias, or replacement per-call step setting. Upstream's
 unchanged limits remain 60 history entries (including waits and scrolls) and 120
@@ -146,12 +170,31 @@ unknown. An exception escaping final projection after request acceptance also
 falls back to unknown rather than `invalid_input`. Process exit is not rollback
 and the tool does not retry automatically.
 
-`retainTab: true` is honored only after a normal completion claim with the known
-task target. Every other handled outcome with a usable known target attempts one
-direct `Target.closeTarget` request. Closure is `closed` only when its response
-contains `success: true`.
-The shared daemon and unrelated targets are preserved. Scheduling is sequential
-inside Pi, not a global browser lock.
+For a created tab, `retainTab: true` is honored only after a normal completion
+claim with the known task target. Every other handled outcome with a usable
+known created target attempts one direct `Target.closeTarget` request. Closure
+is `closed` only when its response contains `success: true`.
+
+A borrowed tab is never closed by the wrapper or upstream cleanup. Python owns
+its exact flattened attachment, optional navigation, background focus emulation
+and idempotent release. It validates the target before attach and repeats current
+eligibility through a session-bound page observation before navigation or Agent
+construction. Handled completion, error and cancellation attempt focus disable
+and exact-session detach independently. Results report those acknowledgements
+separately; focus-disable acknowledgement is not proof of original document or
+OS focus restoration. A forced child stop can strand attachment and emulation,
+which is reported as unknown rather than repaired by a parent fallback. The
+shared daemon and unrelated targets are preserved. Scheduling is sequential
+inside Pi, not a global browser lock or a lock against the user.
+
+Trusted borrowed results use `cleanup.taskTab: "not_owned"` and report
+`cleanup.focusEmulation` as `not_applied`, `disable_acknowledged`, or
+`unconfirmed`, plus `cleanup.attachment` as `not_acquired`,
+`detach_acknowledged`, or `unconfirmed`. Non-clean, signalled, invalid or
+discarded terminal outcomes overwrite all three claims with `unknown` while
+retaining parent stop and observed-reap evidence. Requested navigation marks
+execution effects uncertain before `Page.navigate`; provider/input races after
+admission are likewise not rewritten as pre-start rejection.
 
 Python projects only bounded current page fields, executed-history summaries,
 configured models, available upstream-recorded usage, known target, cleanup, and

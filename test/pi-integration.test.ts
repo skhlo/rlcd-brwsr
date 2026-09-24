@@ -26,7 +26,8 @@ import {
 } from "./read-ready-fixture.ts";
 
 interface RlcdInput {
-  url: string;
+  url?: string;
+  targetId?: string;
   goal: string;
   maxSeconds?: number;
   retainTab?: boolean;
@@ -55,12 +56,16 @@ interface RegisteredTool {
 }
 
 interface ScenarioOptions {
+  toolName?: "rlcd_brwsr_run" | "rlcd_brwsr_list_tabs";
   helperKey?: string | null;
+  typesafeKey?: string | null;
   textModel?: string;
   signal?: AbortSignal;
   abortWhenModelStarts?: AbortController;
   abortAfterTermAcknowledgement?: AbortController;
   params?: Partial<RlcdInput>;
+  omitDefaultUrl?: boolean;
+  sharedBrowserState?: string;
   nativeEnvironment?: string;
   deferExternalFakesUntilNativeEnvironment?: boolean;
 }
@@ -150,7 +155,18 @@ function terminalDetails(
     stopReason?: string;
     execution?: "not_started" | "unknown" | "completed";
     targetId?: string | null;
-    taskTab?: "not_created" | "unknown" | "retained" | "closed" | "unconfirmed";
+    taskTab?:
+      | "not_created"
+      | "not_owned"
+      | "unknown"
+      | "retained"
+      | "closed"
+      | "unconfirmed";
+    borrowed?: boolean;
+    focusEmulation?:
+      "not_applied" | "disable_acknowledged" | "unconfirmed" | "unknown";
+    attachment?:
+      "not_acquired" | "detach_acknowledged" | "unconfirmed" | "unknown";
     observationText?: string;
   } = {},
 ): Record<string, unknown> {
@@ -189,7 +205,13 @@ function terminalDetails(
     },
     targetId: options.targetId ?? null,
     cleanup: {
-      taskTab: options.taskTab ?? "unknown",
+      taskTab: options.taskTab ?? (options.borrowed ? "not_owned" : "unknown"),
+      ...(options.borrowed
+        ? {
+            focusEmulation: options.focusEmulation ?? "unknown",
+            attachment: options.attachment ?? "unknown",
+          }
+        : {}),
       sharedDaemon: "retained",
     },
     diagnostic: null,
@@ -235,6 +257,7 @@ function nearLimitTerminal(): Record<string, unknown> {
 
 function registeredTool(
   extension: typeof rlcdBrwsrExtension = rlcdBrwsrExtension,
+  name = "rlcd_brwsr_run",
 ): RegisteredTool {
   type CapturedTool = RegisteredTool & {
     execute(
@@ -246,16 +269,16 @@ function registeredTool(
     ): Promise<ToolResult>;
   };
 
-  let registered: CapturedTool | undefined;
+  const registered: CapturedTool[] = [];
   const pi = {
     registerTool(tool: CapturedTool) {
-      registered = tool;
+      registered.push(tool);
     },
   } as unknown as ExtensionAPI;
 
   extension(pi);
-  assert.ok(registered);
-  const captured = registered;
+  const captured = registered.find((tool) => tool.name === name);
+  assert.ok(captured, `expected registered tool ${name}`);
   return {
     ...captured,
     execute(toolCallId, params, signal, onUpdate) {
@@ -318,6 +341,12 @@ async function runScenario(
     await writeFile(join(directory, ".env"), options.nativeEnvironment, "utf8");
   }
   const environment: Record<string, string | undefined> = {
+    HOME: directory,
+    XDG_CONFIG_HOME: join(directory, ".config"),
+    TMPDIR: directory,
+    BH_HOME: join(directory, "bh-home"),
+    BH_CONFIG_DIR: join(directory, "bh-config"),
+    BH_TMP_DIR: join(directory, "bh-tmp"),
     RLCD_TEST_SCENARIO: scenario,
     RLCD_TEST_ARGV_MARKER: markers.argv,
     RLCD_TEST_STDIN_MARKER: markers.stdin,
@@ -326,10 +355,14 @@ async function runScenario(
     RLCD_TEST_MODEL_MARKER: markers.model,
     RLCD_TEST_PID_MARKER: markers.pid,
     RLCD_TEST_TERM_ACK_MARKER: markers.termAcknowledgement,
+    RLCD_TEST_SHARED_STATE_MARKER: options.sharedBrowserState,
     BH_AGENT_WORKSPACE: directory,
     BU_NAME: "rlcd-brwsr-test",
     BU_CDP_URL: "http://127.0.0.1:43114",
-    TYPESAFE_API_KEY: syntheticTypesafeKey,
+    TYPESAFE_API_KEY:
+      options.typesafeKey === null
+        ? undefined
+        : (options.typesafeKey ?? syntheticTypesafeKey),
     TEXT_MODEL_API_KEY:
       options.helperKey === null
         ? undefined
@@ -361,14 +394,21 @@ async function runScenario(
       ? markers.model
       : markers.termAcknowledgement;
     let toolSettled = false;
-    const toolWork = registeredTool()
+    const toolWork = registeredTool(
+      rlcdBrwsrExtension,
+      options.toolName ?? "rlcd_brwsr_run",
+    )
       .execute(
         "test-call",
-        {
-          url: "https://example.test/start",
-          goal: "Complete the deterministic fixture",
-          ...options.params,
-        },
+        (options.toolName === "rlcd_brwsr_list_tabs"
+          ? {}
+          : {
+              ...(options.omitDefaultUrl
+                ? {}
+                : { url: "https://example.test/start" }),
+              goal: "Complete the deterministic fixture",
+              ...options.params,
+            }) as RlcdInput,
         options.signal,
       )
       .then(
@@ -588,17 +628,106 @@ async function runPreflightCase(options: {
   }
 }
 
-test("the extension loads inertly and registers only the reduced sequential tool", () => {
-  const tool = registeredTool();
-  assert.equal(tool.name, "rlcd_brwsr_run");
-  assert.equal(tool.executionMode, "sequential");
-  assert.deepEqual(Object.keys(tool.parameters.properties ?? {}).sort(), [
+test("the extension loads inertly and registers discovery plus the extended sequential run tool", () => {
+  const listTool = registeredTool(rlcdBrwsrExtension, "rlcd_brwsr_list_tabs");
+  assert.equal(listTool.executionMode, "sequential");
+  assert.deepEqual(Object.keys(listTool.parameters.properties ?? {}), []);
+  assert.match(listTool.description, /read-only discovery/i);
+
+  const runTool = registeredTool();
+  assert.equal(runTool.executionMode, "sequential");
+  assert.deepEqual(Object.keys(runTool.parameters.properties ?? {}).sort(), [
     "goal",
     "maxSeconds",
     "retainTab",
+    "targetId",
     "url",
   ]);
-  assert.doesNotMatch(tool.description, /maxActions|action budget/i);
+  assert.doesNotMatch(runTool.description, /maxActions|action budget/i);
+});
+
+test("discovery needs no model keys and deterministically distinguishes same-URL tabs", async () => {
+  await withScenario(
+    "list_tabs",
+    {
+      toolName: "rlcd_brwsr_list_tabs",
+      typesafeKey: null,
+      helperKey: null,
+      nativeEnvironment: "",
+    },
+    async ({ result, markers }) => {
+      const details = detailsOf(result);
+      assert.equal(details.status, "ok");
+      assert.equal(details.diagnostic, null);
+      const tabs = arrayField(details, "tabs") as Array<
+        Record<string, unknown>
+      >;
+      assert.deepEqual(
+        tabs.map((tab) => tab.targetId),
+        ["TAB-A", "TAB-BLANK", "TAB-Z"],
+      );
+      assert.equal(tabs[0]?.url, tabs[2]?.url);
+      assert.notEqual(tabs[0]?.targetId, tabs[2]?.targetId);
+      assert.equal(await readIfPresent(markers.model), "");
+      const browserLog = await readIfPresent(markers.browser);
+      assert.match(browserLog, /^get-targets\n$/);
+      assert.doesNotMatch(browserLog, /attach:|created:|navigate:|focus:/);
+    },
+  );
+});
+
+test("discovery keeps empty, error, clipping, and omitted-tab outcomes distinct", async () => {
+  await withScenario(
+    "list_empty",
+    { toolName: "rlcd_brwsr_list_tabs", typesafeKey: null, helperKey: null },
+    ({ result }) => {
+      const details = detailsOf(result);
+      assert.equal(details.status, "ok");
+      assert.deepEqual(details.tabs, []);
+      assert.equal(recordField(details, "output").omittedTabs, 0);
+    },
+  );
+
+  await withScenario(
+    "list_error",
+    { toolName: "rlcd_brwsr_list_tabs", typesafeKey: null, helperKey: null },
+    ({ result }) => {
+      const details = detailsOf(result);
+      assert.equal(details.status, "error");
+      assert.equal(details.tabs, null);
+      assert.ok(recordField(details, "diagnostic"));
+      assert.equal(recordField(details, "output").omittedTabs, null);
+    },
+  );
+
+  await withScenario(
+    "list_omission",
+    { toolName: "rlcd_brwsr_list_tabs" },
+    ({ result }) => {
+      const details = detailsOf(result);
+      assert.equal(details.status, "ok");
+      const output = recordField(details, "output");
+      assert.equal(output.clipped, true);
+      assert.ok(Number(output.omittedTabs) > 0);
+      const tabs = arrayField(details, "tabs") as Array<
+        Record<string, unknown>
+      >;
+      assert.ok(tabs.length > 0 && tabs.length < 40);
+      assert.deepEqual(tabs[0]?.clippedFields, ["title", "url"]);
+      assert.ok(
+        tabs.every(
+          (tab, index) =>
+            index === 0 ||
+            String(tabs[index - 1]?.targetId) < String(tab.targetId),
+        ),
+      );
+      const text = result.content[0]?.text ?? "";
+      assert.ok(Buffer.byteLength(text, "utf8") <= terminalByteLimit);
+      assert.doesNotMatch(text, new RegExp(syntheticTypesafeKey));
+      assert.doesNotMatch(text, new RegExp(syntheticHelperKey));
+      assert.match(text, /\[REDACTED\]/);
+    },
+  );
 });
 
 test("invalid input and request overflow stop before Python or external work", async () => {
@@ -635,6 +764,47 @@ test("invalid input and request overflow stop before Python or external work", a
       assert.equal(details.status, "error");
       assert.equal(details.stopReason, "invalid_input");
       assert.equal(await readIfPresent(markers.model), "");
+    },
+  );
+});
+
+test("borrowed input preserves opaque IDs and rejects contradictory lifetime options", async () => {
+  for (const params of [
+    {},
+    { targetId: "   " },
+    { targetId: "😀".repeat(129) },
+    { targetId: "bad\ud800id" },
+    { targetId: "rlcd-borrowed-target", retainTab: false },
+  ]) {
+    await withScenario(
+      "click",
+      { omitDefaultUrl: true, params },
+      async ({ result, markers }) => {
+        const details = detailsOf(result);
+        assert.equal(details.status, "error");
+        assert.equal(details.stopReason, "invalid_input");
+        assert.equal(recordField(details, "cleanup").taskTab, "not_created");
+        assert.equal(await readIfPresent(markers.browser), "");
+        assert.equal(await readIfPresent(markers.model), "");
+      },
+    );
+  }
+
+  await withScenario(
+    "click",
+    {
+      omitDefaultUrl: true,
+      params: { targetId: "  opaque-id  " },
+    },
+    async ({ result, markers }) => {
+      const details = detailsOf(result);
+      assert.equal(details.status, "error");
+      assert.equal(details.execution, "not_started");
+      const request = JSON.parse(
+        await readFile(markers.stdin, "utf8"),
+      ) as Record<string, unknown>;
+      assert.equal(request.targetId, "  opaque-id  ");
+      assert.equal(Object.hasOwn(request, "retainTab"), false);
     },
   );
 });
@@ -780,6 +950,231 @@ test("the registered tool consumes native Agent.run for click and completion", a
       /close:rlcd-owned-target/,
     );
   });
+});
+
+test("borrowed goals continue on one exact ID without startup navigation or closure", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "rlcd-borrowed-sequence-"));
+  const sharedState = join(directory, "state.json");
+  try {
+    await withScenario(
+      "click",
+      {
+        omitDefaultUrl: true,
+        sharedBrowserState: sharedState,
+        params: { targetId: "rlcd-borrowed-target" },
+      },
+      async ({ result, markers }) => {
+        const details = detailsOf(result);
+        assert.equal(details.status, "completion_claim");
+        assert.equal(details.targetId, "rlcd-borrowed-target");
+        const cleanup = recordField(details, "cleanup");
+        assert.equal(cleanup.taskTab, "not_owned");
+        assert.equal(cleanup.focusEmulation, "disable_acknowledged");
+        assert.equal(cleanup.attachment, "detach_acknowledged");
+        assert.equal(arrayField(details, "history").length, 1);
+        const browserLog = await readIfPresent(markers.browser);
+        assert.match(browserLog, /attach:rlcd-borrowed-target/);
+        assert.match(browserLog, /focus:rlcd-borrowed-session:true/);
+        assert.match(browserLog, /focus:rlcd-borrowed-session:false/);
+        assert.match(browserLog, /detach:rlcd-borrowed-session/);
+        assert.doesNotMatch(browserLog, /created:|navigate:|close:/);
+      },
+    );
+
+    await withScenario(
+      "click",
+      {
+        omitDefaultUrl: true,
+        sharedBrowserState: sharedState,
+        params: { targetId: "rlcd-borrowed-target" },
+      },
+      ({ result }) => {
+        const details = detailsOf(result);
+        assert.equal(details.status, "completion_claim");
+        assert.equal(details.targetId, "rlcd-borrowed-target");
+        assert.deepEqual(details.history, []);
+      },
+    );
+  } finally {
+    await rm(directory, { recursive: true });
+  }
+});
+
+test("explicit borrowed navigation changes only the exact selected target", async () => {
+  await withScenario(
+    "done",
+    {
+      params: {
+        targetId: "rlcd-borrowed-target",
+        url: "https://example.test/navigated",
+      },
+    },
+    async ({ result, markers }) => {
+      const details = detailsOf(result);
+      assert.equal(details.status, "completion_claim");
+      assert.equal(details.targetId, "rlcd-borrowed-target");
+      const request = JSON.parse(
+        await readFile(markers.stdin, "utf8"),
+      ) as Record<string, unknown>;
+      assert.equal(request.targetId, "rlcd-borrowed-target");
+      assert.equal(request.url, "https://example.test/navigated");
+      assert.equal(Object.hasOwn(request, "retainTab"), false);
+      const browserLog = await readIfPresent(markers.browser);
+      assert.match(
+        browserLog,
+        /navigate:rlcd-borrowed-session:https:\/\/example\.test\/navigated/,
+      );
+      assert.doesNotMatch(browserLog, /created:|close:/);
+    },
+  );
+});
+
+test("about:blank requires explicit borrowed navigation", async () => {
+  await withScenario(
+    "borrowed_about_blank",
+    {
+      omitDefaultUrl: true,
+      params: { targetId: "rlcd-borrowed-target" },
+    },
+    async ({ result, markers }) => {
+      const details = detailsOf(result);
+      assert.equal(details.status, "error");
+      assert.equal(details.execution, "not_started");
+      assert.doesNotMatch(await readIfPresent(markers.browser), /attach:/);
+    },
+  );
+
+  await withScenario(
+    "borrowed_about_blank",
+    {
+      params: {
+        targetId: "rlcd-borrowed-target",
+        url: "https://example.test/from-blank",
+      },
+    },
+    async ({ result, markers }) => {
+      assert.equal(detailsOf(result).status, "completion_claim");
+      assert.match(
+        await readIfPresent(markers.browser),
+        /navigate:rlcd-borrowed-session:https:\/\/example\.test\/from-blank/,
+      );
+    },
+  );
+});
+
+test("missing, closed, or unsuitable borrowed targets fail before attachment and model dispatch", async () => {
+  for (const scenario of [
+    "borrowed_missing",
+    "borrowed_closed",
+    "borrowed_unsuitable",
+  ]) {
+    await withScenario(
+      scenario,
+      {
+        omitDefaultUrl: true,
+        params: { targetId: "rlcd-borrowed-target" },
+      },
+      async ({ result, markers }) => {
+        const details = detailsOf(result);
+        assert.equal(details.status, "error");
+        assert.equal(details.execution, "not_started");
+        assert.equal(details.targetId, null);
+        const cleanup = recordField(details, "cleanup");
+        assert.equal(cleanup.taskTab, "not_owned");
+        assert.equal(cleanup.focusEmulation, "not_applied");
+        assert.equal(cleanup.attachment, "not_acquired");
+        assert.equal(await readIfPresent(markers.model), "");
+        const browserLog = await readIfPresent(markers.browser);
+        assert.doesNotMatch(browserLog, /attach:|navigate:|created:|close:/);
+      },
+    );
+  }
+});
+
+test("borrowed constructor failure and cooperative cancellation release without target closure", async () => {
+  await withScenario(
+    "borrowed_constructor_error",
+    {
+      omitDefaultUrl: true,
+      params: { targetId: "rlcd-borrowed-target" },
+    },
+    async ({ result, markers }) => {
+      const details = detailsOf(result);
+      assert.equal(details.status, "error");
+      assert.equal(details.execution, "not_started");
+      assert.equal(details.targetId, "rlcd-borrowed-target");
+      const cleanup = recordField(details, "cleanup");
+      assert.equal(cleanup.focusEmulation, "disable_acknowledged");
+      assert.equal(cleanup.attachment, "detach_acknowledged");
+      assert.doesNotMatch(await readIfPresent(markers.browser), /close:/);
+    },
+  );
+
+  const cancellation = new AbortController();
+  await withScenario(
+    "slow_model",
+    {
+      omitDefaultUrl: true,
+      signal: cancellation.signal,
+      abortWhenModelStarts: cancellation,
+      params: { targetId: "rlcd-borrowed-target", maxSeconds: 5 },
+    },
+    async ({ result, markers }) => {
+      const details = detailsOf(result);
+      assert.equal(details.status, "stopped");
+      assert.equal(details.stopReason, "cancelled");
+      assert.equal(details.execution, "unknown");
+      const cleanup = recordField(details, "cleanup");
+      assert.equal(cleanup.taskTab, "not_owned");
+      assert.equal(cleanup.focusEmulation, "disable_acknowledged");
+      assert.equal(cleanup.attachment, "detach_acknowledged");
+      assert.doesNotMatch(await readIfPresent(markers.browser), /close:/);
+    },
+  );
+});
+
+test("borrowed cleanup acknowledgements stay independent", async () => {
+  await withScenario(
+    "borrowed_focus_release_failure",
+    {
+      omitDefaultUrl: true,
+      params: { targetId: "rlcd-borrowed-target" },
+    },
+    async ({ result, markers }) => {
+      const details = detailsOf(result);
+      assert.equal(details.status, "completion_claim");
+      const cleanup = recordField(details, "cleanup");
+      assert.equal(cleanup.focusEmulation, "unconfirmed");
+      assert.equal(cleanup.attachment, "detach_acknowledged");
+      const browserLog = await readIfPresent(markers.browser);
+      assert.match(browserLog, /focus:rlcd-borrowed-session:false/);
+      assert.match(browserLog, /detach:rlcd-borrowed-session/);
+      assert.doesNotMatch(browserLog, /close:/);
+    },
+  );
+});
+
+test("a post-navigation provider race reports unknown effects instead of pre-start rejection", async () => {
+  await withScenario(
+    "model_error",
+    {
+      params: {
+        targetId: "rlcd-borrowed-target",
+        url: "https://example.test/navigated-before-error",
+      },
+    },
+    async ({ result, markers }) => {
+      const details = detailsOf(result);
+      assert.equal(details.status, "error");
+      assert.equal(details.execution, "unknown");
+      assert.equal(details.targetId, "rlcd-borrowed-target");
+      assert.match(
+        await readIfPresent(markers.browser),
+        /navigate:rlcd-borrowed-session:/,
+      );
+      assert.match(await readIfPresent(markers.model), /request:/);
+    },
+  );
 });
 
 test("native field helper fills through the selected direct DeepSeek defaults", async () => {
@@ -1452,6 +1847,33 @@ test(
         },
       );
     }
+  },
+);
+
+test(
+  "a forced borrowed exit overwrites attachment and focus claims with uncertainty",
+  { timeout: 8_000 },
+  async () => {
+    await withScenario(
+      "ignore_term",
+      {
+        omitDefaultUrl: true,
+        params: { targetId: "rlcd-borrowed-target", maxSeconds: 1 },
+      },
+      async ({ result, markers }) => {
+        const details = detailsOf(result);
+        assert.equal(details.status, "stopped");
+        assert.equal(details.stopReason, "time_budget");
+        assert.equal(details.execution, "unknown");
+        const cleanup = recordField(details, "cleanup");
+        assert.equal(cleanup.taskTab, "unknown");
+        assert.equal(cleanup.focusEmulation, "unknown");
+        assert.equal(cleanup.attachment, "unknown");
+        assert.equal(cleanup.bridgeProcess, "reaped");
+        const pid = Number((await readFile(markers.pid, "utf8")).trim());
+        assertProcessGone(pid);
+      },
+    );
   },
 );
 

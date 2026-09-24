@@ -140,14 +140,31 @@ if _SCENARIO == "near_limit_terminal_after_stop":
     os._exit(32)
 
 import jev_ultrafast
-from browser_harness import admin, helpers as harness_helpers
+from browser_harness import admin
+from browser_harness import helpers as harness_helpers
 from jev_ultrafast import browser, model
 
+_SHARED_STATE_PATH = os.environ.get("RLCD_TEST_SHARED_STATE_MARKER")
 _STATE = {
-    "url": "about:blank",
+    "url": (
+        "about:blank"
+        if _SCENARIO == "borrowed_about_blank"
+        else "https://example.test/existing"
+    ),
     "destination": False,
     "typed": "",
 }
+if _SHARED_STATE_PATH and Path(_SHARED_STATE_PATH).exists():
+    loaded_state = json.loads(Path(_SHARED_STATE_PATH).read_text(encoding="utf-8"))
+    if isinstance(loaded_state, dict):
+        _STATE.update(loaded_state)
+
+
+def _persist_state() -> None:
+    if _SHARED_STATE_PATH:
+        Path(_SHARED_STATE_PATH).write_text(
+            json.dumps(_STATE, sort_keys=True), encoding="utf-8"
+        )
 
 
 def _append(environment_name: str, value: str) -> None:
@@ -351,31 +368,155 @@ def _page():
     }
 
 
+def _target_infos():
+    if _SCENARIO == "list_error":
+        raise RuntimeError("synthetic tab discovery failed")
+    if _SCENARIO == "list_empty":
+        return [
+            {
+                "targetId": "INTERNAL",
+                "type": "page",
+                "title": "Settings",
+                "url": "chrome://settings/",
+            },
+            {
+                "targetId": "WORKER",
+                "type": "service_worker",
+                "title": "Worker",
+                "url": "https://example.test/worker.js",
+            },
+        ]
+    if _SCENARIO == "list_tabs":
+        return [
+            {
+                "targetId": "TAB-Z",
+                "type": "page",
+                "title": "Second duplicate",
+                "url": "https://example.test/same",
+            },
+            {
+                "targetId": "TAB-A",
+                "type": "page",
+                "title": "First duplicate",
+                "url": "https://example.test/same",
+            },
+            {
+                "targetId": "TAB-BLANK",
+                "type": "page",
+                "title": "",
+                "url": "about:blank",
+            },
+            {
+                "targetId": "INTERNAL",
+                "type": "page",
+                "title": "Settings",
+                "url": "chrome://settings/",
+            },
+        ]
+    if _SCENARIO == "list_omission":
+        items = [
+            {
+                "targetId": f"TAB-{index:03d}",
+                "type": "page",
+                "title": "T" * 700,
+                "url": "https://example.test/" + "U" * 2_500,
+            }
+            for index in range(40)
+        ]
+        items[0]["title"] = os.environ.get("TYPESAFE_API_KEY", "") + "T" * 700
+        items[0]["url"] = (
+            "https://example.test/?value="
+            + os.environ.get("TEXT_MODEL_API_KEY", "")
+            + "U" * 2_500
+        )
+        items.extend(
+            [
+                {
+                    "targetId": "X" * 600,
+                    "type": "page",
+                    "title": "overlong id",
+                    "url": "https://example.test/overlong-id",
+                },
+                {
+                    "targetId": os.environ.get("TYPESAFE_API_KEY", ""),
+                    "type": "page",
+                    "title": "credential-shaped id",
+                    "url": "https://example.test/credential-id",
+                },
+            ]
+        )
+        return list(reversed(items))
+    if _SCENARIO in {"borrowed_missing", "borrowed_closed"}:
+        return []
+    if _SCENARIO == "borrowed_unsuitable":
+        return [
+            {
+                "targetId": "rlcd-borrowed-target",
+                "type": "page",
+                "title": "Internal",
+                "url": "chrome://settings/",
+            }
+        ]
+    return [
+        {
+            "targetId": "rlcd-borrowed-target",
+            "type": "page",
+            "title": "Borrowed fixture",
+            "url": _STATE["url"],
+        }
+    ]
+
+
 def _cdp(method, session_id=None, **params):
-    del session_id
+    if method == "Target.getTargets":
+        _append("RLCD_TEST_BROWSER_MARKER", "get-targets")
+        return {"targetInfos": _target_infos()}
     if method == "Target.createTarget":
         _append("RLCD_TEST_BROWSER_MARKER", "created:rlcd-owned-target")
         return {"targetId": "rlcd-owned-target"}
     if method == "Target.attachToTarget":
+        target_id = params.get("targetId")
+        _append("RLCD_TEST_BROWSER_MARKER", f"attach:{target_id}")
         if _SCENARIO == "constructor_interrupt":
             os.kill(os.getpid(), signal.SIGTERM)
+        if target_id == "rlcd-borrowed-target":
+            return {"sessionId": "rlcd-borrowed-session"}
         return {"sessionId": "rlcd-owned-session"}
+    if method == "Target.detachFromTarget":
+        detached = params.get("sessionId")
+        _append("RLCD_TEST_BROWSER_MARKER", f"detach:{detached}")
+        if _SCENARIO == "borrowed_detach_failure":
+            raise RuntimeError("synthetic detach failure")
+        return {}
     if method == "Target.closeTarget":
         target_id = params.get("targetId")
         _append("RLCD_TEST_BROWSER_MARKER", f"close:{target_id}")
         if target_id != "rlcd-owned-target":
             raise RuntimeError("attempted to close an unrelated target")
         return {"success": _SCENARIO not in {"close_false", "slow_close_false"}}
-    if method == "Target.getTargets":
-        return {"targetInfos": []}
     if method == "Page.navigate":
         _STATE["url"] = params["url"]
+        _STATE["destination"] = False
+        _persist_state()
+        _append(
+            "RLCD_TEST_BROWSER_MARKER",
+            f"navigate:{session_id}:{params['url']}",
+        )
         return {"frameId": "fixture-frame"}
+    if method == "Emulation.setFocusEmulationEnabled":
+        enabled = params.get("enabled")
+        _append(
+            "RLCD_TEST_BROWSER_MARKER", f"focus:{session_id}:{str(enabled).lower()}"
+        )
+        if not enabled and _SCENARIO == "borrowed_focus_release_failure":
+            raise RuntimeError("synthetic focus release failure")
+        return {}
     if method.startswith("Emulation."):
         return {}
     if method == "Input.dispatchMouseEvent":
         if params.get("type") == "mouseReleased":
             _STATE["destination"] = True
+            _persist_state()
             _append("RLCD_TEST_BROWSER_MARKER", "click:continue")
         return {}
     if method == "Input.dispatchKeyEvent":
@@ -383,12 +524,15 @@ def _cdp(method, session_id=None, **params):
     if method == "Input.insertText":
         value = params["text"]
         _STATE["typed"] = value
+        _persist_state()
         _append("RLCD_TEST_FIELD_MARKER", f"value:{value}")
         return {}
     if method == "Runtime.evaluate":
         expression = params.get("expression", "")
         if expression == "document.readyState":
             value = "complete"
+        elif expression == "JSON.stringify({url:location.href,topLevel:self===top})":
+            value = json.dumps({"url": _STATE["url"], "topLevel": True})
         elif "return state?.marker ?? null" in expression:
             value = _page()["marker"]
         elif "return c ? [c.pageKey()" in expression:
@@ -399,6 +543,8 @@ def _cdp(method, session_id=None, **params):
         elif "return {x,y}" in expression:
             value = {"x": 100, "y": 100}
         elif "if (!document.body) return null" in expression:
+            if _SCENARIO == "borrowed_constructor_error":
+                raise RuntimeError("synthetic borrowed initial observation failure")
             value = _page()
         else:
             value = None

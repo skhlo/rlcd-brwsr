@@ -6,10 +6,13 @@ checks passed there. A subsequent bounded live Ling probe and one local fixture
 through Pi's normal outer-model/tool path also passed on that historical
 production code. The current native helper selects direct DeepSeek
 `deepseek-flash` with native thinking disabled in the request. Its
-configuration-only switch has a 38-test deterministic suite but no live or
-actual-surface acceptance; Jev and Pi's outer model are unchanged. Public-site
-acceptance remains pending; see the
-[verification record](../thin-python-evidence.md).
+configuration-only switch itself had no live or actual-surface acceptance. The
+local tab-targeting amendment adds a 49-test deterministic suite and two bounded
+command-driven Pi-TUI/real-Chrome acceptance passes with synthetic provider
+replies. Those checks used no outer model, live inference or public site; Jev and Pi's outer
+model are unchanged. Public-site acceptance remains pending; see the historical
+[verification record](../thin-python-evidence.md) and the retained local
+implementation handoff.
 Supersedes ADR-0002's command-level orchestration,
 Pi-native helper relay and parent shadow-state design, not its dependency pins or
 native Browser Harness ownership.
@@ -23,10 +26,18 @@ deadline, escalates `SIGTERM` to `SIGKILL` only while exit remains unobserved,
 waits for the child to be reaped, and presents one terminal result. There is no
 asynchronous file-access precheck or separate pre-spawn stop owner.
 
-The public interface is `url`, `goal`, optional `maxSeconds`, and optional
-`retainTab`. `maxActions` is removed without an alias or replacement setting.
-Upstream retains its 60-history-entry and 120-decision limits. The parent wall
-deadline is coarse and is not a no-dispatch guarantee.
+The run interface requires `goal`, accepts optional `maxSeconds`, and requires
+at least one of `url` or `targetId`. A URL alone creates a tab and preserves the
+existing optional `retainTab` policy. A target ID alone continues the exact
+borrowed tab without startup navigation; supplying both explicitly navigates
+that borrowed tab before the goal. `retainTab` is invalid whenever `targetId`
+is supplied, including when its value is false. A separate read-only
+`rlcd_brwsr_list_tabs` tool discovers bounded eligible page targets without
+navigation, foreground selection, Agent construction or model calls. Discovery
+is technical eligibility, not authorization. `maxActions` remains removed
+without an alias or replacement setting. Upstream retains its 60-history-entry
+and 120-decision limits. The parent wall deadline is coarse and is not a
+no-dispatch guarantee.
 
 `config/runtime.json` is the single owner for the 32 KiB serialized-request cap,
 16 KiB terminal/model-visible JSON cap, Jev model, and selected native helper:
@@ -47,14 +58,20 @@ reports nonblank resolved key presence without claiming provider or credential
 validity. There is no Pi OAuth/Luna completion, backend selector, or replacement
 helper orchestration.
 
-The implementation retains two revision-pinned integrations:
+The implementation retains three revision-pinned integrations:
 
 1. Rebind upstream's imported `ensure_daemon` symbol to Browser Harness's
    `require_existing_daemon` after rejecting currently resolved remote/cloud
    configuration and unsupported reported modes.
-2. After `Agent` construction returns, retain its known target only for a normal
-   completion claim when requested; otherwise make one direct
-   `Target.closeTarget` call and report `closed` only for `success: true`.
+2. For a created tab, use the known target after `Agent` construction for normal
+   requested retention or one direct `Target.closeTarget` call, reporting
+   `closed` only for `success: true`.
+3. For a borrowed tab, acquire one exact flattened session and temporarily bind
+   the pinned `jev_ultrafast.agent.Browser` factory to a Browser object that
+   retains native observation, freshness and input behavior. Its lifetime owner
+   performs optional exact-session navigation, background focus emulation,
+   explicit focus disable and `Target.detachFromTarget`; it never invokes the
+   normal Browser constructor or `Target.closeTarget`.
 
 The existing-daemon check does not bind a same-named `cdp` daemon to the current
 endpoint, profile, or local-vs-remote settings; the reported mode is not endpoint
@@ -85,21 +102,33 @@ unknown. An exception escaping projection after request acceptance also falls
 back to unknown rather than `invalid_input`. A fitting
 fallback preserves a parent's first cancellation/deadline and observed process
 reap if adding that evidence
-would exceed the terminal cap. There is no startup target interception, parent
-fallback cleanup, tab-difference inference, automatic retry, progress journal,
-generic protocol framework, or strict action-at-deadline guarantee.
+would exceed the terminal cap. The borrowed owner validates exact target type and current URL before attach,
+then repeats current eligibility through a session-bound page/frame observation
+before navigation or Agent construction. HTTP(S) pages can continue in place;
+`about:blank` requires an explicit HTTP(S) URL. Missing, closed or unsuitable
+targets do not fall back by URL, title or target difference. Borrowed cleanup
+reports focus-disable and detach acknowledgements independently. An acknowledged
+focus disable does not prove restoration of document or OS focus, and a forced
+child exit can strand both emulation and attachment in the persistent daemon.
+There is no startup target interception for created tabs, parent fallback
+cleanup, tab-difference inference, automatic retry, progress journal, generic
+protocol framework, or strict action-at-deadline guarantee.
 
 Ordinary registered-tool tests cross the real runner and actual pinned
 Agent/native helper while substituting external Browser/CDP and provider
-interactions. One labelled lifecycle case wraps the real Agent for known-target
-recovery. Internal process/outcome tests and a direct Python projection contract
-cover supervision and synthetic oversized state without global event/timer
-patches, whole-extension copies or Agent-history mutation. Historical TUI command
-checks exercise real Chrome with synthetic provider replies at their recorded
-head. The later live Ling follow-up covers one helper payload and a local fixture
-through Pi's normal agent turn on that historical production code; it is not
-provider evidence for the current direct DeepSeek selection. This candidate
-received no live or actual-surface check. These checks do not establish general
+interactions. They also exercise discovery, exact borrowed continuation and
+navigation, ownership-aware cleanup and forced-exit uncertainty through those
+public tool interfaces. One labelled lifecycle case wraps the real Agent for
+known-target recovery. Internal process/outcome tests and a direct Python
+projection contract cover supervision and synthetic oversized state without
+global event/timer patches, whole-extension copies or Agent-history mutation.
+Historical TUI command checks exercise real Chrome with synthetic provider
+replies at their recorded heads. The later live Ling follow-up covers one helper
+payload and a local fixture through Pi's normal agent turn on that historical
+production code; it is not provider evidence for the current direct DeepSeek
+selection. Tab-targeting acceptance, when recorded in the owning plan and local
+handoff, is command-invoked registered-tool evidence with synthetic providers,
+not live-provider or outer-model evidence. These checks do not establish general
 model quality, complete billing, public-site reliability or delivery. The
-[owning plan](../RLCD-BRWSR.md) records remaining acceptance steps; the
+[owning plan](../RLCD-BRWSR.md) records the evidence and remaining limits; the
 [feasibility record](../thin-python-feasibility.md) remains historical evidence.
