@@ -56,13 +56,16 @@ checks and the final unrelated-session check remain pending. The owner chose to
 stop here rather than allocate another run. No new live-provider or public-site
 acceptance, general reliability, speed benefit or #17 fix is claimed.
 
-Receipts remain under `artifacts/design-a/`: the original handoff and setup
-failures, `FIXES.md`, and `renewed/ALLOWANCE.json`, `CONTINUATION.json` and
-`runs/5368c8f8/`, `runs/0e10768a/`. The original failed ledger was preserved;
-continuation used the original deadline and cumulative budget. Both renewed
-browsers, fixture processes and helpers stopped. Inactive profiles and Harness
-socket files remain local. The prior live Jev–CLI probe is separate evidence
-for a different controller, not acceptance of this adapter.
+Retired verification drivers and their complete evidence are archived locally
+in `artifacts/design-a/history.tar.gz`. Original implementation-relative paths
+are under `implementation/`, including `renewed/` with both ledgers and runs;
+parent dispatch records are under `dispatch/`. The archive was byte-verified
+before retiring unpacked copies. `artifacts/design-a/PAUSED-HANDOFF.md` is the
+single current entry point. Historical scripts are not active verification
+commands or permission to resume. Both renewed browsers, fixture processes and
+helpers stopped; inactive profiles remain in the archive. The prior live
+Jev–CLI probe is separate evidence for a different controller, not acceptance
+of this adapter.
 
 ## Compact handoff
 

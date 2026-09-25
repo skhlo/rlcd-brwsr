@@ -61,17 +61,15 @@ class _Worker:
         script = Path(__file__).with_name("cli_browser_worker.mjs")
         environment = {
             key: value for key, value in os.environ.items()
-            if key in {"PATH", "HOME", "TMPDIR", "TMP", "TEMP", "NODE_OPTIONS", "LANG", "LC_ALL"}
+            if key in {"PATH", "HOME", "TMPDIR", "TMP", "TEMP", "LANG", "LC_ALL"}
         }
         # Provider credentials and Browser Harness workspace settings stay in Python.
-        environment.pop("NODE_OPTIONS", None)
         self.process = subprocess.Popen(
             ["node", str(script)], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             stderr=subprocess.PIPE, env=environment, bufsize=0,
         )
         self._sequence = 0
         self._buffer = bytearray()
-        self._stderr = bytearray()
         self._stderr_thread = threading.Thread(target=self._drain_stderr, daemon=True)
         self._stderr_thread.start()
         self.terminated = False
@@ -90,8 +88,6 @@ class _Worker:
             chunk = self.process.stderr.read(4096)
             if not chunk:
                 break
-            if len(self._stderr) < 16_384:
-                self._stderr.extend(chunk[: 16_384 - len(self._stderr)])
 
     def _readline(self, timeout: float) -> bytes:
         if self.process.stdout is None:

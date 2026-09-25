@@ -12,12 +12,12 @@ import sys
 from typing import Any
 from urllib.parse import urlsplit
 
-from borrowed_tab import StopRequested
 from cli_browser import CliBrowser, DialogPending
 from handoff_report import missing_report, select_handoff
 from runtime_support import (
     JEV_MODEL,
     REQUEST_MAX_UTF8_BYTES,
+    StopRequested,
     TERMINAL_MAX_UTF8_BYTES,
     TEXT_MODEL,
     TEXT_MODEL_BASE_URL,
