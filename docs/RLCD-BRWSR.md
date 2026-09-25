@@ -103,7 +103,7 @@ journal, or automatic retry exists.
 
 The pinned integration seams are the Agent's imported `Browser` factory,
 Harness's `get_ws_url()` candidate resolver and CDP target/session calls, and
-the CLI package's built-source imports plus Puppeteer target ID hook. Python
+the CLI package's built-source imports plus Puppeteer target ID/session hooks. Python
 installs a one-use Browser factory for both created and borrowed modes. The
 helper connects without starting a CLI daemon or MCP server, requires the exact
 Harness target ID in that connection before page action, and never selects by
@@ -198,6 +198,17 @@ helper's same-browser exact target, attaches one flattened session, then repeats
 eligibility through a session-bound top-level page observation. Requested
 navigation crosses the conservative effect boundary before `Page.navigate`;
 provider or input races after admission therefore retain unknown effects.
+
+The task worker subscribes to the exact Puppeteer target session's dialog
+events before constructing its page, then to the page's dialog events. It never
+accepts or dismisses a dialog. This catches events after subscription; the
+pinned CDP Page domain has no read-only current-dialog query, and the inspected
+Chromium `Page.enable` implementation does not replay a dialog already open
+before subscription. The owner accepted that such a page may return a bounded
+stop/error without confirmed dialog metadata while leaving the dialog untouched.
+The outer agent must inspect the exact target before retrying; the adapter does
+not invent a dialog state from timeout or Harness's global dialog slot. This
+acceptance does not authorize adding a persistent observer.
 
 Handled outcomes independently attempt helper disconnect, focus-emulation
 disable and exact-session detach. Trusted borrowed results use
@@ -310,12 +321,16 @@ git diff --check
 
 The deterministic registered-tool suite crosses the real Python runner and
 pinned Agent/native helper while replacing external worker and provider
-transports. A focused process test exercises the real Node helper's admission
-and EOF paths. It covers request modes, exact tab identity, lifecycle trust,
-cleanup, bounds, privacy, evidence selection, omissions, and both output
-surfaces. Browser/lifecycle changes still require acceptance on the actual Pi
-surface. The two authorized isolated passes failed before tool use (fixture
-bind, then Harness socket path); native Pi/Chrome acceptance remains pending.
+transports. Focused tests execute the actual Node worker observation, freshness,
+candidate, action, settling and dialog paths against a selected-page-shaped
+external browser substitute. A focused process test exercises the real Node
+helper's endpoint refusal and EOF paths. The suite covers request modes, exact
+tab identity, lifecycle trust, cleanup, bounds, privacy, evidence selection,
+omissions, and both output surfaces. Browser/lifecycle changes still require
+acceptance on the actual Pi surface. The
+[verification record](thin-python-evidence.md#design-a-local-candidate-2026-09-25)
+distinguishes completed real-fixture checks from pending Pi/mechanics checks.
+The owner paused the remaining verification; the candidate remains unactivated.
 Preserve failed checks as evidence rather than rewriting them as passes.
 
 Future optimization is justified by observed lost information, avoidable

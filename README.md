@@ -14,9 +14,10 @@ CDP target lifetime. Pi validates the request, supervises one Python process,
 and presents a compact handoff while retaining bounded diagnostics in details.
 A completion claim always requires independent verification by the outer agent.
 
-This is an experimental capability. Design A's local adapter still needs native
-browser acceptance before production activation; the two authorized isolated
-passes stopped during fixture/daemon setup. The Python-owned base merged in
+This is an experimental capability. Design A has partial real-fixture evidence,
+but the owner paused remaining verification and left it unactivated. The
+already-open-dialog bounded-stop limitation is accepted; full native Pi/browser
+acceptance is still pending. The Python-owned base merged in
 [PR #16](https://github.com/skhlo/rlcd-brwsr/pull/16). Exact existing-tab
 support, the direct DeepSeek helper, compact handoffs and co-browse are on
 `main` following [PR #18](https://github.com/skhlo/rlcd-brwsr/pull/18).

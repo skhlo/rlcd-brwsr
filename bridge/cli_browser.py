@@ -100,10 +100,12 @@ class _Worker:
         while True:
             newline = self._buffer.find(b"\n")
             if newline >= 0:
+                if newline + 1 > 262_144:
+                    raise RuntimeError("CLI helper response exceeded its byte bound")
                 line = bytes(self._buffer[:newline])
                 del self._buffer[: newline + 1]
                 return line
-            if len(self._buffer) > 262_144:
+            if len(self._buffer) >= 262_144:
                 raise RuntimeError("CLI helper response exceeded its byte bound")
             remaining = deadline - time.monotonic()
             if remaining <= 0:

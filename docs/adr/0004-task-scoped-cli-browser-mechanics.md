@@ -1,6 +1,6 @@
 # Put CLI browser mechanics behind the Python-owned run
 
-Status: selected for local implementation; native browser acceptance pending.
+Status: selected for local implementation; remaining native acceptance paused by the owner.
 
 ADR-0003 keeps the pinned Python `Agent.run()` as the only owner of decisions,
 history, field-text generation, projection and reporting. Its old Browser
@@ -24,6 +24,14 @@ This supersedes ADR-0003's clauses that assigned observation/freshness/input
 to the upstream Browser/Harness and counted only three private integrations.
 It retains ADR-0003's Python run, native providers, reporting, Pi supervision,
 and ownership of created versus borrowed tabs. The new private imports and
-Puppeteer target ID hook are pinned and must be retested on upgrades. The
-attempted isolated browser passes failed during fixture/daemon setup before
-native Agent or helper action, so the branch does not claim browser acceptance.
+Puppeteer target ID/session hooks are pinned and must be retested on upgrades.
+Partial fixture evidence and remaining checks are owned by
+[the verification record](../thin-python-evidence.md#design-a-local-candidate-2026-09-25),
+not inferred from the earlier standalone CLI probe.
+
+The owner accepted a short-lived-helper limitation: a dialog already open before
+subscription stays untouched, but can produce a bounded stop/error without
+typed dialog metadata. A persistent observer is not part of A. Events observed
+after subscription still take the explicit dialog-handoff path; no dialog is
+automatically accepted or dismissed. The owner stopped further verification and
+left the local candidate unactivated.

@@ -16,23 +16,53 @@ setup guidance or authorization to repeat live work.
 
 ## Design A local candidate (2026-09-25)
 
-The task-scoped CLI browser adapter is implemented locally behind the pinned
-Python Agent. `pnpm check` passes 72 registered-tool/Node tests plus three focused
-Python target-admission tests; the registered-tool browser and provider seams
-are simulated. The real Node worker refuses a non-loopback endpoint and exits
-on parent EOF. A deliberate first-target substitution made the duplicate-URL
-exact-ID guard fail; restoring the guard returned the suite to green.
+**Local implementation; remaining verification paused by the owner. Not
+activated or published.** The owner accepted the already-open-dialog limitation:
+the adapter must leave that dialog untouched, but may return a bounded
+stop/error rather than identify it explicitly. This does not authorize a
+persistent observer or automatic dialog handling.
 
-Two authorized isolated browser passes failed before tool use. Pass 1 could not
-bind its loopback fixture inside the sandbox. Pass 2 started disposable Chrome,
-then the task-owned Harness daemon exited because its Unix socket path under
-the deep worktree exceeded the OS limit. Chrome exited normally. No native
-Agent, Pi tool, or real CLI helper browser action was accepted in either pass;
-there is no new live inference or outcome evidence. Detailed local receipts are
-under `artifacts/design-a/`, especially `ACCEPTANCE-PASSES.md`, `CAPABILITIES.md`
-and `HANDOFF.md`. Both passes are consumed; further browser testing needs a new
-finite authorization. The prior live Jev–CLI probe remains separate evidence
-for a different controller and does not validate this adapter.
+The offline correction batch passed 75 Node tests and five Python tests, plus
+type, formatting and syntax checks. Three focused tests cross the actual Node
+worker with an external selected-page-shaped dependency; the existing
+registered-tool browser/provider stand-ins remain documented. Deliberately
+breaking exact-ID selection and the complete RPC line bound produced the
+expected failures; both guards were restored.
+
+The initial two browser passes failed during setup (sandbox fixture bind and an
+overlong Harness Unix-socket path). A separately authorized renewed window then
+used two disposable Chrome launches and 13 charged logical cases, with synthetic
+model transports and no live Jev/DeepSeek/reporting calls. Its receipts establish:
+
+- the original open-shadow freshness and offscreen-iframe text defects on real
+  fixtures, and their corrected behavior through the real adapter;
+- exact borrowed-target continuation despite duplicate URLs, same-target
+  explicit navigation and missing-target refusal without fallback;
+- created-target retention after completion and closure after BLOCKED/error;
+- an already-open confirm dialog remained untouched and produced a bounded
+  stop, not a typed `DialogPending` handoff. That limitation is now accepted.
+
+Full acceptance did **not** pass. The first renewed run's Pi launcher failed
+before Pi ran because macOS `script` could not use socket-backed stdin. A Python
+PTY launcher was checked with `pi --version`. The second run stopped before its
+remaining cases because the test driver looked for Enter in `action.key`, while
+the adapter uses `action.value`. That check is corrected offline; it does not
+establish a production Enter defect. Earlier mechanics steps ran, but their
+independent final-state oracle was not reached.
+
+Actual Pi TUI acceptance, contextual Enter, the native Agent/text-helper browser
+flow, new-dialog handoff, real stale-action refusal, controlled/forced-stop
+checks and the final unrelated-session check remain pending. The owner chose to
+stop here rather than allocate another run. No new live-provider or public-site
+acceptance, general reliability, speed benefit or #17 fix is claimed.
+
+Receipts remain under `artifacts/design-a/`: the original handoff and setup
+failures, `FIXES.md`, and `renewed/ALLOWANCE.json`, `CONTINUATION.json` and
+`runs/5368c8f8/`, `runs/0e10768a/`. The original failed ledger was preserved;
+continuation used the original deadline and cumulative budget. Both renewed
+browsers, fixture processes and helpers stopped. Inactive profiles and Harness
+socket files remain local. The prior live Jev–CLI probe is separate evidence
+for a different controller, not acceptance of this adapter.
 
 ## Compact handoff
 

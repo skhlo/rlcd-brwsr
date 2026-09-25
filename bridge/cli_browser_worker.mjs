@@ -2,6 +2,8 @@
 // chrome-devtools-mcp 1.7.0 built source; no CLI/MCP entry point is imported.
 import { createHash } from "node:crypto";
 import readline from "node:readline";
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   ensureBrowserConnected,
   closeBrowser,
@@ -114,6 +116,7 @@ async function init(request) {
       "The named Harness daemon's exact page target is absent from this browser",
     );
   }
+  await armExactTargetDialogEvents(target);
   page = await target.page();
   if (!page || page.isClosed())
     fail("AdmissionError", "The exact page target closed during admission");
@@ -122,7 +125,24 @@ async function init(request) {
   page.on("dialog", (value) => {
     dialog = value;
   });
+  pendingDialog();
   return { targetId };
+}
+
+// The target's own Puppeteer CDP session can see a dialog that opens while
+// CdpPage is being constructed. Page.enable does not replay a dialog that
+// was already open before this session subscribed.
+async function armExactTargetDialogEvents(target) {
+  const exactSession = target._session?.();
+  if (exactSession) {
+    exactSession.on("Page.javascriptDialogOpening", (event) => {
+      dialog = { handled: false, type: () => String(event.type ?? "unknown") };
+    });
+    exactSession.on("Page.javascriptDialogClosed", () => {
+      dialog = undefined;
+    });
+    await exactSession.send("Page.enable");
+  }
 }
 
 function hash(value) {
@@ -132,10 +152,13 @@ function hash(value) {
 async function frameState(frame) {
   return frame.evaluate(() => {
     const controls = [];
+    const shadowText = [];
+    let shadowChars = 0;
     const visit = (root) => {
       for (const element of root.querySelectorAll(
         "input,textarea,select,button,a,[role],[contenteditable]",
       )) {
+        if (controls.length >= 500) break;
         controls.push([
           element.tagName,
           element.getAttribute("role"),
@@ -147,7 +170,19 @@ async function frameState(frame) {
           element.disabled ?? null,
           element.getAttribute("href"),
         ]);
-        if (element.shadowRoot) visit(element.shadowRoot);
+      }
+      // Plain and custom-element hosts can have open shadow trees too.
+      for (const element of root.querySelectorAll("*")) {
+        if (!element.shadowRoot) continue;
+        if (shadowChars < 20000) {
+          const text = (element.shadowRoot.textContent ?? "").slice(
+            0,
+            20000 - shadowChars,
+          );
+          shadowText.push(text);
+          shadowChars += text.length;
+        }
+        visit(element.shadowRoot);
       }
     };
     visit(document);
@@ -159,8 +194,87 @@ async function frameState(frame) {
       scrollY,
       document.body?.innerText?.slice(0, 20000) ?? "",
       controls.slice(0, 500),
+      shadowText,
     ];
   });
+}
+
+// Only include a child frame's text when its iframe is wholly inside every
+// ancestor viewport and scroll clip. This is a conservative embedding check,
+// not a general claim that every glyph is unobscured.
+async function frameEmbeddingVisible(frame) {
+  let current = frame;
+  while (current !== page.mainFrame()) {
+    if (!current?.parentFrame()) return false;
+    let handle;
+    try {
+      handle = await current.frameElement();
+      if (!handle) return false;
+      const visible = await handle.evaluate((element) => {
+        if (!(element instanceof Element) || !element.isConnected) return false;
+        if (
+          !element.checkVisibility({
+            checkOpacity: true,
+            checkVisibilityCSS: true,
+          })
+        )
+          return false;
+        const rect = element.getBoundingClientRect();
+        if (
+          rect.width <= 0 ||
+          rect.height <= 0 ||
+          rect.left < 0 ||
+          rect.top < 0 ||
+          rect.right > innerWidth ||
+          rect.bottom > innerHeight
+        )
+          return false;
+        let ancestor = element.parentElement ?? element.getRootNode().host;
+        while (ancestor instanceof Element) {
+          const style = getComputedStyle(ancestor);
+          if (
+            /^(auto|scroll|hidden|clip)$/.test(style.overflowX) ||
+            /^(auto|scroll|hidden|clip)$/.test(style.overflowY)
+          ) {
+            const clip = ancestor.getBoundingClientRect();
+            if (
+              rect.left < clip.left ||
+              rect.top < clip.top ||
+              rect.right > clip.right ||
+              rect.bottom > clip.bottom
+            )
+              return false;
+          }
+          ancestor = ancestor.parentElement ?? ancestor.getRootNode().host;
+        }
+        const root = element.getRootNode();
+        const hitAt =
+          root.elementFromPoint?.bind(root) ??
+          document.elementFromPoint.bind(document);
+        for (const [x, y] of [
+          [rect.left + rect.width / 2, rect.top + rect.height / 2],
+          [rect.left + 1, rect.top + 1],
+          [rect.right - 1, rect.top + 1],
+          [rect.left + 1, rect.bottom - 1],
+          [rect.right - 1, rect.bottom - 1],
+        ]) {
+          if (hitAt(x, y) !== element) return false;
+        }
+        return true;
+      });
+      if (!visible) return false;
+    } catch {
+      return false;
+    } finally {
+      try {
+        await handle?.dispose?.();
+      } catch {
+        /* Session may have gone away. */
+      }
+    }
+    current = current.parentFrame();
+  }
+  return true;
 }
 
 async function currentMarker() {
@@ -175,10 +289,11 @@ async function currentMarker() {
       continue;
     }
     if (frame !== page.mainFrame() && url.origin !== topOrigin) continue;
+    const embeddingVisible = await frameEmbeddingVisible(frame);
     try {
-      states.push(await frameState(frame));
+      states.push([embeddingVisible, await frameState(frame)]);
     } catch {
-      states.push([frame.url(), "unavailable"]);
+      states.push([embeddingVisible, frame.url(), "unavailable"]);
     }
   }
   return hash(states);
@@ -187,6 +302,7 @@ async function currentMarker() {
 async function visibleText() {
   const topOrigin = new URL(page.url()).origin;
   const parts = [];
+  let omittedFrames = 0;
   for (const frame of page.frames()) {
     let url;
     try {
@@ -195,6 +311,10 @@ async function visibleText() {
       continue;
     }
     if (frame !== page.mainFrame() && url.origin !== topOrigin) continue;
+    if (!(await frameEmbeddingVisible(frame))) {
+      omittedFrames++;
+      continue;
+    }
     try {
       const text = await frame.evaluate(() => {
         const lines = [];
@@ -270,7 +390,7 @@ async function visibleText() {
       /* An unavailable frame is not presented as visible text. */
     }
   }
-  return parts.join("\n").slice(0, 6000);
+  return { text: parts.join("\n").slice(0, 6000), omittedFrames };
 }
 
 async function describe(handle, role) {
@@ -507,14 +627,19 @@ async function observe() {
   marker = after;
   revision++;
   actionMap = nextMap;
-  const text =
-    `Visible viewport content:\n${visible.slice(0, 3000)}\n` +
-    `Document accessibility structure (may include offscreen content):\n${structure.slice(0, 2800)}`;
+  const text = (
+    `Visible viewport content:\n${visible.text.slice(0, 3000)}\n` +
+    (visible.omittedFrames
+      ? `[${visible.omittedFrames} same-origin frame(s) omitted from visible evidence because embedding visibility was not established]\n`
+      : "") +
+    `Document accessibility structure (may include offscreen content):\n${structure.slice(0, 2800)}`
+  ).slice(0, 6000);
   return {
     url,
     title,
     text,
-    visible_text: visible,
+    visible_text: visible.text,
+    visible_frame_omissions: visible.omittedFrames,
     actions,
     scroll,
     omitted_actions: omitted,
@@ -604,42 +729,30 @@ async function dispatch(request) {
   fail("InputError", "Unknown private browser operation");
 }
 
-const input = readline.createInterface({
-  input: process.stdin,
-  crlfDelay: Infinity,
-});
-input.on("line", (line) => {
-  queue = queue
-    .then(async () => {
-      if (line.length > MAX_LINE)
-        fail("InputError", "Private browser request is oversized");
-      let reply;
-      try {
-        const request = JSON.parse(line);
-        reply = { id: request.id, ok: true, result: await dispatch(request) };
-      } catch (error) {
-        reply = {
-          id: (() => {
-            try {
-              return JSON.parse(line).id;
-            } catch {
-              return null;
-            }
-          })(),
-          ok: false,
-          error: {
-            type: error.code || error.name || "BrowserError",
-            message: String(error.message || error).slice(0, 512),
-          },
-        };
-      }
-      if (!stopping || reply.result?.disconnected)
-        process.stdout.write(`${JSON.stringify(reply)}\n`);
-    })
-    .catch(() => {
-      void shutdown();
-    });
-});
+// Narrow offline seam: tests supply one selected Puppeteer-page-shaped external
+// dependency while running this module's real observation/freshness/action code.
+export function installSelectedPageForTest(selectedPage) {
+  page = selectedPage;
+  dialog = undefined;
+  marker = undefined;
+  revision = 0;
+  actionMap = new Map();
+  stopping = false;
+  page.on("dialog", (value) => {
+    dialog = value;
+  });
+}
+
+export {
+  observe,
+  fresh,
+  act,
+  frameState,
+  frameEmbeddingVisible,
+  visibleText,
+  armExactTargetDialogEvents,
+};
+
 function stopFromParent() {
   // If an in-flight locator never settles after disconnection, parent loss
   // still cannot leave an idle worker behind.
@@ -648,5 +761,46 @@ function stopFromParent() {
     process.exitCode = 0;
   });
 }
-input.on("close", stopFromParent);
-process.on("SIGTERM", stopFromParent);
+if (
+  process.argv[1] &&
+  resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+) {
+  const input = readline.createInterface({
+    input: process.stdin,
+    crlfDelay: Infinity,
+  });
+  input.on("line", (line) => {
+    queue = queue
+      .then(async () => {
+        if (line.length > MAX_LINE)
+          fail("InputError", "Private browser request is oversized");
+        let reply;
+        try {
+          const request = JSON.parse(line);
+          reply = { id: request.id, ok: true, result: await dispatch(request) };
+        } catch (error) {
+          reply = {
+            id: (() => {
+              try {
+                return JSON.parse(line).id;
+              } catch {
+                return null;
+              }
+            })(),
+            ok: false,
+            error: {
+              type: error.code || error.name || "BrowserError",
+              message: String(error.message || error).slice(0, 512),
+            },
+          };
+        }
+        if (!stopping || reply.result?.disconnected)
+          process.stdout.write(`${JSON.stringify(reply)}\n`);
+      })
+      .catch(() => {
+        void shutdown();
+      });
+  });
+  input.on("close", stopFromParent);
+  process.on("SIGTERM", stopFromParent);
+}
