@@ -9,7 +9,7 @@ import re
 from collections.abc import Callable
 from typing import Any
 
-from borrowed_tab import StopRequested
+from runtime_support import StopRequested
 
 REPORT_SOURCE_MAX_UTF8_BYTES = 24_576
 REPORT_CANDIDATE_MAX_UTF8_BYTES = 512

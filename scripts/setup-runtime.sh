@@ -5,6 +5,7 @@ cd "$(dirname "$0")/.."
 uv sync --frozen
 printf '%s\n' \
   'Project-local Python runtime is synchronized.' \
+  'Install the project-local Node dependencies with pnpm install --frozen-lockfile; preflight checks chrome-devtools-mcp@1.7.0 CLI modules.' \
   'Next: configure BU_NAME and the local connection in Browser Harness native settings.' \
   'The default workspace configuration is ~/.config/browser-harness/agent-workspace/.env.' \
   'After changing browser selectors, endpoints, or profiles, stop the same-named daemon before reprovisioning.' \
@@ -13,6 +14,7 @@ printf '%s\n' \
   'For text entry, configure a host-local DeepSeek-issued key as TEXT_MODEL_API_KEY.' \
   'The runner pins TEXT_MODEL_BASE_URL=https://api.deepseek.com/v1,' \
   'TEXT_MODEL=deepseek-flash, and TEXT_MODEL_REASONING=disabled.' \
-  'The parent-owned four-stage human-run wizard will supply these values in the native .env; this script does not write credentials.' \
-  'Do not use the retained pi-rlcd launcher: it injects an OpenRouter key. The parent task will make that launcher fail closed without deleting it.' \
-  'Then run scripts/provision-browser.sh.'
+  'This script does not edit the native environment, copy credentials or change Pi settings.' \
+  'Use plain Pi with the permanent checkout registered as described in README.md.' \
+  'For an existing installation, preserve the native environment and running browser services.' \
+  'Run scripts/preflight-runtime.sh to check the existing daemon; provision only during authorized browser setup.'

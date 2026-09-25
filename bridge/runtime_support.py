@@ -1,4 +1,4 @@
-"""Shared runtime pins, byte limits, and Browser Harness scope checks."""
+"""Shared runtime signals, configuration, and Browser Harness scope checks."""
 
 from __future__ import annotations
 
@@ -13,6 +13,10 @@ from urllib.parse import urlsplit
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 _CONFIG_PATH = _PROJECT_ROOT / "config" / "runtime.json"
 _DAEMON_NAME = re.compile(r"[A-Za-z0-9_-]{1,64}")
+
+
+class StopRequested(Exception):
+    """Raised on SIGTERM so synchronous browser work can unwind."""
 
 
 def _load_runtime_config() -> dict[str, Any]:

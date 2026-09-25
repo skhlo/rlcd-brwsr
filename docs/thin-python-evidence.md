@@ -14,6 +14,110 @@ resources. This document publishes evidence summaries, not the raw receipts:
 receipt locators, not public download links. No receipt or historical trial is
 setup guidance or authorization to repeat live work.
 
+## Design A local candidate (2026-09-25)
+
+**At checkpoint `e1e3551`, implementation was local, unactivated and unpublished;
+verification remained incomplete.** The owner accepted the already-open-dialog
+limitation: the adapter must leave that dialog untouched, but may return a bounded
+stop/error rather than identify it explicitly. This does not authorize a
+persistent observer or automatic dialog handling.
+
+The offline correction batch passed 75 Node tests and five Python tests, plus
+type, formatting and syntax checks. Three focused tests cross the actual Node
+worker with an external selected-page-shaped dependency; the existing
+registered-tool browser/provider stand-ins remain documented. Deliberately
+breaking exact-ID selection and the complete RPC line bound produced the
+expected failures; both guards were restored.
+
+The initial two browser passes failed during setup (sandbox fixture bind and an
+overlong Harness Unix-socket path). A separately authorized renewed window then
+used two disposable Chrome launches and 13 charged logical cases, with synthetic
+model transports and no live Jev/DeepSeek/reporting calls. Its receipts establish:
+
+- the original open-shadow freshness and offscreen-iframe text defects on real
+  fixtures, and their corrected behavior through the real adapter;
+- exact borrowed-target continuation despite duplicate URLs, same-target
+  explicit navigation and missing-target refusal without fallback;
+- created-target retention after completion and closure after BLOCKED/error;
+- an already-open confirm dialog remained untouched and produced a bounded
+  stop, not a typed `DialogPending` handoff. That limitation is now accepted.
+
+Full acceptance did **not** pass. The first renewed run's Pi launcher failed
+before Pi ran because macOS `script` could not use socket-backed stdin. A Python
+PTY launcher was checked with `pi --version`. The second run stopped before its
+remaining cases because the test driver looked for Enter in `action.key`, while
+the adapter uses `action.value`. That check is corrected offline; it does not
+establish a production Enter defect. Earlier mechanics steps ran, but their
+independent final-state oracle was not reached.
+
+A later one-launch pass on `9649545` established the normal Pi TUI path, but
+premature test-driver cleanup prevented its six remaining checks. Its synthetic
+reporting reply also had invalid usage metadata. Those failures remain recorded
+in `artifacts/design-a/verification/REPORT.md`.
+
+A separately authorized additional launch on `617c5c9` (unchanged production
+code) followed offline red/green checks of cleanup ordering and the synthetic
+reporting response. All seven browser checks ran; six passed:
+
+- the actual Pi TUI tool, native Agent/text helper and CLI adapter filled City
+  with `Busan` and clicked Submit, independently verified on the exact target;
+  valid synthetic `no_match` reporting rendered without a diagnostic;
+- fill, select, checkbox, nested-panel, open-shadow, same-origin-frame and Enter
+  mechanics had independently confirmed final fixture states;
+- stale input was refused without incrementing the click counter;
+- cooperative stop acknowledged focus disable, detach and bridge reap;
+- forced Python exit reported unknown cleanup and bridge reap, preserving the
+  borrowed tab; and
+- an unrelated exact session retained its sentinel, input and counters.
+
+The dialog check returned `blocked` / `DialogPending`, acknowledged detach and
+reported focus cleanup `unconfirmed`. Its assertion required a focus-disable
+acknowledgement, although the existing contract permits `unconfirmed`. This
+is not a demonstrated adapter contract violation, but the independent
+pending-dialog/untouched assertions were not reached. That gap remains; the
+failed check is not relabelled as passed. The owner subsequently accepted it for
+adoption in [#20](https://github.com/skhlo/rlcd-brwsr/issues/20), with in-session
+testing afterward. It is not a pre-adoption blocker.
+
+The launch allowance is consumed. Owned processes stopped; these verification
+runs did not activate the candidate. Raw results and limitations are in
+`artifacts/design-a/verification/RENEWAL.md`. No live-provider or public-site
+acceptance, general reliability, speed benefit or #17 fix is claimed.
+
+Retired verification material is archived locally under `artifacts/design-a/`:
+`history.tar.gz` retains the earlier implementation/dispatch history, while
+`verification-history.tar.gz` retains the later raw receipts, exercised scripts,
+profiles and offline checks under `verification/`. Both archives were
+byte-verified before retiring unpacked copies. The two readable reports remain
+outside the archives. `artifacts/design-a/README.md` is the current entry point;
+no active acceptance driver remains. Historical commands do not authorize a
+rerun. Verification processes stopped, and seven receipt-identified orphaned
+runtime directories were removed; branches, worktrees and shared browser
+resources were retained. The prior live Jev–CLI probe remains separate evidence
+for a different controller, not acceptance of this adapter.
+
+### Normal-installation preparation for #20
+
+The adoption follow-up reuses the existing adapter without changing production
+browser behavior. It documents normal Pi local-file package registration,
+project-local dependency setup, reload and Git-based rollback in the
+[README](../README.md#adopt-or-roll-back), replacing one-session `-e` loading
+as the normal setup guidance.
+
+The follow-up passed 76 Node tests and five Python tests, TypeScript, formatting,
+Python compilation, shell syntax and offline lock checks. The added loader check
+uses Pi's real resource loader with isolated package settings, verifies both
+sequential tools and repeats the load without duplicates. Renaming the run tool
+made that check fail; restoring it passed. The host's Pi 0.87.1 loader also
+resolved both the existing normal source and the staged candidate independently
+without errors. Only the RLCD package entry was loaded in isolation; no tools
+were invoked and no host settings were written.
+
+This establishes package-loading compatibility, not host activation or a new
+browser/model result. At this checkpoint the normal package still referenced the
+permanent checkout at `4628c54`; the adoption branch remained local. Publication,
+owner merge, permanent-checkout update and Pi reload remain delivery steps.
+
 ## Compact handoff
 
 At cleanup base `c9a655ad1a2c8ab8d7bd03ced772474167878e06`, the owner accepted
@@ -192,6 +296,21 @@ This was command-driven fixture evidence, not an outer-model turn, live-provider
 check, or general-web test. Forced exits can still strand focus emulation or an
 attachment. Local receipt:
 `artifacts/tab-targeting/implementation/correction/HANDOFF.md`.
+
+## Capability-selection fixtures
+
+A later [capability evaluation](browser-capability-run-results.md) compared the
+registered RLCD tool with real Harness and Chrome DevTools CLI reference paths
+on disposable local fixtures, using synthetic application-model replies. Its
+corrected, combined results inform capability selection, not live-Jev quality
+or a fix for #17. The report preserves driver failures, the macOS startup
+correction, separate execution allowances and untested subchecks.
+
+A separately authorized [live Jev–CLI prototype](jev-cli-live-probe.md) then
+used real Jev choices on four local fixtures: three model DONE outcomes and one
+code-enforced dialog handoff were independently confirmed. It reused the pinned
+choice policy but bypassed `Agent.run()` and the registered Pi tool, so it is
+not acceptance of a changed production runner or an established fix for #17.
 
 ## Known limits
 

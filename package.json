@@ -4,14 +4,14 @@
   "private": true,
   "description": "A bounded Jev Ultrafast browser tool for Pi",
   "scripts": {
-    "bridge:check": ".venv/bin/python -m compileall -q bridge test/python",
-    "check": "pnpm format:check && pnpm typecheck && pnpm test && pnpm bridge:check",
+    "bridge:check": ".venv/bin/python -m compileall -q bridge test/python && .venv/bin/python -m unittest discover -s test/python -p 'test_*.py'",
+    "check": "prettier --check . && tsc --noEmit && node --test --test-concurrency=1 test/*.test.* && .venv/bin/python -m compileall -q bridge test/python && .venv/bin/python -m unittest discover -s test/python -p 'test_*.py'",
     "format": "prettier --write .",
     "fixture": "node fixtures/click-only/serve.mjs",
     "format:check": "prettier --check .",
     "runtime:preflight": "scripts/preflight-runtime.sh",
     "runtime:setup": "scripts/setup-runtime.sh",
-    "test": "node --test --test-concurrency=1 test/*.test.ts",
+    "test": "node --test --test-concurrency=1 test/*.test.*",
     "typecheck": "tsc --noEmit"
   },
   "keywords": [],
@@ -31,5 +31,8 @@
     "prettier": "3.9.8",
     "typebox": "1.3.7",
     "typescript": "5.9.3"
+  },
+  "dependencies": {
+    "chrome-devtools-mcp": "1.7.0"
   }
 }

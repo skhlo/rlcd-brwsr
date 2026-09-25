@@ -2139,7 +2139,7 @@ test("normal retention skips close while close success false stays unconfirmed",
   });
 });
 
-test("construction interruption reports execution and cleanup unknown", async () => {
+test("construction interruption reports unknown while closing the known created target", async () => {
   await withScenario(
     "constructor_interrupt",
     {},
@@ -2150,7 +2150,7 @@ test("construction interruption reports execution and cleanup unknown", async ()
       assert.equal(recordField(details, "cleanup").taskTab, "unknown");
       const browserLog = await readIfPresent(markers.browser);
       assert.match(browserLog, /created:rlcd-owned-target/);
-      assert.doesNotMatch(browserLog, /close:/);
+      assert.match(browserLog, /close:rlcd-owned-target/);
     },
   );
 });

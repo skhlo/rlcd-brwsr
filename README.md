@@ -6,14 +6,21 @@ task to the pinned Jev Ultrafast Agent:
 - `rlcd_brwsr_list_tabs` discovers eligible existing tabs without selecting one.
 - `rlcd_brwsr_run` creates a task tab or uses an exact eligible existing tab.
 
-Python constructs and consumes upstream `Agent.run()`. Upstream owns browser
-observation, Jev decisions, generated field text, freshness checks, and Browser
-Harness input. Pi validates the request, supervises one Python process, and
-presents a compact handoff while retaining bounded diagnostics in tool details.
+Python constructs and consumes upstream `Agent.run()`. Jev owns decisions and
+generated field text. A task-scoped helper uses the pinned Chrome DevTools CLI
+implementation for semantic observation, target-aware browser input and
+settling, while Browser Harness supplies the named existing browser and exact
+CDP target lifetime. Pi validates the request, supervises one Python process,
+and presents a compact handoff while retaining bounded diagnostics in details.
 A completion claim always requires independent verification by the outer agent.
 
-This is an experimental capability, not a general browser-reliability or speed
-claim. The Python-owned base merged in
+This checkout implements design A. The owner accepted it for adoption in
+[#20](https://github.com/skhlo/rlcd-brwsr/issues/20), including the incomplete
+independent dialog check and the already-open-dialog bounded-stop limitation.
+Local Pi/Chrome flows used synthetic models; full browser acceptance, live model
+quality and a fix for #17 are not claimed. Implementation is not host activation:
+follow [Adopt or roll back](#adopt-or-roll-back) before using it normally.
+The Python-owned base merged in
 [PR #16](https://github.com/skhlo/rlcd-brwsr/pull/16). Exact existing-tab
 support, the direct DeepSeek helper, compact handoffs and co-browse are on
 `main` following [PR #18](https://github.com/skhlo/rlcd-brwsr/pull/18).
@@ -32,6 +39,10 @@ install packages, start services, inspect tabs, open Chrome, or call a model.
 pnpm install --frozen-lockfile
 scripts/setup-runtime.sh
 ```
+
+The lockfile installs project-local `chrome-devtools-mcp@1.7.0` for its browser
+implementation modules. Do not register an MCP server, start a shared CLI daemon,
+or install a global CLI for RLCD. The Python runtime and providers stay pinned.
 
 Configure Browser Harness through its native host-local workspace environment
 (the default is `~/.config/browser-harness/agent-workspace/.env`):
@@ -61,17 +72,78 @@ scripts/preflight-runtime.sh
 
 After changing a Browser Harness selector, endpoint, or profile, stop the
 same-named daemon with Harness's native controls, then provision it again.
-Preflight can prove that a supported daemon responds; it cannot prove that an
-already-running `cdp` daemon uses the newly configured endpoint or profile.
+Preflight can prove that a supported daemon responds. A run additionally
+attests that its exact target appears on the helper's candidate connection
+before page action; a stale endpoint fails admission. It still cannot prove
+that changed browser settings apply to an already-running daemon.
 
 ## Load the Pi tools
 
-Start a fresh Pi session with the project extension:
+From the permanent checkout, install the extension once using Pi's normal local
+package mechanism, then start plain Pi:
 
 ```bash
-pi -e ./config/pi/extensions/rlcd-brwsr.ts \
-  -t rlcd_brwsr_list_tabs,rlcd_brwsr_run
+pi install "$PWD/config/pi/extensions/rlcd-brwsr.ts"
+pi list
+pi
 ```
+
+Pi stores a reference to this file, not a copy. If `pi list` already points to
+this checkout, keep that registration; do not add an experimental worktree or
+change other packages, credentials or model settings. Use `/reload` in an idle
+existing session, or restart Pi, after updating this checkout. The two tools
+load without `-e`; co-browse remains repo-scoped and explicitly invoked.
+
+For a one-session preview only, `pi -e ./config/pi/extensions/rlcd-brwsr.ts`
+loads an explicit extension. A preview is not normal installation or activation.
+
+## Adopt or roll back
+
+Design A's production implementation is `9649545`; `e1e3551` consolidates the
+candidate handoff and accepted verification limits. The prior published
+implementation is `4628c5467b81839099714fc06a1850104a8b4533`.
+
+Adoption uses the existing PR and installation workflow, not a backend selector:
+
+1. Review and publish the candidate with authorization. The owner merges the PR.
+2. With no RLCD task running and a clean permanent checkout, update that checkout
+   to the merged `main` and synchronize its local dependencies:
+
+   ```bash
+   git switch main
+   git pull --ff-only origin main
+   pnpm install --frozen-lockfile
+   scripts/setup-runtime.sh
+   git rev-parse HEAD
+   pi list
+   ```
+
+3. Confirm the normal Pi package still resolves to this permanent checkout. Keep
+   the existing Browser Harness environment, credentials, daemon, profile and
+   tabs unchanged. `scripts/preflight-runtime.sh` is a read-only existing-daemon
+   check, not a model trial. If it fails, report the failure rather than silently
+   reprovisioning shared browser resources.
+4. Record the exact installed revision and package path in the activation
+   handoff. `/reload` or restart Pi before the next tool call. Only then record
+   activation; a local implementation or merged PR alone does not establish it.
+   The user's in-session trial follows separately, with its own authorization.
+
+To return to the prior implementation, first stop RLCD tasks and record the
+current revision. In the clean permanent checkout, use ordinary Git to switch
+to the prior revision without resetting or deleting the adoption branch:
+
+```bash
+git switch --detach 4628c5467b81839099714fc06a1850104a8b4533
+pnpm install --frozen-lockfile
+scripts/setup-runtime.sh
+```
+
+Keep the same Pi registration and native environment, then `/reload` or restart
+Pi. To resume the adopted implementation, switch back to the merged `main`,
+repeat dependency synchronization and reload. Neither direction requires changes
+to browser services, credentials, providers or unrelated sessions.
+
+## Use the tools
 
 ### New task tab
 
@@ -166,8 +238,10 @@ proof that no useful work occurred.
   lock against the user.
 
 The complete interface, bounds, ownership, privacy, cleanup, and accounting
-rules are in the [current contract](docs/RLCD-BRWSR.md). The architecture choice
-is recorded in [ADR-0003](docs/adr/0003-python-owned-run.md). The
+rules are in the [current contract](docs/RLCD-BRWSR.md). The Python run choice
+is in [ADR-0003](docs/adr/0003-python-owned-run.md), and the browser
+mechanics change is in
+[ADR-0004](docs/adr/0004-task-scoped-cli-browser-mechanics.md). The
 [archive index](docs/archive.md) describes historical work and which evidence is
 public versus operator-local.
 
@@ -180,7 +254,8 @@ uv lock --check
 git diff --check
 ```
 
-The deterministic suite substitutes external browser/provider boundaries while
-crossing the registered tools, real Python runner, and pinned upstream
-Agent/native helper. Live inference or browser acceptance requires separate,
-explicit authorization.
+The deterministic registered-tool suite substitutes external browser and
+provider transports while crossing the real Python runner and pinned native
+Agent/helper. A focused process check runs the Node helper's admission and EOF
+paths. Separate real Pi/Chrome fixture results and the remaining dialog-check
+gap are documented in the [verification record](docs/thin-python-evidence.md).

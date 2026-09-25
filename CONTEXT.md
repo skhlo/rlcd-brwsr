@@ -9,7 +9,7 @@ The task owner that supplies the goal and remains responsible for permissions, v
 _Avoid_: Browser agent, controller
 
 **Fast loop**:
-The bounded upstream sequence of observations, Jev decisions and Browser Harness actions performed without returning to the outer agent after every action.
+The bounded upstream sequence of observations, Jev decisions and browser actions performed without returning to the outer agent after every action.
 _Avoid_: Autonomous agent, reasoning loop
 
 **Action candidate**:

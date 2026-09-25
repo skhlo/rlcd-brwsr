@@ -12,11 +12,12 @@ import sys
 from typing import Any
 from urllib.parse import urlsplit
 
-from borrowed_tab import BorrowedTab, StopRequested
+from cli_browser import CliBrowser, DialogPending
 from handoff_report import missing_report, select_handoff
 from runtime_support import (
     JEV_MODEL,
     REQUEST_MAX_UTF8_BYTES,
+    StopRequested,
     TERMINAL_MAX_UTF8_BYTES,
     TEXT_MODEL,
     TEXT_MODEL_BASE_URL,
@@ -703,7 +704,7 @@ def _list_tabs() -> dict[str, Any]:
 def _run(request: dict[str, Any]) -> dict[str, Any]:
     borrowed_mode = "targetId" in request
     agent: Any | None = None
-    borrowed: BorrowedTab | None = None
+    browser: CliBrowser | None = None
     target_id: Any = None
     state: dict[str, Any] | None = None
     status = "error"
@@ -720,36 +721,37 @@ def _run(request: dict[str, Any]) -> dict[str, Any]:
         require_existing_local_daemon(daemon_name)
 
         import jev_ultrafast
-        from browser_harness import admin
         from jev_ultrafast import agent as agent_module
-        from jev_ultrafast import browser as upstream_browser
 
-        # Agent's Browser imported this symbol directly. Rebind that exact pinned
-        # seam so a tool run can only use the already-running native daemon.
-        upstream_browser.ensure_daemon = admin.require_existing_daemon
+        constructing = True
+        browser = CliBrowser(request.get("targetId"), request.get("url"))
+        target_id = browser.confirmed_target_id
+        cleanup = browser.cleanup
 
-        if borrowed_mode:
-            borrowed = BorrowedTab(
-                request["targetId"],
-                request.get("url"),
-                browser_module=upstream_browser,
-                agent_module=agent_module,
-            )
-            with borrowed.lifetime():
-                target_id = borrowed.confirmed_target_id
-                agent = borrowed.construct_agent(jev_ultrafast.Agent, request["goal"])
-                target_id = borrowed.confirmed_target_id
-                borrowed.begin_agent_run()
-                for _snapshot in agent.run():
-                    pass
-        else:
-            constructing = True
-            agent = jev_ultrafast.Agent(request["url"], request["goal"])
-            constructing = False
-            target_id = getattr(getattr(agent, "browser", None), "target", None)
-            cleanup = "unknown"
-            for _snapshot in agent.run():
-                pass
+        class OneUseBrowser:
+            calls = 0
+
+            def __new__(cls, _url: str) -> CliBrowser:
+                cls.calls += 1
+                if cls.calls != 1:
+                    raise RuntimeError("native Agent requested a second Browser")
+                return browser
+
+        original_browser = agent_module.Browser
+        agent_module.Browser = OneUseBrowser
+        try:
+            agent = jev_ultrafast.Agent(request.get("url") or browser._session_observation()["url"], request["goal"])
+            if OneUseBrowser.calls != 1:
+                raise RuntimeError("native Agent did not consume the exact Browser")
+            if agent.browser is not browser:
+                raise RuntimeError("native Agent replaced the exact Browser")
+        finally:
+            agent_module.Browser = original_browser
+        constructing = False
+        # Native provider work begins before Agent.run yields its first result.
+        browser.requested_effect_started = True
+        for _snapshot in agent.run():
+            pass
 
         state = _state_from(agent)
         native_status = state.get("status") if state else None
@@ -763,92 +765,62 @@ def _run(request: dict[str, Any]) -> dict[str, Any]:
             execution = "completed"
         else:
             raise RuntimeError("Agent.run ended without a terminal native status")
+    except DialogPending as error:
+        state = _state_from(agent)
+        status = "blocked"
+        stop_reason = "blocked"
+        execution = "unknown"
+        diagnostic = {"type": type(error).__name__, "message": str(error)}
     except StopRequested as error:
         state = _state_from(agent)
         status = "stopped"
         stop_reason = "cancelled"
-        if borrowed_mode:
-            execution = (
-                "unknown"
-                if borrowed is not None and borrowed.requested_effect_started
-                else "not_started"
-            )
-        else:
-            execution = "unknown" if constructing or agent is not None else "not_started"
-            cleanup = "unknown" if constructing else cleanup
+        execution = (
+            "unknown"
+            if (browser is not None and browser.requested_effect_started)
+            or (constructing and not borrowed_mode)
+            else "not_started"
+        )
+        cleanup = "unknown" if constructing and not borrowed_mode else cleanup
         diagnostic = {"type": type(error).__name__, "message": str(error)}
     except Exception as error:
         state = _state_from(agent)
         status = "error"
         stop_reason = "error"
-        if borrowed_mode:
-            execution = (
-                "unknown"
-                if borrowed is not None and borrowed.requested_effect_started
-                else "not_started"
-            )
-        else:
-            execution = "unknown" if constructing or agent is not None else "not_started"
-            cleanup = "unknown" if constructing else cleanup
+        execution = (
+            "unknown"
+            if (browser is not None and browser.requested_effect_started)
+            or (constructing and not borrowed_mode)
+            else "not_started"
+        )
+        cleanup = "unknown" if constructing and not borrowed_mode else cleanup
         diagnostic = {"type": type(error).__name__, "message": str(error)}
     finally:
-        if borrowed_mode:
-            cleanup = "not_owned"
-            if borrowed is not None:
-                borrowed.release()
-                target_id = borrowed.confirmed_target_id
-                focus_emulation = borrowed.focus_cleanup
-                attachment = borrowed.attachment_cleanup
-                if (
-                    diagnostic is None
-                    and (focus_emulation == "unconfirmed" or attachment == "unconfirmed")
-                ):
-                    diagnostic = {
-                        "type": "CleanupUnconfirmed",
-                        "message": "borrowed focus release or exact-session detach was not acknowledged",
-                    }
-        elif agent is not None:
+        if browser is not None:
             state = _state_from(agent)
-            if target_id is None:
-                try:
-                    target_id = getattr(getattr(agent, "browser", None), "target", None)
-                except Exception:
-                    pass
             normal_retention = (
                 status == "completion_claim"
-                and request["retainTab"]
+                and request.get("retainTab") is True
                 and isinstance(target_id, str)
                 and bool(target_id)
             )
-            if normal_retention:
-                cleanup = "retained"
-            elif isinstance(target_id, str) and target_id:
-                try:
-                    from jev_ultrafast import browser as upstream_browser
-
-                    response = upstream_browser.cdp(
-                        "Target.closeTarget", targetId=target_id
-                    )
-                    cleanup = (
-                        "closed"
-                        if isinstance(response, dict)
-                        and response.get("success") is True
-                        else "unconfirmed"
-                    )
-                    if cleanup == "unconfirmed" and diagnostic is None:
-                        diagnostic = {
-                            "type": "CleanupUnconfirmed",
-                            "message": "Target.closeTarget did not confirm success",
-                        }
-                except Exception as error:
-                    cleanup = "unconfirmed"
-                    if diagnostic is None:
-                        diagnostic = {
-                            "type": type(error).__name__,
-                            "message": str(error),
-                        }
-            else:
-                cleanup = "unknown"
+            browser.release(retain=normal_retention)
+            target_id = browser.confirmed_target_id
+            cleanup = browser.cleanup
+            if borrowed_mode:
+                focus_emulation = browser.focus_cleanup
+                attachment = browser.attachment_cleanup
+            if not browser.worker_reaped:
+                if status in {"completion_claim", "blocked"}:
+                    status = "error"
+                    stop_reason = "error"
+                    execution = "unknown"
+                if diagnostic is None:
+                    diagnostic = {"type": "CleanupUnconfirmed", "message": "CLI helper termination was not cleanly observed"}
+            if diagnostic is None and (
+                cleanup == "unconfirmed" or focus_emulation == "unconfirmed" or attachment == "unconfirmed"
+            ):
+                diagnostic = {"type": "CleanupUnconfirmed", "message": "exact target or session cleanup was not acknowledged"}
 
     result = _raw_projection(
         status=status,
@@ -861,10 +833,14 @@ def _run(request: dict[str, Any]) -> dict[str, Any]:
         focus_emulation=focus_emulation,
         attachment=attachment,
     )
-    if status in {"completion_claim", "blocked"} and state is not None:
+    if (
+        status in {"completion_claim", "blocked"}
+        and state is not None
+        and not (diagnostic is not None and diagnostic.get("type") == "DialogPending")
+    ):
         try:
             page = state.get("page")
-            page_text = page.get("text") if isinstance(page, dict) else None
+            page_text = page.get("visible_text", page.get("text")) if isinstance(page, dict) else None
             if isinstance(page_text, str):
                 credentials = _credential_values()
                 safe_goal = _redact_text(request["goal"], credentials)
