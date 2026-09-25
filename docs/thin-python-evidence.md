@@ -75,23 +75,26 @@ reported focus cleanup `unconfirmed`. Its assertion required a focus-disable
 acknowledgement, although the existing contract permits `unconfirmed`. This
 is not a demonstrated adapter contract violation, but the independent
 pending-dialog/untouched assertions were not reached. That gap remains; the
-failed check is not relabelled as passed.
+failed check is not relabelled as passed. The owner subsequently accepted it for
+adoption in [#20](https://github.com/skhlo/rlcd-brwsr/issues/20), with in-session
+testing afterward. It is not a pre-adoption blocker.
 
 The launch allowance is consumed. Owned processes stopped; the candidate remains
 unactivated. Raw results and limitations are in
 `artifacts/design-a/verification/RENEWAL.md`. No live-provider or public-site
 acceptance, general reliability, speed benefit or #17 fix is claimed.
 
-Retired verification drivers and their complete evidence are archived locally
-in `artifacts/design-a/history.tar.gz`. Original implementation-relative paths
-are under `implementation/`, including `renewed/` with both ledgers and runs;
-parent dispatch records are under `dispatch/`. The archive was byte-verified
-before retiring unpacked copies. `artifacts/design-a/PAUSED-HANDOFF.md` is the
-single current entry point. Historical scripts are not active verification
-commands or permission to resume. Both renewed browsers, fixture processes and
-helpers stopped; inactive profiles remain in the archive. The prior live
-Jev–CLI probe is separate evidence for a different controller, not acceptance
-of this adapter.
+Retired verification material is archived locally under `artifacts/design-a/`:
+`history.tar.gz` retains the earlier implementation/dispatch history, while
+`verification-history.tar.gz` retains the later raw receipts, exercised scripts,
+profiles and offline checks under `verification/`. Both archives were
+byte-verified before retiring unpacked copies. The two readable reports remain
+outside the archives. `artifacts/design-a/README.md` is the current entry point;
+no active acceptance driver remains. Historical commands do not authorize a
+rerun. Verification processes stopped, and seven receipt-identified orphaned
+runtime directories were removed; branches, worktrees and shared browser
+resources were retained. The prior live Jev–CLI probe remains separate evidence
+for a different controller, not acceptance of this adapter.
 
 ## Compact handoff
 
