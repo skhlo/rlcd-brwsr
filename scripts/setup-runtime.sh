@@ -5,6 +5,7 @@ cd "$(dirname "$0")/.."
 uv sync --frozen
 printf '%s\n' \
   'Project-local Python runtime is synchronized.' \
+  'Install the project-local Node dependencies with pnpm install --frozen-lockfile; preflight checks chrome-devtools-mcp@1.7.0 CLI modules.' \
   'Next: configure BU_NAME and the local connection in Browser Harness native settings.' \
   'The default workspace configuration is ~/.config/browser-harness/agent-workspace/.env.' \
   'After changing browser selectors, endpoints, or profiles, stop the same-named daemon before reprovisioning.' \

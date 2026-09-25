@@ -761,6 +761,47 @@ def _cdp(method, session_id=None, **params):
 browser.cdp = _cdp
 harness_helpers.cdp = _cdp
 
+# The registered-tool suite keeps the real pinned Agent and native provider
+# helpers. Its external browser substitute now sits at the task worker transport;
+# the CLI mechanics themselves are exercised by the isolated Chrome acceptance.
+from browser_harness import daemon as harness_daemon
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "bridge"))
+import cli_browser
+
+harness_daemon.get_ws_url = lambda: "ws://127.0.0.1:9222/devtools/browser/synthetic"
+
+
+class _SyntheticTaskWorker:
+    def __init__(self, _endpoint, target_id):
+        self.target_id = target_id
+        self.last_page = None
+
+    def call(self, operation, **data):
+        if operation == "observe":
+            if _SCENARIO == "borrowed_constructor_error":
+                raise RuntimeError("synthetic borrowed initial observation failure")
+            page = _page()
+            page["fingerprint"] = browser.fingerprint(page)
+            page["visible_text"] = page["text"]
+            self.last_page = page
+            return page
+        if operation == "fresh":
+            return self.last_page is not None and self.last_page["marker"] == _page()["marker"]
+        if operation == "act":
+            action = data["action"]
+            return browser.browser_operation(
+                {"operation": "act", "session": "synthetic-task-session", "action": action, "text": data.get("text")}
+            )
+        if operation == "release":
+            return {"disconnected": True}
+        raise AssertionError(f"unexpected synthetic task worker operation: {operation}")
+
+    def close(self):
+        return True
+
+
+cli_browser._Worker = _SyntheticTaskWorker
+
 
 def _choice(criteria, selected):
     return {

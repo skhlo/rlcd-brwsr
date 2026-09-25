@@ -77,11 +77,16 @@ Pi extension
      observed exit, terminal validation, and compact presentation
 Python runner
   -> load native configuration and require the existing named Harness daemon
-  -> construct the upstream Agent or exact-session borrowed-tab adapter
+  -> admit one exact target and start one task-scoped Node browser helper
+  -> construct the upstream Agent with that Browser adapter
   -> consume Agent.run(), project bounded state, and perform handled cleanup
-Upstream Jev Ultrafast + Browser Harness
-  -> own observation, candidates, decisions, field-text generation, freshness,
-     browser input, and native run state
+Upstream Jev Ultrafast
+  -> own decisions, field-text generation, and native run state
+Task-scoped CLI implementation helper
+  -> own semantic observation, code-owned targets, freshness, browser input,
+     bounded settling, and its Puppeteer connection
+Browser Harness
+  -> own named configuration, discovery, exact CDP target/session lifetime
 Python reporter, after handled cleanup
   -> optionally ask pinned Jev to select exact bounded handoff evidence
 Pi extension
@@ -89,21 +94,21 @@ Pi extension
 ```
 
 Python is the sole owner of the Agent reference, upstream state, target handle,
-normal cleanup, result projection, redaction, and reporting request. Pi does not
+helper subprocess, normal cleanup, result projection, redaction, and reporting
+request. Pi does not
 reconstruct browser phases, shadow history, merge helper replies, or infer
 cleanup from target differences. No TypeScript browser executor, Pi-model text
 callback, alternate helper backend, parent fallback cleanup, durable progress
 journal, or automatic retry exists.
 
-Three revision-pinned integrations remain:
-
-1. The runner rebinds upstream's imported `ensure_daemon` symbol to Harness's
-   `require_existing_daemon`, preventing run-time startup/recovery.
-2. Created-tab cleanup uses the pinned target handle and one direct
-   `Target.closeTarget`; only `{success: true}` confirms closure.
-3. Borrowed mode acquires one exact flattened session and temporarily supplies a
-   Browser object that reuses upstream observe/fresh/act behavior without normal
-   Browser-constructor ownership effects.
+The pinned integration seams are the Agent's imported `Browser` factory,
+Harness's `get_ws_url()` candidate resolver and CDP target/session calls, and
+the CLI package's built-source imports plus Puppeteer target ID hook. Python
+installs a one-use Browser factory for both created and borrowed modes. The
+helper connects without starting a CLI daemon or MCP server, requires the exact
+Harness target ID in that connection before page action, and never selects by
+URL/title or a CLI-local page number. Only `{success: true}` from one exact
+`Target.closeTarget` confirms created-tab closure.
 
 Pin changes must revalidate these seams.
 
@@ -111,6 +116,9 @@ Pin changes must revalidate these seams.
 
 The project-local lock fixes Python 3.12, Jev Ultrafast commit
 `1231850a0bf1a0c0341fe408ef1668dbbfdfac46`, and Browser Harness 0.1.13.
+The project-local pnpm lock additionally pins the CLI distribution
+`chrome-devtools-mcp@1.7.0`; it supplies CLI implementation modules, not an
+MCP registration or service.
 `config/runtime.json` is the single owner of:
 
 ```text
@@ -140,11 +148,11 @@ are rejected. Provisioning may invoke Harness's native startup path. Preflight
 and runs require the selected daemon to be healthy and already running and
 accept only Harness-reported `local` or `cdp` mode.
 
-A same-named running `cdp` daemon is not bound to the current endpoint, profile,
-or local/remote selection by these checks. Harness consumes those settings when
-it starts, and its reported mode does not identify the live endpoint. After any
-browser-setting change, stop the daemon, restart it, and reprovision before
-preflight or use. Otherwise a stale daemon may reach a wrong or remote browser.
+A same-named running `cdp` daemon is not bound to current settings by preflight.
+For a run, the helper's candidate connection must contain the exact target
+obtained from that daemon before page action. A stale or wrong candidate fails
+explicitly. After browser-setting changes, stop and reprovision the daemon;
+preflight alone still cannot establish its configured endpoint/profile.
 
 ## Supervision and terminal trust
 
@@ -176,21 +184,24 @@ parent stop and observed reap while reporting child facts unknown.
 
 ## Tab ownership and cleanup
 
-For a created tab, `retainTab: true` is honored only after a normal completion
-claim with a known target. Every other handled outcome with a usable created
+For a created tab, Harness records its exact `about:blank` target ID before the
+helper connects or navigation begins. `retainTab: true` is honored only after a
+normal completion claim, a known target and observed helper termination. Every
+other handled outcome with a usable created
 target attempts one direct close. Cleanup is `closed` only after an acknowledged
 success; otherwise it is `unconfirmed` or `unknown`. The shared daemon and
 unrelated targets are always retained.
 
-A borrowed tab is never closed by the wrapper or upstream cleanup. Before Agent
-construction, Python validates exact target type/current URL, attaches one
-flattened session, then repeats eligibility through a session-bound top-level
-page observation. Requested navigation crosses the conservative effect boundary
-before `Page.navigate`; provider or input races after admission therefore retain
-unknown effects.
+A borrowed tab is never closed by the wrapper or helper cleanup. Before Agent
+construction, Python validates exact target type/current URL, attests the
+helper's same-browser exact target, attaches one flattened session, then repeats
+eligibility through a session-bound top-level page observation. Requested
+navigation crosses the conservative effect boundary before `Page.navigate`;
+provider or input races after admission therefore retain unknown effects.
 
-Handled outcomes independently attempt focus-emulation disable and exact-session
-detach. Trusted borrowed results use `taskTab: "not_owned"` and report focus as
+Handled outcomes independently attempt helper disconnect, focus-emulation
+disable and exact-session detach. Trusted borrowed results use
+`taskTab: "not_owned"` and report focus as
 `not_applied`, `disable_acknowledged`, or `unconfirmed`, and attachment as
 `not_acquired`, `detach_acknowledged`, or `unconfirmed`. Acknowledged focus
 disable does not prove restoration of the original document or OS focus. Forced
@@ -297,14 +308,15 @@ uv lock --check
 git diff --check
 ```
 
-The deterministic registered-tool suite must continue to cross the real Python
-runner and pinned Agent/native helper while replacing external Browser/CDP and
-provider boundaries. It covers request modes, exact tab identity, lifecycle
-trust, cleanup, bounds, privacy, evidence selection, omissions, and both output
-surfaces. Browser/lifecycle changes require acceptance on the actual Pi surface;
-provider or public-site inference requires a separately authorized finite
-allowance. Preserve failed checks as evidence rather than rewriting them as
-passes.
+The deterministic registered-tool suite crosses the real Python runner and
+pinned Agent/native helper while replacing external worker and provider
+transports. A focused process test exercises the real Node helper's admission
+and EOF paths. It covers request modes, exact tab identity, lifecycle trust,
+cleanup, bounds, privacy, evidence selection, omissions, and both output
+surfaces. Browser/lifecycle changes still require acceptance on the actual Pi
+surface. The two authorized isolated passes failed before tool use (fixture
+bind, then Harness socket path); native Pi/Chrome acceptance remains pending.
+Preserve failed checks as evidence rather than rewriting them as passes.
 
 Future optimization is justified by observed lost information, avoidable
 follow-up, or slowness. Smaller output alone is not success when expected

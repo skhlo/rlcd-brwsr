@@ -14,6 +14,26 @@ resources. This document publishes evidence summaries, not the raw receipts:
 receipt locators, not public download links. No receipt or historical trial is
 setup guidance or authorization to repeat live work.
 
+## Design A local candidate (2026-09-25)
+
+The task-scoped CLI browser adapter is implemented locally behind the pinned
+Python Agent. `pnpm check` passes 72 registered-tool/Node tests plus three focused
+Python target-admission tests; the registered-tool browser and provider seams
+are simulated. The real Node worker refuses a non-loopback endpoint and exits
+on parent EOF. A deliberate first-target substitution made the duplicate-URL
+exact-ID guard fail; restoring the guard returned the suite to green.
+
+Two authorized isolated browser passes failed before tool use. Pass 1 could not
+bind its loopback fixture inside the sandbox. Pass 2 started disposable Chrome,
+then the task-owned Harness daemon exited because its Unix socket path under
+the deep worktree exceeded the OS limit. Chrome exited normally. No native
+Agent, Pi tool, or real CLI helper browser action was accepted in either pass;
+there is no new live inference or outcome evidence. Detailed local receipts are
+under `artifacts/design-a/`, especially `ACCEPTANCE-PASSES.md`, `CAPABILITIES.md`
+and `HANDOFF.md`. Both passes are consumed; further browser testing needs a new
+finite authorization. The prior live Jev–CLI probe remains separate evidence
+for a different controller and does not validate this adapter.
+
 ## Compact handoff
 
 At cleanup base `c9a655ad1a2c8ab8d7bd03ced772474167878e06`, the owner accepted

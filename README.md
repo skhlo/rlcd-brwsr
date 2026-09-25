@@ -6,14 +6,17 @@ task to the pinned Jev Ultrafast Agent:
 - `rlcd_brwsr_list_tabs` discovers eligible existing tabs without selecting one.
 - `rlcd_brwsr_run` creates a task tab or uses an exact eligible existing tab.
 
-Python constructs and consumes upstream `Agent.run()`. Upstream owns browser
-observation, Jev decisions, generated field text, freshness checks, and Browser
-Harness input. Pi validates the request, supervises one Python process, and
-presents a compact handoff while retaining bounded diagnostics in tool details.
+Python constructs and consumes upstream `Agent.run()`. Jev owns decisions and
+generated field text. A task-scoped helper uses the pinned Chrome DevTools CLI
+implementation for semantic observation, target-aware browser input and
+settling, while Browser Harness supplies the named existing browser and exact
+CDP target lifetime. Pi validates the request, supervises one Python process,
+and presents a compact handoff while retaining bounded diagnostics in details.
 A completion claim always requires independent verification by the outer agent.
 
-This is an experimental capability, not a general browser-reliability or speed
-claim. The Python-owned base merged in
+This is an experimental capability. Design A's local adapter still needs native
+browser acceptance before production activation; the two authorized isolated
+passes stopped during fixture/daemon setup. The Python-owned base merged in
 [PR #16](https://github.com/skhlo/rlcd-brwsr/pull/16). Exact existing-tab
 support, the direct DeepSeek helper, compact handoffs and co-browse are on
 `main` following [PR #18](https://github.com/skhlo/rlcd-brwsr/pull/18).
@@ -61,8 +64,10 @@ scripts/preflight-runtime.sh
 
 After changing a Browser Harness selector, endpoint, or profile, stop the
 same-named daemon with Harness's native controls, then provision it again.
-Preflight can prove that a supported daemon responds; it cannot prove that an
-already-running `cdp` daemon uses the newly configured endpoint or profile.
+Preflight can prove that a supported daemon responds. A run additionally
+attests that its exact target appears on the helper's candidate connection
+before page action; a stale endpoint fails admission. It still cannot prove
+that changed browser settings apply to an already-running daemon.
 
 ## Load the Pi tools
 
@@ -166,8 +171,10 @@ proof that no useful work occurred.
   lock against the user.
 
 The complete interface, bounds, ownership, privacy, cleanup, and accounting
-rules are in the [current contract](docs/RLCD-BRWSR.md). The architecture choice
-is recorded in [ADR-0003](docs/adr/0003-python-owned-run.md). The
+rules are in the [current contract](docs/RLCD-BRWSR.md). The Python run choice
+is in [ADR-0003](docs/adr/0003-python-owned-run.md), and the local browser
+mechanics change is in
+[ADR-0004](docs/adr/0004-task-scoped-cli-browser-mechanics.md). The
 [archive index](docs/archive.md) describes historical work and which evidence is
 public versus operator-local.
 
@@ -180,7 +187,7 @@ uv lock --check
 git diff --check
 ```
 
-The deterministic suite substitutes external browser/provider boundaries while
-crossing the registered tools, real Python runner, and pinned upstream
-Agent/native helper. Live inference or browser acceptance requires separate,
-explicit authorization.
+The deterministic registered-tool suite substitutes external browser and
+provider transports while crossing the real Python runner and pinned native
+Agent/helper. A focused process check runs the Node helper's admission and EOF
+paths. Native Pi/Chrome acceptance remains unverified on this branch.
