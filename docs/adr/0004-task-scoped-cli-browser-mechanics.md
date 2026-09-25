@@ -1,6 +1,6 @@
 # Put CLI browser mechanics behind the Python-owned run
 
-Status: selected for local implementation; remaining native acceptance paused by the owner.
+Status: locally implemented, partially verified and unactivated. Verification status is owned by the linked record below.
 
 ADR-0003 keeps the pinned Python `Agent.run()` as the only owner of decisions,
 history, field-text generation, projection and reporting. Its old Browser
@@ -33,5 +33,5 @@ The owner accepted a short-lived-helper limitation: a dialog already open before
 subscription stays untouched, but can produce a bounded stop/error without
 typed dialog metadata. A persistent observer is not part of A. Events observed
 after subscription still take the explicit dialog-handoff path; no dialog is
-automatically accepted or dismissed. The owner stopped further verification and
-left the local candidate unactivated.
+automatically accepted or dismissed. Fixture verification does not activate
+the local candidate or authorize live provider use.

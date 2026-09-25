@@ -50,23 +50,37 @@ the adapter uses `action.value`. That check is corrected offline; it does not
 establish a production Enter defect. Earlier mechanics steps ran, but their
 independent final-state oracle was not reached.
 
-A later separately authorized one-launch pass on `9649545` established the
-normal Pi TUI path: the actual registered tool, native Agent/text helper and real
-CLI adapter filled City with `Busan` and clicked Submit. A separate exact-target
-browser connection confirmed `Busan` and `BUSAN-COMPLETE`. The TUI rendered the
-completion claim and acknowledged cleanup. All model replies were synthetic;
-the synthetic reporter's empty usage object was rejected, so this does not
-establish successful relevance reporting.
+A later one-launch pass on `9649545` established the normal Pi TUI path, but
+premature test-driver cleanup prevented its six remaining checks. Its synthetic
+reporting reply also had invalid usage metadata. Those failures remain recorded
+in `artifacts/design-a/verification/REPORT.md`.
 
-That pass remained partial: the test driver's global cleanup hook ran after the
-first awaited test and disconnected the browser. The six later checks failed
-setup, not adapter behavior. Contextual Enter/scoped mechanics, new-dialog
-handoff, real stale-action refusal, controlled/forced-stop checks and the final
-unrelated-session check remain pending. The sole launch allowance is consumed;
-owned processes stopped and the candidate remains unactivated. Raw receipts and
-limitations are in `artifacts/design-a/verification/REPORT.md`. No live-provider
-or public-site acceptance, general reliability, speed benefit or #17 fix is
-claimed.
+A separately authorized additional launch on `617c5c9` (unchanged production
+code) followed offline red/green checks of cleanup ordering and the synthetic
+reporting response. All seven browser checks ran; six passed:
+
+- the actual Pi TUI tool, native Agent/text helper and CLI adapter filled City
+  with `Busan` and clicked Submit, independently verified on the exact target;
+  valid synthetic `no_match` reporting rendered without a diagnostic;
+- fill, select, checkbox, nested-panel, open-shadow, same-origin-frame and Enter
+  mechanics had independently confirmed final fixture states;
+- stale input was refused without incrementing the click counter;
+- cooperative stop acknowledged focus disable, detach and bridge reap;
+- forced Python exit reported unknown cleanup and bridge reap, preserving the
+  borrowed tab; and
+- an unrelated exact session retained its sentinel, input and counters.
+
+The dialog check returned `blocked` / `DialogPending`, acknowledged detach and
+reported focus cleanup `unconfirmed`. Its assertion required a focus-disable
+acknowledgement, although the existing contract permits `unconfirmed`. This
+is not a demonstrated adapter contract violation, but the independent
+pending-dialog/untouched assertions were not reached. That gap remains; the
+failed check is not relabelled as passed.
+
+The launch allowance is consumed. Owned processes stopped; the candidate remains
+unactivated. Raw results and limitations are in
+`artifacts/design-a/verification/RENEWAL.md`. No live-provider or public-site
+acceptance, general reliability, speed benefit or #17 fix is claimed.
 
 Retired verification drivers and their complete evidence are archived locally
 in `artifacts/design-a/history.tar.gz`. Original implementation-relative paths
