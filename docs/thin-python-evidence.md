@@ -16,8 +16,8 @@ setup guidance or authorization to repeat live work.
 
 ## Design A local candidate (2026-09-25)
 
-**Local implementation; remaining verification paused by the owner. Not
-activated or published.** The owner accepted the already-open-dialog limitation:
+**Local implementation; verification remains incomplete. Not activated or
+published.** The owner accepted the already-open-dialog limitation:
 the adapter must leave that dialog untouched, but may return a bounded
 stop/error rather than identify it explicitly. This does not authorize a
 persistent observer or automatic dialog handling.
@@ -50,11 +50,23 @@ the adapter uses `action.value`. That check is corrected offline; it does not
 establish a production Enter defect. Earlier mechanics steps ran, but their
 independent final-state oracle was not reached.
 
-Actual Pi TUI acceptance, contextual Enter, the native Agent/text-helper browser
-flow, new-dialog handoff, real stale-action refusal, controlled/forced-stop
-checks and the final unrelated-session check remain pending. The owner chose to
-stop here rather than allocate another run. No new live-provider or public-site
-acceptance, general reliability, speed benefit or #17 fix is claimed.
+A later separately authorized one-launch pass on `9649545` established the
+normal Pi TUI path: the actual registered tool, native Agent/text helper and real
+CLI adapter filled City with `Busan` and clicked Submit. A separate exact-target
+browser connection confirmed `Busan` and `BUSAN-COMPLETE`. The TUI rendered the
+completion claim and acknowledged cleanup. All model replies were synthetic;
+the synthetic reporter's empty usage object was rejected, so this does not
+establish successful relevance reporting.
+
+That pass remained partial: the test driver's global cleanup hook ran after the
+first awaited test and disconnected the browser. The six later checks failed
+setup, not adapter behavior. Contextual Enter/scoped mechanics, new-dialog
+handoff, real stale-action refusal, controlled/forced-stop checks and the final
+unrelated-session check remain pending. The sole launch allowance is consumed;
+owned processes stopped and the candidate remains unactivated. Raw receipts and
+limitations are in `artifacts/design-a/verification/REPORT.md`. No live-provider
+or public-site acceptance, general reliability, speed benefit or #17 fix is
+claimed.
 
 Retired verification drivers and their complete evidence are archived locally
 in `artifacts/design-a/history.tar.gz`. Original implementation-relative paths

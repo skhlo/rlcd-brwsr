@@ -330,8 +330,9 @@ omissions, and both output surfaces. Browser/lifecycle changes still require
 acceptance on the actual Pi surface. The
 [verification record](thin-python-evidence.md#design-a-local-candidate-2026-09-25)
 distinguishes completed real-fixture checks from pending Pi/mechanics checks.
-The owner paused the remaining verification; the candidate remains unactivated.
-Preserve failed checks as evidence rather than rewriting them as passes.
+Remaining verification is incomplete; the latest single-launch allowance is
+consumed and the candidate remains unactivated. Preserve failed checks as
+evidence rather than rewriting them as passes.
 
 Future optimization is justified by observed lost information, avoidable
 follow-up, or slowness. Smaller output alone is not success when expected
