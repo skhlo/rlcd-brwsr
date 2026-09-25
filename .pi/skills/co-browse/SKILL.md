@@ -45,7 +45,9 @@ matters for readability.
 
 Keep related steps in one bounded call instead of returning to the outer agent
 after every action. Reserve direct browser control for session/visibility setup,
-result inspection, or unsupported recovery—not routine in-tab steering.
+necessary result inspection, or unsupported recovery—not routine in-tab steering.
+State the goal once, then report the outcome or blocker rather than narrating
+each intermediate step.
 
 Continue with `targetId`. Add `url` only for intended navigation; it is required
 for an `about:blank` target. Omit `retainTab` in this borrowed-tab mode.
@@ -58,9 +60,17 @@ rollback guarantee. Pause rather than compete for focus.
 
 ## 4. Confirm the result and hand back
 
-For a completion claim, use one independent, task-specific read of the exact tab
-or the user's explicit confirmation. Reuse that observation to answer the user;
-Jev's claim alone is insufficient. Inspect uncertain effects before retrying.
+When the user is watching, prefer their explicit confirmation of the requested
+result. Ask once at the end of the task if needed, rather than automatically
+inspecting after each tool call, intermediate step, or site visit. Watching or
+silence alone is not confirmation.
+
+Use one independent, task-specific read of the exact tab when the user asks you
+to verify independently, the result is unclear, or confirmation is unavailable. Reuse
+that observation to answer the user. Until confirmed by the user or such a read,
+describe Jev's outcome as a completion claim, not verified success. Confirmation
+covers only the results actually confirmed or inspected; a later page read does
+not verify earlier results. Inspect uncertain effects before retrying.
 
 Routine use is not a validation campaign: do not rerun code tests, capture
 benchmarks, audit each action, or call extra model judges to reconfirm working

@@ -79,20 +79,25 @@ that changed browser settings apply to an already-running daemon.
 
 ## Load the Pi tools
 
-From the permanent checkout, install the extension once using Pi's normal local
-package mechanism, then start plain Pi:
+The repository's `.pi/settings.json` registers the extension with a relative
+path. Start plain Pi from this checkout and allow its project configuration:
 
 ```bash
-pi install "$PWD/config/pi/extensions/rlcd-brwsr.ts"
 pi list
 pi
 ```
 
-Pi stores a reference to this file, not a copy. If `pi list` already points to
-this checkout, keep that registration; do not add an experimental worktree or
-change other packages, credentials or model settings. Use `/reload` in an idle
-existing session, or restart Pi, after updating this checkout. The two tools
-load without `-e`; co-browse remains repo-scoped and explicitly invoked.
+`pi list` must show RLCD under **Project packages**, not **User packages**.
+Do not install it globally. When migrating an older global registration, remove
+only that source with `pi remove "$PWD/config/pi/extensions/rlcd-brwsr.ts"`.
+For a checkout missing project registration, use
+`pi install --local "$PWD/config/pi/extensions/rlcd-brwsr.ts"`.
+
+Pi references this checkout rather than copying it. Keep other packages,
+credentials and model settings unchanged. Use `/reload` in an idle existing
+session, or restart Pi, after updating this checkout. The two tools load without
+`-e` only in this project's scope; co-browse remains repo-scoped and explicitly
+invoked.
 
 For a one-session preview only, `pi -e ./config/pi/extensions/rlcd-brwsr.ts`
 loads an explicit extension. A preview is not normal installation or activation.
@@ -103,11 +108,15 @@ Design A's production implementation is `9649545`; `e1e3551` consolidates the
 candidate handoff and accepted verification limits. The prior published
 implementation is `4628c5467b81839099714fc06a1850104a8b4533`.
 
-Adoption uses the existing PR and installation workflow, not a backend selector:
+Adoption uses the existing PR and installation workflow, not a backend selector.
+Record and retain the last working revision **with repo-scoped registration**
+before updating; the prior published revision above predates that registration.
 
 1. Review and publish the candidate with authorization. The owner merges the PR.
 2. With no RLCD task running and a clean permanent checkout, update that checkout
-   to the merged `main` and synchronize its local dependencies:
+   to merged `main` containing repo-scoped registration, then synchronize its
+   local dependencies. If registration is still a local commit, preserve it on
+   top of merged `main` instead of switching to a revision that drops it:
 
    ```bash
    git switch main
@@ -118,7 +127,8 @@ Adoption uses the existing PR and installation workflow, not a backend selector:
    pi list
    ```
 
-3. Confirm the normal Pi package still resolves to this permanent checkout. Keep
+3. Confirm RLCD is a project-only Pi package resolving to this permanent checkout.
+   Preserve any local registration commit when updating. Keep
    the existing Browser Harness environment, credentials, daemon, profile and
    tabs unchanged. `scripts/preflight-runtime.sh` is a read-only existing-daemon
    check, not a model trial. If it fails, report the failure rather than silently
@@ -129,19 +139,22 @@ Adoption uses the existing PR and installation workflow, not a backend selector:
    The user's in-session trial follows separately, with its own authorization.
 
 To return to the prior implementation, first stop RLCD tasks and record the
-current revision. In the clean permanent checkout, use ordinary Git to switch
-to the prior revision without resetting or deleting the adoption branch:
+current revision. In the clean permanent checkout, use `git switch` to the
+retained pre-adoption branch, or `git switch --detach` with its recorded commit.
+Use the revision that includes repo-scoped registration, not a revision that
+would remove `.pi/settings.json`. Do not reset or delete the adoption branch.
+Then synchronize dependencies:
 
 ```bash
-git switch --detach 4628c5467b81839099714fc06a1850104a8b4533
 pnpm install --frozen-lockfile
 scripts/setup-runtime.sh
 ```
 
-Keep the same Pi registration and native environment, then `/reload` or restart
-Pi. To resume the adopted implementation, switch back to the merged `main`,
-repeat dependency synchronization and reload. Neither direction requires changes
-to browser services, credentials, providers or unrelated sessions.
+Keep the native environment unchanged and confirm RLCD still appears under
+Project packages, then `/reload` or restart Pi. To resume design A, return to the
+recorded adopted branch/revision (or merged `main` containing its repo-scoped
+registration), repeat dependency synchronization and reload. Neither direction
+requires changes to browser services, credentials, providers or unrelated sessions.
 
 ## Use the tools
 
