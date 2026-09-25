@@ -16,9 +16,9 @@ setup guidance or authorization to repeat live work.
 
 ## Design A local candidate (2026-09-25)
 
-**Local implementation; verification remains incomplete. Not activated or
-published.** The owner accepted the already-open-dialog limitation:
-the adapter must leave that dialog untouched, but may return a bounded
+**At checkpoint `e1e3551`, implementation was local, unactivated and unpublished;
+verification remained incomplete.** The owner accepted the already-open-dialog
+limitation: the adapter must leave that dialog untouched, but may return a bounded
 stop/error rather than identify it explicitly. This does not authorize a
 persistent observer or automatic dialog handling.
 
@@ -79,8 +79,8 @@ failed check is not relabelled as passed. The owner subsequently accepted it for
 adoption in [#20](https://github.com/skhlo/rlcd-brwsr/issues/20), with in-session
 testing afterward. It is not a pre-adoption blocker.
 
-The launch allowance is consumed. Owned processes stopped; the candidate remains
-unactivated. Raw results and limitations are in
+The launch allowance is consumed. Owned processes stopped; these verification
+runs did not activate the candidate. Raw results and limitations are in
 `artifacts/design-a/verification/RENEWAL.md`. No live-provider or public-site
 acceptance, general reliability, speed benefit or #17 fix is claimed.
 
@@ -95,6 +95,28 @@ rerun. Verification processes stopped, and seven receipt-identified orphaned
 runtime directories were removed; branches, worktrees and shared browser
 resources were retained. The prior live Jev–CLI probe remains separate evidence
 for a different controller, not acceptance of this adapter.
+
+### Normal-installation preparation for #20
+
+The adoption follow-up reuses the existing adapter without changing production
+browser behavior. It documents normal Pi local-file package registration,
+project-local dependency setup, reload and Git-based rollback in the
+[README](../README.md#adopt-or-roll-back), replacing one-session `-e` loading
+as the normal setup guidance.
+
+The follow-up passed 76 Node tests and five Python tests, TypeScript, formatting,
+Python compilation, shell syntax and offline lock checks. The added loader check
+uses Pi's real resource loader with isolated package settings, verifies both
+sequential tools and repeats the load without duplicates. Renaming the run tool
+made that check fail; restoring it passed. The host's Pi 0.87.1 loader also
+resolved both the existing normal source and the staged candidate independently
+without errors. Only the RLCD package entry was loaded in isolation; no tools
+were invoked and no host settings were written.
+
+This establishes package-loading compatibility, not host activation or a new
+browser/model result. At this checkpoint the normal package still referenced the
+permanent checkout at `4628c54`; the adoption branch remained local. Publication,
+owner merge, permanent-checkout update and Pi reload remain delivery steps.
 
 ## Compact handoff
 

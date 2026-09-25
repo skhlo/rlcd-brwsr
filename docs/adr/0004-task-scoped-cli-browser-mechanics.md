@@ -1,6 +1,9 @@
 # Put CLI browser mechanics behind the Python-owned run
 
-Status: locally implemented, partially verified and unactivated. Verification status is owned by the linked record below.
+Status: implemented; accepted for adoption in [#20](https://github.com/skhlo/rlcd-brwsr/issues/20).
+The independent dialog-check gap is accepted, not a passed check. Verification
+status is owned by the linked record below; host activation is a separate
+[installation step](../../README.md#adopt-or-roll-back).
 
 ADR-0003 keeps the pinned Python `Agent.run()` as the only owner of decisions,
 history, field-text generation, projection and reporting. Its old Browser
@@ -25,7 +28,7 @@ to the upstream Browser/Harness and counted only three private integrations.
 It retains ADR-0003's Python run, native providers, reporting, Pi supervision,
 and ownership of created versus borrowed tabs. The new private imports and
 Puppeteer target ID/session hooks are pinned and must be retested on upgrades.
-Partial fixture evidence and remaining checks are owned by
+Fixture evidence and the accepted independent dialog-check gap are owned by
 [the verification record](../thin-python-evidence.md#design-a-local-candidate-2026-09-25),
 not inferred from the earlier standalone CLI probe.
 

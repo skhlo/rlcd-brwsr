@@ -5,10 +5,11 @@ implementation merged in [PR #16](https://github.com/skhlo/rlcd-brwsr/pull/16);
 the direct DeepSeek helper, tab-targeting and handoff amendments merged in
 [PR #18](https://github.com/skhlo/rlcd-brwsr/pull/18).
 
-The local Design A candidate in [ADR-0004](0004-task-scoped-cli-browser-mechanics.md)
-supersedes this ADR's browser observation/input assignment and private-seam
-count. It retains this ADR's Python `Agent.run()` and reporting ownership.
-Native browser acceptance of the candidate is still pending.
+Design A in [ADR-0004](0004-task-scoped-cli-browser-mechanics.md) supersedes
+this ADR's browser observation/input assignment and private-seam count. It
+retains this ADR's Python `Agent.run()` and reporting ownership. The owner
+accepted adoption with the recorded independent dialog-check gap; this is not
+full browser acceptance or evidence of host activation.
 
 ## Context
 
